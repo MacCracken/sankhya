@@ -1,15 +1,15 @@
 [package]
 name = "sankhya"
-version = "1.2.0"
+version = "2.0.0"
 edition = "2024"
 rust-version = "1.89"
 license = "GPL-3.0-only"
-description = "sankhya — Ancient mathematical systems: Mayan, Babylonian, Egyptian, Vedic, Chinese, Greek, Roman, Islamic, and cross-civilizational epoch correlation"
+description = "sankhya — Ancient mathematical systems, historical calendars, and archaeoastronomy: 10+ calendar systems, 8 civilizations of mathematics, cross-civilizational epoch correlation"
 homepage = "https://github.com/MacCracken/sankhya"
 repository = "https://github.com/MacCracken/sankhya"
 readme = "README.md"
 documentation = "https://docs.rs/sankhya"
-keywords = ["ancient-math", "calendar", "mayan", "babylonian", "vedic"]
+keywords = ["ancient-math", "calendar", "archaeoastronomy", "mayan", "babylonian"]
 categories = ["mathematics", "science"]
 exclude = [".claude/", ".github/", "docs/", "scripts/"]
 

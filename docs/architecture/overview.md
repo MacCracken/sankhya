@@ -5,20 +5,31 @@
 ```
 sankhya (lib.rs)
   |-- error.rs      SankhyaError, Result alias
+  |                 --- Ancient Mathematics ---
   |-- mayan.rs      Vigesimal, LongCount, Tzolkin, Haab, Venus, Calendar Round search
   |-- babylonian.rs Sexagesimal, Saros, reciprocals, Plimpton 322, sqrt, lunar calendar
   |-- egyptian.rs   Unit fractions, multiplication, division, decans, Sothic cycle
   |-- vedic.rs      Nikhilam, Sulba Sutra, Katapayadi, Meru Prastara
-  |-- chinese.rs    Rod numerals, CRT, magic squares
-  |-- greek.rs      PHI, sieve, GCD, Archimedes pi, Antikythera
+  |-- chinese.rs    Rod numerals, CRT, magic squares, Sexagenary 60-year cycle
+  |-- greek.rs      PHI, sieve, GCD, Archimedes pi, Antikythera, isopsephy
   |-- roman.rs      Roman numeral conversion, validation, arithmetic
   |-- islamic.rs    Al-Khwarizmi algebra, Khayyam cubics, Hijri calendar
-  |-- epoch.rs      Precession, precessional ages, Seven Sages, cycle alignment, correlate()
+  |                 --- Calendar Systems ---
+  |-- gregorian.rs  Proleptic Gregorian, JDN conversion, leap years
+  |-- coptic.rs     13-month Alexandrian, Anno Martyrum
+  |-- persian.rs    Solar Hijri (Jalaali), 2820-year leap cycle
+  |-- hebrew.rs     Lunisolar, Metonic cycle, molad, dehiyyot
+  |-- aztec.rs      Tonalpohualli (260-day), Xiuhpohualli (365-day)
+  |                 --- Cross-Civilizational ---
+  |-- epoch.rs      Precession, Seven Sages, cycle alignment, convert() API
+  |-- astro.rs      Coordinates, star catalog, precession, heliacal rising, alignment
 ```
 
 ## Dependencies
 
 - **hisab**: Higher math primitives (type compatibility, numerical methods)
+- **avatara** (optional): Saptarishi archetype profiles on MultiCalendarDate
+- **itihas** (optional): Historical context (eras, civilizations, events) on MultiCalendarDate
 - **varna** (optional): Script rendering (cuneiform, hieroglyphic, Devanagari, Greek, rod numerals)
 - **serde**: Serialization for all public types
 - **thiserror**: Error derive macros
@@ -38,7 +49,8 @@ Sankhya is a pure computation library with no I/O. All functions are synchronous
 
 ## Consumers
 
-- Any AGNOS component needing calendar conversions (Mayan, Egyptian, Hijri, Babylonian)
+- Any AGNOS component needing calendar conversions (10+ calendar systems via unified `convert()` API)
 - Cross-civilizational epoch correlation (epoch module)
-- Educational/demonstration tools
-- Historical computation verification
+- Archaeoastronomy research (precession, heliacal rising, monument alignment)
+- Educational/demonstration tools for ancient mathematics
+- Historical computation verification and academic research

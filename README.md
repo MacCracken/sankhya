@@ -1,8 +1,8 @@
 # sankhya
 
-**sankhya** (Sanskrit: सांख्य — enumeration/analysis) is an ancient mathematical systems library for the [AGNOS](https://github.com/MacCracken/agnosticos) project.
+**sankhya** (Sanskrit: सांख्य — enumeration/analysis) is an ancient mathematical systems, historical calendar, and archaeoastronomy library for the [AGNOS](https://github.com/MacCracken/agnosticos) project.
 
-Faithful implementations of computational traditions from seven civilizations, plus cross-civilizational epoch correlation.
+Faithful implementations of computational traditions from eight civilizations, 10+ calendar systems, and archaeoastronomy tools — with cross-civilizational epoch correlation. Every algorithm cites its primary source. No other library in any language covers this scope.
 
 ## Modules
 
@@ -47,6 +47,36 @@ assert_eq!(primes.len(), 25);
 // Roman numerals
 assert_eq!(roman::to_roman_str(1776).unwrap(), "MDCCLXXVI");
 assert_eq!(roman::from_roman("MCMXCIX").unwrap(), 1999);
+```
+
+### Calendar Conversion
+
+```rust
+use sankhya::epoch::{CalendarDate, convert};
+use sankhya::gregorian::{GregorianDate, GregorianMonth};
+
+// Convert any date to every calendar system sankhya knows
+let date = GregorianDate { year: 2025, month: GregorianMonth::April, day: 1 };
+let all = convert(&CalendarDate::Gregorian(date)).unwrap();
+
+println!("Hebrew: {}", all.hebrew);       // 3 Nisan 5785 AM
+println!("Persian: {}", all.persian);     // 12 Farvardin 1404 AP
+println!("Coptic: {}", all.coptic);       // 23 Paremhat 1741 AM
+println!("Aztec: {}", all.aztec_tonalpohualli); // Tonalpohualli date
+```
+
+### Archaeoastronomy
+
+```rust
+use sankhya::astro;
+
+// Was Stonehenge aligned to the summer solstice?
+let results = astro::monument_alignment(51.18, 51.0, 2_451_545.0, 5.0);
+// Returns: SummerSolsticeSunrise match at ~50° azimuth
+
+// Where was Thuban (the pyramid builders' pole star) in 2800 BCE?
+let pos = astro::star_position_at(astro::StarName::Thuban, 2_451_545.0 - 4800.0 * 365.25);
+// Returns: Dec > 85° (near the celestial pole)
 ```
 
 ## Features

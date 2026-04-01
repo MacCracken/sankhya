@@ -7,7 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [1.2.0] — 2026-04-01
+## [2.0.0] — 2026-04-01
+
+### Breaking
+
+- **epoch** — `MultiCalendarDate` struct gained 7 new fields: `gregorian`, `coptic`, `persian`, `hebrew`, `chinese_sexagenary`, `aztec_tonalpohualli`, `aztec_xiuhpohualli`. Code destructuring this struct must be updated
 
 ### Added
 

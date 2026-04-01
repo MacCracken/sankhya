@@ -1,6 +1,6 @@
 # Development Roadmap
 
-> **Current**: 1.2.0
+> **Current**: 2.0.0
 
 ## v1.2 — Cross-Civilization Calendar Converter + Archaeoastronomy (SHIPPED)
 

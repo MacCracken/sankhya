@@ -1,30 +1,38 @@
 //! # sankhya
 //!
 //! **sankhya** (Sanskrit: सांख्य — enumeration/analysis) is a library of
-//! ancient mathematical systems for the AGNOS project.
+//! ancient mathematical systems, historical calendars, and archaeoastronomy
+//! for the AGNOS project.
 //!
-//! It provides faithful implementations of computational traditions from
-//! seven civilizations — Mayan, Babylonian, Egyptian, Vedic, Chinese,
-//! Greek, Roman, and Islamic — plus cross-civilizational epoch correlation.
+//! Faithful implementations of computational traditions from eight
+//! civilizations, 10+ calendar systems, and archaeoastronomy tools —
+//! with cross-civilizational epoch correlation. Every algorithm cites
+//! its primary source.
 //!
 //! ## Modules
 //!
-//! | Module | Civilization | Highlights |
-//! |--------|-------------|------------|
-//! | [`mayan`] | Maya | Vigesimal numbers, Long Count calendar, Tzolkin, Haab, Venus tables |
-//! | [`babylonian`] | Babylon | Sexagesimal numbers, Saros cycle, Plimpton 322 triples, Heron's sqrt |
+//! | Module | Domain | Highlights |
+//! |--------|--------|------------|
+//! | [`mayan`] | Maya | Vigesimal numbers, Long Count, Tzolkin, Haab, Venus tables |
+//! | [`babylonian`] | Babylon | Sexagesimal numbers, Saros cycle, Plimpton 322, Heron's sqrt |
 //! | [`egyptian`] | Egypt | Unit fractions, doubling multiplication, stellar decans, Sothic cycle |
-//! | [`vedic`] | India | Nikhilam multiplication, Sulba Sutra geometry, Katapayadi, Meru Prastara |
-//! | [`chinese`] | China | Rod numerals, Chinese Remainder Theorem, magic squares |
-//! | [`greek`] | Greece | Golden ratio, Sieve of Eratosthenes, Euclidean GCD, Archimedes' pi, Antikythera |
-//! | [`islamic`] | Islam | Al-Khwarizmi algebra, Khayyam cubics, completion of the square, Hijri calendar |
+//! | [`vedic`] | India | Nikhilam multiplication, Sulba Sutra, Katapayadi, Meru Prastara |
+//! | [`chinese`] | China | Rod numerals, CRT, magic squares, Sexagenary 60-year cycle |
+//! | [`greek`] | Greece | Golden ratio, sieve, GCD, Archimedes' pi, Antikythera, isopsephy |
 //! | [`roman`] | Rome | Roman numeral conversion, validation, arithmetic (I–MMMCMXCIX) |
-//! | [`epoch`] | Cross-civilizational | Precession, precessional ages, Younger Dryas, Seven Sages, cycle alignment |
+//! | [`islamic`] | Islam | Al-Khwarizmi algebra, Khayyam cubics, Hijri calendar |
+//! | [`gregorian`] | Global | Proleptic Gregorian calendar, JDN conversion |
+//! | [`coptic`] | Egypt | 13-month Alexandrian calendar, Anno Martyrum |
+//! | [`persian`] | Iran | Solar Hijri (Jalaali), 2820-year leap cycle |
+//! | [`hebrew`] | Israel | Lunisolar, Metonic cycle, molad, dehiyyot |
+//! | [`aztec`] | Mesoamerica | Tonalpohualli (260-day), Xiuhpohualli (365-day) |
+//! | [`epoch`] | Cross-civilizational | Precession, Seven Sages, unified `convert()` API |
+//! | [`astro`] | Archaeoastronomy | Coordinates, star catalog, precession, heliacal rising, alignment |
 //!
 //! ## Quick Start
 //!
 //! ```rust
-//! use sankhya::mayan::{LongCount, Tzolkin};
+//! use sankhya::mayan::LongCount;
 //! use sankhya::babylonian;
 //! use sankhya::greek;
 //!
@@ -32,7 +40,7 @@
 //! let lc = LongCount::from_days(1_872_000).unwrap(); // 13.0.0.0.0 (Dec 21, 2012)
 //! assert_eq!(lc.baktun, 13);
 //!
-//! // Babylonian square root
+//! // Babylonian square root (Heron's method, from YBC 7289 tablet)
 //! let sqrt2 = babylonian::babylonian_sqrt(2.0, 10).unwrap();
 //! assert!((sqrt2 - std::f64::consts::SQRT_2).abs() < 1e-15);
 //!

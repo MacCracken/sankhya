@@ -7,7 +7,7 @@
 - **Type**: Flat library crate
 - **License**: GPL-3.0
 - **MSRV**: 1.89
-- **Version**: SemVer 1.0.0
+- **Version**: SemVer 2.0.0
 
 ## Consumers
 
@@ -22,11 +22,17 @@ AGNOS ecosystem crates that need historical/ancient mathematical computations, c
 | `babylonian` | Sexagesimal numbers, Saros cycle, reciprocals, Plimpton 322, Heron's sqrt |
 | `egyptian` | Unit fractions, doubling multiplication, division, stellar decans, Sothic cycle |
 | `vedic` | Nikhilam multiplication, Sulba Sutra, Katapayadi, Meru Prastara |
-| `chinese` | Rod numerals, Chinese Remainder Theorem, magic squares |
-| `greek` | Golden ratio, sieve, GCD/LCM, Archimedes' pi, Antikythera |
+| `chinese` | Rod numerals, Chinese Remainder Theorem, magic squares, Sexagenary cycle |
+| `greek` | Golden ratio, sieve, GCD/LCM, Archimedes' pi, Antikythera, isopsephy |
 | `roman` | Roman numeral conversion, validation, arithmetic (I–MMMCMXCIX) |
 | `islamic` | Al-Khwarizmi algebra, Khayyam cubics, completion of the square, Hijri calendar |
-| `epoch` | Precession, precessional ages, Younger Dryas, Seven Sages, cycle alignment |
+| `gregorian` | Proleptic Gregorian calendar, JDN conversion, leap years |
+| `coptic` | 13-month Alexandrian calendar, Anno Martyrum |
+| `persian` | Solar Hijri (Jalaali), 2820-year leap cycle, Nowruz |
+| `hebrew` | Lunisolar, Metonic cycle, molad, dehiyyot, 6 year types |
+| `aztec` | Tonalpohualli (260-day), Xiuhpohualli (365-day), Calendar Round |
+| `epoch` | Precession, precessional ages, Seven Sages, cycle alignment, unified `convert()` API |
+| `astro` | Coordinate systems, star catalog, precession, heliacal rising, monument alignment |
 
 ## Key Principles
 

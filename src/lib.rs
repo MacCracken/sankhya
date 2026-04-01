@@ -4,8 +4,8 @@
 //! ancient mathematical systems for the AGNOS project.
 //!
 //! It provides faithful implementations of computational traditions from
-//! six civilizations: Mayan, Babylonian, Egyptian, Vedic/Indian, Chinese,
-//! and Greek.
+//! seven civilizations — Mayan, Babylonian, Egyptian, Vedic, Chinese,
+//! Greek, Roman, and Islamic — plus cross-civilizational epoch correlation.
 //!
 //! ## Modules
 //!

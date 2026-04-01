@@ -53,7 +53,7 @@ If the module requires an external dependency, gate it behind a feature flag.
 
 - Unit tests colocated in modules (`#[cfg(test)] mod tests`)
 - Integration tests in `tests/`
-- Target: 80%+ line coverage
+- Target: 85%+ line coverage
 
 ## Commits
 

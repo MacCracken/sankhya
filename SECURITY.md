@@ -2,7 +2,7 @@
 
 ## Scope
 
-Sankhya is a pure mathematics library implementing ancient mathematical systems (Mayan, Babylonian, Egyptian, Vedic, Chinese, Greek) for Rust. The core library performs no I/O and contains no `unsafe` code.
+Sankhya is a pure mathematics library implementing ancient mathematical systems (Mayan, Babylonian, Egyptian, Vedic, Chinese, Greek, Roman, Islamic) and cross-civilizational epoch correlation for Rust. The core library performs no I/O and contains no `unsafe` code.
 
 ## Attack Surface
 
@@ -11,6 +11,8 @@ Sankhya is a pure mathematics library implementing ancient mathematical systems 
 | Numerical stability | Overflow in calendar conversions | Checked arithmetic; returns `Err(OverflowError)` |
 | Egyptian fractions | Non-terminating decomposition | Iteration limits; returns error on excessive depth |
 | Magic squares | Large allocation for big n | Input validation; size bounds |
+| Newton's method | Non-convergence (Khayyam cubics) | Iteration cap (200); multiple starting points; returns error |
+| Roman numeral parsing | Non-canonical input | Round-trip validation against canonical form |
 | Serde deserialization | Crafted JSON | Enum validation via serde derive |
 | Dependencies | Supply chain compromise | cargo-deny, cargo-audit in CI; minimal deps |
 
@@ -18,7 +20,7 @@ Sankhya is a pure mathematics library implementing ancient mathematical systems 
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x | Yes |
+| 1.0.x | Yes |
 
 ## Reporting
 
@@ -31,6 +33,7 @@ Sankhya is a pure mathematics library implementing ancient mathematical systems 
 
 - Zero `unsafe` code
 - No `unwrap()` or `panic!()` in library code — all errors via `Result`
+- NaN/Infinity input validation on all floating-point public functions
 - All public types are `Send + Sync` (compile-time verified)
 - No network I/O
-- Minimal dependency surface (hisab, serde, thiserror, tracing)
+- Minimal dependency surface (hisab, serde, thiserror, tracing; optional: varna)

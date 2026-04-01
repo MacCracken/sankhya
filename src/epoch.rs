@@ -19,6 +19,19 @@
 //! canonical ancient value (25,920 years) rather than the modern
 //! astronomical value (~25,772 years), as the purpose is to model what
 //! the ancients encoded.
+//!
+//! # Sources
+//!
+//! - Precession rate (1°/72 years): Hipparchus (c. 130 BCE), transmitted
+//!   via Ptolemy, *Almagest* VII.2. Modern value: ~1°/71.6 years
+//! - Younger Dryas Impact Hypothesis: Firestone et al., "Evidence for an
+//!   extraterrestrial impact 12,900 years ago", *PNAS* 104(41), 2007
+//! - Seven Sages traditions: Hancock, *Fingerprints of the Gods* (1995);
+//!   primary sources cited per tradition in [`seven_sages()`]
+//! - J2000.0 reference epoch: IAU 1976 System of Astronomical Constants
+//! - Radiocarbon BP reference (1950 CE): Stuiver & Polach, *Radiocarbon* 19(3), 1977
+//! - Calendar conversion algorithms: Dershowitz & Reingold, *Calendrical
+//!   Calculations* (4th ed., 2018)
 
 use std::borrow::Cow;
 

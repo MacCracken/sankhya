@@ -161,7 +161,8 @@ pub fn coptic_year_days(year: i64) -> u16 {
 /// Convert a Julian Day Number to a Coptic date.
 ///
 /// The Coptic calendar is a simple fixed calendar: 12 months of 30 days
-/// plus 5 or 6 epagomenal days. This makes conversion straightforward.
+/// plus 5 or 6 epagomenal days. Algorithm from Dershowitz & Reingold,
+/// *Calendrical Calculations* (4th ed., 2018), ch. 4.
 #[must_use]
 pub fn jdn_to_coptic(jdn: f64) -> CopticDate {
     let days_since_epoch = (jdn - COPTIC_EPOCH_JDN).floor() as i64;
@@ -201,6 +202,9 @@ pub fn jdn_to_coptic(jdn: f64) -> CopticDate {
 }
 
 /// Convert a Coptic date to a Julian Day Number.
+///
+/// Algorithm from Dershowitz & Reingold, *Calendrical Calculations*
+/// (4th ed., 2018), ch. 4.
 ///
 /// # Errors
 ///

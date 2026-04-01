@@ -1,26 +1,23 @@
 # Development Roadmap
 
-> **Current**: 1.1.0
+> **Current**: 1.2.0
 
-## v1.2 — Cross-Civilization Calendar Converter
+## v1.2 — Cross-Civilization Calendar Converter + Archaeoastronomy (SHIPPED)
 
-Unified any-to-any calendar conversion using JDN as the internal pivot, following the algorithms in Dershowitz & Reingold, *Calendrical Calculations* (4th ed., Cambridge University Press, 2018).
+- [x] Unified `convert()` API: takes a date in any supported system, returns all others
+- [x] JDN as the internal pivot for all conversions
+- [x] Gregorian calendar (proleptic, March-based algorithm)
+- [x] Hebrew calendar — Metonic cycle, molad, 4 dehiyyot, 6 year types
+- [x] Coptic calendar (13 months, Anno Martyrum)
+- [x] Persian/Solar Hijri — Jalaali arithmetic algorithm, 2820-year cycle
+- [x] Chinese Sexagenary cycle — Heavenly Stems + Earthly Branches, 60-year cycle
+- [x] Aztec Tonalpohualli (260-day) / Xiuhpohualli (365-day) with Caso correlation
+- [x] Archaeoastronomy module: coordinate types, star catalog (20 stars), precession (IAU/Lieske), heliacal rising (Schaefer 1987), monument alignment
 
-- [ ] Unified `convert()` API: takes a date in any supported system, returns all others
-- [ ] JDN as the internal pivot for all conversions
-- [ ] Gregorian calendar (currently only Julian year approximation)
+### Deferred to v1.3+
+
 - [ ] Egyptian civil calendar (365-day, no leap) with proper month/day output
-- [ ] Hebrew calendar — Metonic cycle, molad calculation (Dershowitz & Reingold ch. 8)
 - [ ] Hindu Panchanga — tithi, nakshatra, yoga, karana (Dershowitz & Reingold ch. 10; Surya Siddhanta)
-- [ ] Coptic/Ethiopian calendars (Dershowitz & Reingold ch. 4)
-- [ ] Persian/Solar Hijri — Jalaali algorithm, 3000-year accuracy (Dershowitz & Reingold ch. 15)
-- [ ] Chinese Sexagenary cycle — Heavenly Stems + Earthly Branches, 60-year cycle
-- [ ] Aztec Tonalpohualli (260-day) / Xiuhpohualli (365-day) — natural extension of existing Mesoamerican work
-
-Sources:
-- Dershowitz & Reingold, *Calendrical Calculations*, 4th ed. (2018) — reference algorithms for 20+ calendar systems
-- Time4J (Java) — gold standard for calendar coverage, no Rust equivalent exists
-- VedicDateTime (R) — Panchanga conversion reference
 
 ## v1.3 — Surya Siddhanta & Nine Chapters
 
@@ -81,19 +78,49 @@ Sources:
 - Berggren, *Episodes in the Mathematics of Medieval Islam* (Springer, 2016) ch. 9
 - Katz, *A History of Mathematics* (3rd ed., Pearson, 2009)
 
-## v1.5 — Archaeoastronomy Computations
+## Expanded Calendar Coverage
 
-No programmatic library serves archaeoastronomers outside Stellarium. Sankhya's epoch module is positioned to fill this gap.
+Additional calendar systems with published arithmetic algorithms.
 
-- [ ] Heliacal rising/setting calculations for arbitrary stars at arbitrary locations and dates
-- [ ] Precession-corrected star positions for deep historical dates (reliable to ~3000 BCE)
-- [ ] Monument orientation analysis — given lat/lon and bearing, compute aligned celestial events
-- [ ] Horizon profile computations with altitude/azimuth/declination overlays
+- [ ] **Ethiopian** — Shares Coptic structure, different epoch (Aug 29, 8 CE) and month names. Easy add from existing `coptic.rs` pattern
+- [ ] **Julian** — Proleptic Julian calendar, distinct from Gregorian for pre-1582 dates. Critical for historical date interpretation
+- [ ] **Hindu Panchanga** — Lunisolar, tithi/nakshatra/yoga/karana. Most complex remaining calendar. Covered by Time4J and D&R ch. 10
 
 Sources:
-- Ruggles, *Archaeoastronomy and Ethnoastronomy: Building Bridges Between Cultures* (Cambridge, 2011)
-- Schaefer, "Heliacal Rise Phenomena", *Journal for the History of Astronomy* (1987)
-- Stellarium ArchaeoLines plugin (reference implementation for visual archaeoastronomy)
+- Dershowitz & Reingold, *Calendrical Calculations* (4th ed., 2018) — chs. 4, 3, 10
+- Time4J (Java) — reference implementation for Hindu and Ethiopian calendars
+
+## Validation Against Published Test Vectors
+
+Dershowitz & Reingold publish tabulations (1900–2200) as accepted test vectors. Every shared calendar system should be validated.
+
+- [ ] D&R test vectors for Gregorian ↔ Hebrew conversions
+- [ ] D&R test vectors for Gregorian ↔ Islamic conversions
+- [ ] D&R test vectors for Gregorian ↔ Persian conversions
+- [ ] D&R test vectors for Gregorian ↔ Coptic conversions
+- [ ] D&R test vectors for Mayan Long Count correlation dates
+
+Sources:
+- Dershowitz & Reingold calendar code and test data: https://www.reingold.co/calendars.shtml
+
+## Enhanced Archaeoastronomy
+
+v1.2 shipped: coordinate types, 20-star catalog, IAU precession (Lieske 1977), heliacal rising (Schaefer 1987), solar position, monument alignment. Gaps identified from Skyfield/Astropy/Stellarium comparison.
+
+- [ ] **IAU 2006 precession model** (Capitaine et al.) — supersedes Lieske 1977, better deep-time accuracy
+- [ ] **Atmospheric refraction model** — Affects heliacal rising predictions by ~0.5°. Standard model from Meeus ch. 16
+- [ ] **Lunar standstill computations** (major/minor) — Critical for Neolithic monument analysis (Stonehenge, Callanish). 18.6-year cycle
+- [ ] **Eclipse prediction for historical dates** — Saros-based forward prediction from known eclipses. Tractable without full ephemeris
+- [ ] **Horizon profile computations** — Given terrain altitude data, compute effective horizon for a location
+- [ ] **Heliacal setting** — Complement to heliacal rising (last visibility at dusk)
+- [ ] **Optional `astro` crate integration** — The Rust `astro` crate (crates.io) has VSP087 planetary positioning. Feature-gated bridge for professional-grade solar/lunar positions
+
+Sources:
+- Capitaine et al., "Expressions for IAU 2000 precession quantities", *Astronomy & Astrophysics* 412, 567–586 (2003)
+- Meeus, *Astronomical Algorithms* (2nd ed., 1998), ch. 16 (refraction), ch. 54 (eclipses)
+- Skyfield (Python) — reference for professional positional astronomy: https://rhodesmill.org/skyfield/
+- Astropy — reference for coordinate transformations: https://www.astropy.org/
+- Stellarium ArchaeoLines plugin — reference for visual archaeoastronomy
 
 ## Gematria & Letter-Value Computation (depends on varna 1.3+)
 
@@ -123,6 +150,20 @@ Sources:
 - Pingree, *From Astral Omens to Astrology* (Rome, 1997) — transmission of Babylonian astronomy to India and Greece
 
 ## Future
+
+### World-Class / Professional Education Level
+
+The goal: sankhya becomes the definitive reference implementation for ancient computational traditions — suitable for professional archaeoastronomers, academic researchers, and university-level education. No competing library in any language covers this scope.
+
+Competitive position (as of v1.2.0):
+- **Time4J** (Java): ~15 calendar systems, no ancient math, no astronomy
+- **ICU4X** (Rust): ~10 calendars, modern i18n focus, no ancient math
+- **convertdate** (Python): ~10 calendars, no math, no astronomy
+- **Skyfield/Astropy** (Python): professional positional astronomy, no calendars, no ancient math
+- **Stellarium** (C++): visual archaeoastronomy, GUI-only, not a library
+- **sankhya** (Rust): 10+ calendars + 8 civilization math + archaeoastronomy + epoch correlation — **unique**
+
+### Other
 
 - [ ] Inca quipu (knot-based recording system)
 - [ ] Greek geometric constructions (compass and straightedge)

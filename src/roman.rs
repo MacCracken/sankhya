@@ -12,6 +12,12 @@
 //! standardized in medieval usage. The system has no zero and no place value,
 //! making arithmetic cumbersome compared to positional systems — a key reason
 //! Hindu-Arabic numerals eventually replaced it.
+//!
+//! # Sources
+//!
+//! - Ifrah, *The Universal History of Numbers* (Wiley, 2000), ch. 16
+//! - Subtractive notation rules from CIL (Corpus Inscriptionum Latinarum)
+//!   conventions, standardized in medieval manuscripts
 
 use serde::{Deserialize, Serialize};
 

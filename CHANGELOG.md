@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.2.0] — 2026-04-01
+
+### Added
+
+- **gregorian** — Proleptic Gregorian calendar with JDN conversions. March-based computational algorithm (Dershowitz & Reingold) with exact roundtrip across 6000+ years. Leap year rules, year-day computation, Display with CE/BCE
+- **coptic** — Coptic (Alexandrian) calendar. 13 months (12×30 + Nasie 5/6), Anno Martyrum epoch (284 CE), leap at year mod 4 == 3
+- **persian** — Persian Solar Hijri (Jalaali) calendar. Arithmetic leap year algorithm via jalaali-js breaks array (2820-year grand cycle, 683 leaps). Gregorian bridge for JDN conversion. Nowruz-anchored
+- **hebrew** — Hebrew (Jewish) lunisolar calendar. Metonic 19-year cycle, molad (mean new moon) computation in chalakim, all four dehiyyot postponement rules (Lo ADU, Molad Zaken, GaTRaD, BeTUTeKPaT). Six year types (353/354/355/383/384/385). 14-variant month enum with Adar/AdarI/AdarII validation
+- **aztec** — Aztec (Mexica) calendar systems. Tonalpohualli (260-day sacred cycle, 13×20 with 20 Nahuatl day signs) and Xiuhpohualli (365-day solar cycle, 18×20 + Nemontemi). Caso correlation. Calendar Round (18,980-day / 52-year cycle)
+- **chinese** — Sexagenary (60-year) cycle. 10 Heavenly Stems (Tiangan) with CJK characters + 12 Earthly Branches (Dizhi) with zodiac animals. `sexagenary_from_year()` and `sexagenary_from_jdn()`. Anchored to 4 CE = Jiǎ-Zǐ
+- **epoch** — Unified `convert()` API: `CalendarDate` enum wrapping all supported calendar types, `calendar_to_jdn()` dispatch, `convert()` for any-to-any conversion through the JDN pivot. Cross-calendar roundtrip verified
+- **epoch** — `MultiCalendarDate` now includes Gregorian, Coptic, Persian, Hebrew, Chinese Sexagenary, Aztec Tonalpohualli, and Aztec Xiuhpohualli fields populated by `correlate()`
+- **astro** — Archaeoastronomy module. Coordinate types (`CelestialCoord`, `EclipticCoord`, `HorizontalCoord`) with equatorial↔ecliptic↔horizontal conversions. Obliquity of ecliptic (IAU/Lieske 1977)
+- **astro** — Star catalog: 20 archaeologically significant stars (Sirius, Canopus, Vega, Thuban, Polaris, Pleiades, etc.) with J2000.0 RA/Dec/magnitude from Hipparcos
+- **astro** — Precession-corrected star positions using simplified IAU model (Lieske 1977). Validated: Thuban near pole at 2800 BCE, Polaris not pole star in antiquity. ~0.1° accuracy over 6000 years
+- **astro** — Heliacal rising prediction using arcus visionis model (Schaefer 1987). Sirius rising at Memphis validated ~July-August
+- **astro** — Solar position (simplified Meeus ch. 25): ecliptic longitude and declination, ~1° accuracy
+- **astro** — Monument alignment analysis: `monument_alignment()` checks solstice/equinox sunrise/sunset and star rising points against a bearing. `solstice_sunrise_azimuth()` validated at Stonehenge (~50° NE). `star_rise_azimuth()` for individual stars
+
 ## [1.1.0] — 2026-04-01
 
 ### Added

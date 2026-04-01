@@ -500,3 +500,243 @@ fn fuzz_vernal_point_longitude_range() {
         assert!(lon < 360.0, "longitude {lon} >= 360 for jdn {jdn}");
     }
 }
+
+// ===== Gregorian =====
+
+#[test]
+fn fuzz_gregorian_day_zero() {
+    let date = sankhya::gregorian::GregorianDate {
+        year: 2000,
+        month: sankhya::gregorian::GregorianMonth::January,
+        day: 0,
+    };
+    assert!(sankhya::gregorian::gregorian_to_jdn(&date).is_err());
+}
+
+#[test]
+fn fuzz_gregorian_day_overflow() {
+    let date = sankhya::gregorian::GregorianDate {
+        year: 2000,
+        month: sankhya::gregorian::GregorianMonth::February,
+        day: 30,
+    };
+    assert!(sankhya::gregorian::gregorian_to_jdn(&date).is_err());
+}
+
+#[test]
+fn fuzz_gregorian_extreme_jdn() {
+    // Very large and very small JDN — should not panic
+    let d1 = sankhya::gregorian::jdn_to_gregorian(0.0);
+    assert!(sankhya::gregorian::gregorian_to_jdn(&d1).is_ok());
+    let d2 = sankhya::gregorian::jdn_to_gregorian(5_000_000.0);
+    assert!(sankhya::gregorian::gregorian_to_jdn(&d2).is_ok());
+}
+
+// ===== Coptic =====
+
+#[test]
+fn fuzz_coptic_day_zero() {
+    let date = sankhya::coptic::CopticDate {
+        year: 1,
+        month: sankhya::coptic::CopticMonth::Thout,
+        day: 0,
+    };
+    assert!(sankhya::coptic::coptic_to_jdn(&date).is_err());
+}
+
+#[test]
+fn fuzz_coptic_nasie_overflow() {
+    let date = sankhya::coptic::CopticDate {
+        year: 1,
+        month: sankhya::coptic::CopticMonth::Nasie,
+        day: 7,
+    };
+    assert!(sankhya::coptic::coptic_to_jdn(&date).is_err());
+}
+
+#[test]
+fn fuzz_coptic_extreme_jdn() {
+    let d = sankhya::coptic::jdn_to_coptic(0.5);
+    assert!(sankhya::coptic::coptic_to_jdn(&d).is_ok());
+}
+
+// ===== Persian =====
+
+#[test]
+fn fuzz_persian_day_zero() {
+    let date = sankhya::persian::PersianDate {
+        year: 1400,
+        month: sankhya::persian::PersianMonth::Farvardin,
+        day: 0,
+    };
+    assert!(sankhya::persian::persian_to_jdn(&date).is_err());
+}
+
+#[test]
+fn fuzz_persian_esfand_overflow() {
+    let date = sankhya::persian::PersianDate {
+        year: 1400, // common year
+        month: sankhya::persian::PersianMonth::Esfand,
+        day: 30,
+    };
+    assert!(sankhya::persian::persian_to_jdn(&date).is_err());
+}
+
+#[test]
+fn fuzz_persian_farvardin_32() {
+    let date = sankhya::persian::PersianDate {
+        year: 1400,
+        month: sankhya::persian::PersianMonth::Farvardin,
+        day: 32,
+    };
+    assert!(sankhya::persian::persian_to_jdn(&date).is_err());
+}
+
+// ===== Hebrew =====
+
+#[test]
+fn fuzz_hebrew_day_zero() {
+    let date = sankhya::hebrew::HebrewDate {
+        year: 5785,
+        month: sankhya::hebrew::HebrewMonth::Tishrei,
+        day: 0,
+    };
+    assert!(sankhya::hebrew::hebrew_to_jdn(&date).is_err());
+}
+
+#[test]
+fn fuzz_hebrew_adar_in_leap_year() {
+    // Plain Adar invalid in leap year
+    let date = sankhya::hebrew::HebrewDate {
+        year: 5784, // leap
+        month: sankhya::hebrew::HebrewMonth::Adar,
+        day: 1,
+    };
+    assert!(sankhya::hebrew::hebrew_to_jdn(&date).is_err());
+}
+
+#[test]
+fn fuzz_hebrew_adar_ii_in_common_year() {
+    let date = sankhya::hebrew::HebrewDate {
+        year: 5785, // common
+        month: sankhya::hebrew::HebrewMonth::AdarII,
+        day: 1,
+    };
+    assert!(sankhya::hebrew::hebrew_to_jdn(&date).is_err());
+}
+
+#[test]
+fn fuzz_hebrew_extreme_jdn() {
+    // Deep ancient date — should not panic
+    let d = sankhya::hebrew::jdn_to_hebrew(100_000.5);
+    assert!(sankhya::hebrew::hebrew_to_jdn(&d).is_ok());
+}
+
+#[test]
+fn fuzz_hebrew_all_year_types() {
+    // Verify all 6 year types appear in first 1000 years
+    let mut lengths = std::collections::HashSet::new();
+    for y in 1..=1000 {
+        lengths.insert(sankhya::hebrew::hebrew_year_days(y));
+    }
+    assert!(lengths.contains(&353), "missing deficient common");
+    assert!(lengths.contains(&354), "missing regular common");
+    assert!(lengths.contains(&355), "missing complete common");
+    assert!(lengths.contains(&383), "missing deficient leap");
+    assert!(lengths.contains(&384), "missing regular leap");
+    assert!(lengths.contains(&385), "missing complete leap");
+}
+
+// ===== Aztec =====
+
+#[test]
+fn fuzz_aztec_tonalpohualli_number_range() {
+    for i in 0..260 {
+        let t = sankhya::aztec::tonalpohualli_from_jdn(2_451_545.0 + f64::from(i));
+        assert!(t.number >= 1 && t.number <= 13);
+    }
+}
+
+#[test]
+fn fuzz_aztec_xiuhpohualli_day_range() {
+    for i in 0..365 {
+        let x = sankhya::aztec::xiuhpohualli_from_jdn(2_451_545.0 + f64::from(i));
+        if x.month == sankhya::aztec::XiuhpohuallMonth::Nemontemi {
+            assert!(x.day >= 1 && x.day <= 5);
+        } else {
+            assert!(x.day >= 1 && x.day <= 20);
+        }
+    }
+}
+
+// ===== Astro =====
+
+#[test]
+fn fuzz_astro_obliquity_finite() {
+    for &jdn in &[0.0, 2_451_545.0, 5_000_000.0, -1_000_000.0] {
+        let eps = sankhya::astro::obliquity_of_ecliptic(jdn);
+        assert!(eps.is_finite(), "non-finite obliquity for jdn {jdn}");
+        assert!(
+            eps > 20.0 && eps < 27.0,
+            "obliquity {eps} out of range for jdn {jdn}"
+        );
+    }
+}
+
+#[test]
+fn fuzz_astro_solar_longitude_range() {
+    for jdn_offset in (0..3650).step_by(10) {
+        let jdn = 2_451_545.0 + f64::from(jdn_offset);
+        let lon = sankhya::astro::solar_longitude(jdn);
+        assert!((0.0..360.0).contains(&lon), "solar lon {lon} out of range");
+    }
+}
+
+#[test]
+fn fuzz_astro_solar_declination_range() {
+    for jdn_offset in (0..3650).step_by(10) {
+        let jdn = 2_451_545.0 + f64::from(jdn_offset);
+        let dec = sankhya::astro::solar_declination(jdn);
+        assert!(dec.abs() < 24.0, "solar dec {dec} out of range");
+    }
+}
+
+#[test]
+fn fuzz_astro_star_rise_circumpolar() {
+    // Polaris should not "rise" at high northern latitudes (circumpolar)
+    let result =
+        sankhya::astro::star_rise_azimuth(sankhya::astro::StarName::Polaris, 80.0, 2_451_545.0);
+    assert!(result.is_err());
+}
+
+#[test]
+fn fuzz_astro_precess_extreme() {
+    // 10000 years forward — should not panic or produce NaN
+    let coord = sankhya::astro::star_j2000(sankhya::astro::StarName::Sirius);
+    let precessed =
+        sankhya::astro::precess_coordinates(&coord, 2_451_545.0, 2_451_545.0 + 3_652_500.0);
+    assert!(precessed.ra_hours.is_finite());
+    assert!(precessed.dec_degrees.is_finite());
+}
+
+// ===== Epoch convert() =====
+
+#[test]
+fn fuzz_convert_invalid_gregorian() {
+    let bad = sankhya::epoch::CalendarDate::Gregorian(sankhya::gregorian::GregorianDate {
+        year: 2025,
+        month: sankhya::gregorian::GregorianMonth::February,
+        day: 30,
+    });
+    assert!(sankhya::epoch::convert(&bad).is_err());
+}
+
+#[test]
+fn fuzz_convert_invalid_hebrew() {
+    let bad = sankhya::epoch::CalendarDate::Hebrew(sankhya::hebrew::HebrewDate {
+        year: 5785,
+        month: sankhya::hebrew::HebrewMonth::AdarI, // common year
+        day: 1,
+    });
+    assert!(sankhya::epoch::convert(&bad).is_err());
+}

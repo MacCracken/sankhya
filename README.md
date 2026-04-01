@@ -12,11 +12,17 @@ Faithful implementations of computational traditions from seven civilizations, p
 | `babylonian` | Babylon | 2000–300 BCE | Sexagesimal (base-60), Saros cycle, Plimpton 322 triples, Heron's sqrt, lunar calendar, cuneiform display |
 | `egyptian` | Egypt | 2000–1000 BCE | Unit fractions (Rhind Papyrus), doubling multiplication, stellar decans, Sothic cycle, hieroglyphic display |
 | `vedic` | India | 800 BCE+ | Nikhilam multiplication, Sulba Sutra geometry, Katapayadi, Meru Prastara, Devanagari display |
-| `chinese` | China | 500 BCE+ | Rod numerals, Chinese Remainder Theorem (Sun Tzu), magic squares, Unicode rod display |
+| `chinese` | China | 500 BCE+ | Rod numerals, Chinese Remainder Theorem, magic squares, Sexagenary 60-year cycle, Unicode rod display |
 | `greek` | Greece | 600 BCE–300 CE | Golden ratio, Sieve of Eratosthenes, Euclidean GCD, Archimedes' pi, Antikythera, isopsephy |
 | `roman` | Rome | 500 BCE+ | Roman numeral conversion (I–MMMCMXCIX), canonical validation, arithmetic |
 | `islamic` | Islamic Golden Age | 750–1258 CE | Al-Khwarizmi algebra, Khayyam cubics, completion of the square, Hijri calendar |
-| `epoch` | Cross-civilizational | — | Precession (25,920-year Great Year), precessional ages, Seven Sages traditions, cycle alignment, multi-calendar correlation |
+| `gregorian` | Global | 1582 CE+ | Proleptic Gregorian calendar, JDN conversion, leap years |
+| `coptic` | Egypt/Ethiopia | 284 CE+ | 13-month Alexandrian calendar, Anno Martyrum |
+| `persian` | Iran | 622 CE+ | Solar Hijri (Jalaali), 2820-year leap cycle, Nowruz |
+| `hebrew` | Israel | 3761 BCE+ | Lunisolar, Metonic cycle, molad, dehiyyot, 6 year types |
+| `aztec` | Mesoamerica | 1200–1521 CE | Tonalpohualli (260-day), Xiuhpohualli (365-day), Calendar Round |
+| `epoch` | Cross-civilizational | — | Precession, precessional ages, Seven Sages, cycle alignment, unified `convert()` API |
+| `astro` | Archaeoastronomy | — | Coordinate systems, star catalog, precession, heliacal rising, monument alignment |
 
 ## Quick Start
 

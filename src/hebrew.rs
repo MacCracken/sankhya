@@ -181,10 +181,15 @@ pub fn hebrew_is_leap(year: i64) -> bool {
 }
 
 /// Compute the molad (mean new moon) of Tishrei for a given year,
-/// in parts since the epoch.
+/// in parts (chalakim) since the epoch.
 ///
 /// The molad of Tishrei year 1 is: Monday, 5 hours, 204 parts
-/// = day 2, 5h 204p from epoch.
+/// (= day 2, 5h 204p from Sunday 0h). The mean synodic month is
+/// 29 days, 12 hours, 793 parts (29.530594 days).
+///
+/// Algorithm from Dershowitz & Reingold, *Calendrical Calculations*
+/// (4th ed., 2018), ch. 8. Constants from Maimonides, *Mishneh Torah*,
+/// Hilchot Kiddush HaChodesh.
 fn molad_tishrei(year: i64) -> i64 {
     // Months elapsed since creation to the start of this year
     let months_elapsed = months_before_year(year);
@@ -221,6 +226,12 @@ fn hebrew_is_leap_in_cycle(pos: i64) -> bool {
 
 /// Compute the JDN of 1 Tishrei (Rosh Hashana) for a given year,
 /// applying the four dehiyyot (postponement rules).
+///
+/// The four dehiyyot (D&R ch. 8, §8.1):
+/// 1. Lo ADU Rosh — Rosh Hashana cannot fall on Sunday, Wednesday, or Friday
+/// 2. Molad Zaken — if the molad is at or after noon (18h), postpone one day
+/// 3. GaTRaD — in a common year, if molad falls on Tuesday ≥ 9h 204p, postpone to Thursday
+/// 4. BeTUTeKPaT — after a leap year, if molad falls on Monday ≥ 15h 589p, postpone to Tuesday
 fn rosh_hashana_jdn(year: i64) -> i64 {
     let molad = molad_tishrei(year);
     let day = molad.div_euclid(PARTS_PER_DAY);
@@ -273,8 +284,9 @@ fn rosh_hashana_jdn(year: i64) -> i64 {
 /// Days in a Hebrew year.
 ///
 /// Returns 353, 354, 355 (common) or 383, 384, 385 (leap), depending
-/// on the year type. Computed from the difference between consecutive
-/// Rosh Hashana dates.
+/// on the year type (deficient/regular/complete × common/leap).
+/// Computed from the difference between consecutive Rosh Hashana dates.
+/// See Dershowitz & Reingold, *Calendrical Calculations* (4th ed.), §8.2.
 #[must_use]
 pub fn hebrew_year_days(year: i64) -> u16 {
     (rosh_hashana_jdn(year + 1) - rosh_hashana_jdn(year)) as u16

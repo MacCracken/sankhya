@@ -21,6 +21,16 @@
 //! Correlation: this implementation uses the Caso correlation, which
 //! places the fall of Tenochtitlan (August 13, 1521 CE) on the Aztec
 //! date 1 Coatl in the Tonalpohualli.
+//!
+//! # Sources
+//!
+//! - Caso, *Los Calendarios Prehispánicos* (UNAM, 1967) — Caso correlation
+//! - Day sign names and order: Sahagún, *Historia General de las Cosas de
+//!   Nueva España* (Florentine Codex, 16th century)
+//! - Month names and structure: Townsend, *The Aztecs* (3rd ed., Thames &
+//!   Hudson, 2009), ch. 14
+//! - Calendar Round mechanics: Aveni, *Skywatchers of Ancient Mexico*
+//!   (University of Texas Press, 2001)
 
 use serde::{Deserialize, Serialize};
 

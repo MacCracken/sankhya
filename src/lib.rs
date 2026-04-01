@@ -41,6 +41,7 @@
 //! assert_eq!(primes.len(), 25); // 25 primes below 100
 //! ```
 
+pub mod astro;
 pub mod aztec;
 pub mod babylonian;
 pub mod chinese;

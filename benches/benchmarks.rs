@@ -145,6 +145,74 @@ fn archimedes_pi_iterations(c: &mut Criterion) {
     });
 }
 
+fn gregorian_jdn_roundtrip(c: &mut Criterion) {
+    c.bench_function("gregorian/jdn_roundtrip_1000", |b| {
+        b.iter(|| {
+            for d in 0..1000 {
+                let jdn = 2_451_544.5 + f64::from(d);
+                let date = sankhya::gregorian::jdn_to_gregorian(black_box(jdn));
+                black_box(sankhya::gregorian::gregorian_to_jdn(&date).unwrap());
+            }
+        });
+    });
+}
+
+fn hebrew_jdn_roundtrip(c: &mut Criterion) {
+    c.bench_function("hebrew/jdn_roundtrip_100", |b| {
+        b.iter(|| {
+            for d in 0..100 {
+                let jdn = 2_460_000.5 + f64::from(d);
+                let date = sankhya::hebrew::jdn_to_hebrew(black_box(jdn));
+                black_box(sankhya::hebrew::hebrew_to_jdn(&date).unwrap());
+            }
+        });
+    });
+}
+
+fn persian_jdn_roundtrip(c: &mut Criterion) {
+    c.bench_function("persian/jdn_roundtrip_1000", |b| {
+        b.iter(|| {
+            for d in 0..1000 {
+                let jdn = 2_459_294.5 + f64::from(d);
+                let date = sankhya::persian::jdn_to_persian(black_box(jdn));
+                black_box(sankhya::persian::persian_to_jdn(&date).unwrap());
+            }
+        });
+    });
+}
+
+fn astro_precession(c: &mut Criterion) {
+    c.bench_function("astro/precession_1000", |b| {
+        let coord = sankhya::astro::star_j2000(sankhya::astro::StarName::Sirius);
+        b.iter(|| {
+            for i in 0..1000 {
+                let target_jdn = 2_451_545.0 - f64::from(i) * 365.25;
+                black_box(sankhya::astro::precess_coordinates(
+                    &coord,
+                    2_451_545.0,
+                    black_box(target_jdn),
+                ));
+            }
+        });
+    });
+}
+
+fn epoch_convert_all(c: &mut Criterion) {
+    c.bench_function("epoch/convert_all_calendars", |b| {
+        b.iter(|| {
+            let greg = sankhya::gregorian::GregorianDate {
+                year: 2025,
+                month: sankhya::gregorian::GregorianMonth::January,
+                day: 1,
+            };
+            black_box(
+                sankhya::epoch::convert(&sankhya::epoch::CalendarDate::Gregorian(black_box(greg)))
+                    .unwrap(),
+            );
+        });
+    });
+}
+
 criterion_group!(
     benches,
     long_count_conversion_1000,
@@ -158,5 +226,10 @@ criterion_group!(
     epoch_correlate,
     roman_roundtrip_3999,
     archimedes_pi_iterations,
+    gregorian_jdn_roundtrip,
+    hebrew_jdn_roundtrip,
+    persian_jdn_roundtrip,
+    astro_precession,
+    epoch_convert_all,
 );
 criterion_main!(benches);

@@ -528,3 +528,188 @@ fn serde_roundtrip_error() {
     let err2: sankhya::SankhyaError = serde_json::from_str(&json).unwrap();
     assert_eq!(err, err2);
 }
+
+// ===== Gregorian =====
+
+#[test]
+fn gregorian_jdn_roundtrip_modern() {
+    // 100 years of daily roundtrips around J2000
+    for d in (0..36525).step_by(7) {
+        let jdn = 2_451_544.5 + f64::from(d);
+        let date = sankhya::gregorian::jdn_to_gregorian(jdn);
+        let back = sankhya::gregorian::gregorian_to_jdn(&date).unwrap();
+        assert!((back - jdn).abs() < f64::EPSILON, "JDN {jdn}");
+    }
+}
+
+#[test]
+fn gregorian_known_dates() {
+    use sankhya::gregorian::*;
+    // July 4, 1776 = JDN 2369915.5 (midnight)
+    let d = jdn_to_gregorian(2_369_915.5);
+    assert_eq!(d.year, 1776);
+    assert_eq!(d.month, GregorianMonth::July);
+    assert_eq!(d.day, 4);
+}
+
+// ===== Coptic =====
+
+#[test]
+fn coptic_jdn_roundtrip() {
+    let epoch = sankhya::coptic::COPTIC_EPOCH_JDN;
+    for d in 0..1500 {
+        let jdn = epoch + f64::from(d);
+        let date = sankhya::coptic::jdn_to_coptic(jdn);
+        let back = sankhya::coptic::coptic_to_jdn(&date).unwrap();
+        assert!((back - jdn).abs() < f64::EPSILON, "JDN {jdn}: {date}");
+    }
+}
+
+// ===== Persian =====
+
+#[test]
+fn persian_jdn_roundtrip() {
+    let start = 2_459_294.5; // Nowruz 1400
+    for d in 0..1500 {
+        let jdn = start + f64::from(d);
+        let date = sankhya::persian::jdn_to_persian(jdn);
+        let back = sankhya::persian::persian_to_jdn(&date).unwrap();
+        assert!((back - jdn).abs() < f64::EPSILON, "JDN {jdn}: {date}");
+    }
+}
+
+// ===== Hebrew =====
+
+#[test]
+fn hebrew_jdn_roundtrip() {
+    let start = 2_460_000.5;
+    for d in 0..1500 {
+        let jdn = start + f64::from(d);
+        let date = sankhya::hebrew::jdn_to_hebrew(jdn);
+        let back = sankhya::hebrew::hebrew_to_jdn(&date).unwrap();
+        assert!((back - jdn).abs() < f64::EPSILON, "JDN {jdn}: {date}");
+    }
+}
+
+#[test]
+fn hebrew_year_types_distribution() {
+    // Over 19-year Metonic cycle, should have 12 common + 7 leap years
+    let mut leap_count = 0;
+    for y in 5765..5784 {
+        if sankhya::hebrew::hebrew_is_leap(y) {
+            leap_count += 1;
+        }
+    }
+    assert_eq!(leap_count, 7);
+}
+
+// ===== Cross-calendar =====
+
+#[test]
+fn cross_calendar_gregorian_hebrew_coptic() {
+    // Convert Jan 1 2025 through all calendars and back
+    let greg = sankhya::gregorian::GregorianDate {
+        year: 2025,
+        month: sankhya::gregorian::GregorianMonth::January,
+        day: 1,
+    };
+    let jdn = sankhya::gregorian::gregorian_to_jdn(&greg).unwrap();
+
+    let hebrew = sankhya::hebrew::jdn_to_hebrew(jdn);
+    let coptic = sankhya::coptic::jdn_to_coptic(jdn);
+    let persian = sankhya::persian::jdn_to_persian(jdn);
+
+    // Roundtrip each back to JDN
+    let jdn_h = sankhya::hebrew::hebrew_to_jdn(&hebrew).unwrap();
+    let jdn_c = sankhya::coptic::coptic_to_jdn(&coptic).unwrap();
+    let jdn_p = sankhya::persian::persian_to_jdn(&persian).unwrap();
+
+    assert!(
+        (jdn_h - jdn).abs() < f64::EPSILON,
+        "Hebrew: {jdn_h} != {jdn}"
+    );
+    assert!(
+        (jdn_c - jdn).abs() < f64::EPSILON,
+        "Coptic: {jdn_c} != {jdn}"
+    );
+    assert!(
+        (jdn_p - jdn).abs() < f64::EPSILON,
+        "Persian: {jdn_p} != {jdn}"
+    );
+}
+
+#[test]
+fn cross_calendar_convert_api() {
+    use sankhya::epoch::{CalendarDate, calendar_to_jdn, convert};
+
+    let greg = sankhya::gregorian::GregorianDate {
+        year: 2025,
+        month: sankhya::gregorian::GregorianMonth::April,
+        day: 1,
+    };
+    let result = convert(&CalendarDate::Gregorian(greg)).unwrap();
+
+    // Verify all calendar fields are populated and consistent
+    assert_eq!(result.gregorian, greg);
+    assert!(result.mayan_long_count.is_some());
+
+    // Hebrew roundtrip through convert
+    let jdn_back = calendar_to_jdn(&CalendarDate::Hebrew(result.hebrew)).unwrap();
+    assert!((jdn_back - result.jdn).abs() < f64::EPSILON);
+}
+
+// ===== Aztec =====
+
+#[test]
+fn aztec_calendar_round_18980() {
+    // Full Calendar Round cycle
+    let (t1, x1) = sankhya::aztec::aztec_calendar_round(2_451_545.5);
+    let (t2, x2) = sankhya::aztec::aztec_calendar_round(2_451_545.5 + 18_980.0);
+    assert_eq!(t1, t2);
+    assert_eq!(x1, x2);
+}
+
+// ===== Chinese Sexagenary =====
+
+#[test]
+fn chinese_sexagenary_known_years() {
+    use sankhya::chinese::*;
+    let s2024 = sexagenary_from_year(2024);
+    assert_eq!(s2024.stem, HeavenlyStem::Jia);
+    assert_eq!(s2024.branch, EarthlyBranch::Chen);
+
+    let s1984 = sexagenary_from_year(1984);
+    assert_eq!(s1984.stem, HeavenlyStem::Jia);
+    assert_eq!(s1984.branch, EarthlyBranch::Zi); // Rat
+}
+
+// ===== Astro =====
+
+#[test]
+fn astro_precession_thuban_pole() {
+    // Thuban was pole star ~2800 BCE
+    let jdn = sankhya::epoch::J2000_JDN - 4800.0 * 365.25;
+    let pos = sankhya::astro::star_position_at(sankhya::astro::StarName::Thuban, jdn);
+    assert!(pos.dec_degrees > 85.0, "Thuban dec: {}", pos.dec_degrees);
+}
+
+#[test]
+fn astro_coordinate_roundtrip() {
+    let orig = sankhya::astro::CelestialCoord {
+        ra_hours: 12.0,
+        dec_degrees: 30.0,
+    };
+    let ecl = sankhya::astro::equatorial_to_ecliptic(&orig, sankhya::epoch::J2000_JDN);
+    let back = sankhya::astro::ecliptic_to_equatorial(&ecl, sankhya::epoch::J2000_JDN);
+    assert!((back.ra_hours - orig.ra_hours).abs() < 0.01);
+    assert!((back.dec_degrees - orig.dec_degrees).abs() < 0.01);
+}
+
+#[test]
+fn astro_stonehenge_alignment() {
+    let results = sankhya::astro::monument_alignment(51.18, 51.0, sankhya::epoch::J2000_JDN, 5.0);
+    assert!(
+        !results.is_empty(),
+        "no alignments found for Stonehenge bearing"
+    );
+}

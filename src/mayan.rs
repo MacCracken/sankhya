@@ -11,7 +11,16 @@
 //! system included a true zero (the shell glyph) centuries before
 //! the concept appeared in the Old World. The Long Count calendar
 //! tracked time from a mythological creation date of August 11, 3114 BCE
-//! (GMT correlation constant 584283).
+//! (GMT correlation constant 584,283).
+//!
+//! # Sources
+//!
+//! - Goodman-Martinez-Thompson (GMT) correlation: JDN 584,283 for the
+//!   Long Count epoch. See Thompson, *Maya Hieroglyphic Writing* (1950)
+//! - Venus table from the Dresden Codex (c. 13th century CE):
+//!   Aveni, *Skywatchers of Ancient Mexico* (University of Texas Press, 2001)
+//! - Tzolkin/Haab cycle mechanics: Lounsbury, "Maya Numeration, Computation,
+//!   and Calendrical Astronomy" in *Dictionary of Scientific Biography* (1978)
 
 use serde::{Deserialize, Serialize};
 

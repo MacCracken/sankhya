@@ -165,6 +165,7 @@ pub fn coptic_year_days(year: i64) -> u16 {
 /// *Calendrical Calculations* (4th ed., 2018), ch. 4.
 #[must_use]
 pub fn jdn_to_coptic(jdn: f64) -> CopticDate {
+    tracing::trace!(jdn, "JDN to Coptic");
     let days_since_epoch = (jdn - COPTIC_EPOCH_JDN).floor() as i64;
 
     // Helper: days from epoch to the start of a given 1-based year.
@@ -212,6 +213,7 @@ pub fn jdn_to_coptic(jdn: f64) -> CopticDate {
 /// given month and year.
 #[must_use = "returns the JDN or an error"]
 pub fn coptic_to_jdn(date: &CopticDate) -> Result<f64> {
+    tracing::trace!(year = date.year, ?date.month, day = date.day, "Coptic to JDN");
     let month_idx = COPTIC_MONTHS
         .iter()
         .position(|&m| m == date.month)

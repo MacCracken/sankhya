@@ -167,6 +167,7 @@ pub fn gregorian_year_days(year: i64) -> u16 {
 /// (4th ed., 2018) and Richards, *Mapping Time* (Oxford, 1998).
 #[must_use]
 pub fn jdn_to_gregorian(jdn: f64) -> GregorianDate {
+    tracing::trace!(jdn, "JDN to Gregorian");
     // Shift to midnight-based integer day count
     let j = (jdn + 0.5).floor() as i64;
 
@@ -225,6 +226,7 @@ pub fn jdn_to_gregorian(jdn: f64) -> GregorianDate {
 /// given month and year.
 #[must_use = "returns the JDN or an error"]
 pub fn gregorian_to_jdn(date: &GregorianDate) -> Result<f64> {
+    tracing::trace!(year = date.year, ?date.month, day = date.day, "Gregorian to JDN");
     let month_idx = GREGORIAN_MONTHS
         .iter()
         .position(|&m| m == date.month)

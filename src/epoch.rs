@@ -674,6 +674,7 @@ pub fn find_cycle_alignments(
 /// (e.g., Mayan Long Count overflow for extreme dates).
 #[must_use = "returns the multi-calendar date or an error"]
 pub fn correlate(jdn: f64) -> Result<MultiCalendarDate> {
+    tracing::debug!(jdn, "correlating JDN to multi-calendar date");
     // Mayan calendars (None if before the Mayan epoch)
     let mayan_epoch = crate::mayan::EPOCH_JDN as f64;
     let (mayan_lc, tzolkin, haab) = if jdn >= mayan_epoch {
@@ -771,6 +772,7 @@ pub enum CalendarDate {
 /// (e.g., out-of-range day for the given month).
 #[must_use = "returns the JDN or an error"]
 pub fn calendar_to_jdn(date: &CalendarDate) -> Result<f64> {
+    tracing::debug!(?date, "converting calendar date to JDN");
     match date {
         CalendarDate::Jdn(jdn) => Ok(*jdn),
         CalendarDate::Gregorian(d) => crate::gregorian::gregorian_to_jdn(d),
@@ -793,6 +795,7 @@ pub fn calendar_to_jdn(date: &CalendarDate) -> Result<f64> {
 /// Returns [`SankhyaError::ComputationError`] if any sub-computation fails.
 #[must_use = "returns the multi-calendar date or an error"]
 pub fn convert(date: &CalendarDate) -> Result<MultiCalendarDate> {
+    tracing::info!(?date, "unified calendar conversion");
     let jdn = calendar_to_jdn(date)?;
     correlate(jdn)
 }

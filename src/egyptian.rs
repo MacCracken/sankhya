@@ -34,6 +34,7 @@ use crate::error::{Result, SankhyaError};
 /// the iteration limit (prevents infinite loops on pathological inputs).
 #[must_use = "returns the unit fraction denominators or an error"]
 pub fn decompose(mut numerator: u64, mut denominator: u64) -> Result<Vec<u64>> {
+    tracing::debug!(numerator, denominator, "Egyptian fraction decomposition");
     if denominator == 0 {
         return Err(SankhyaError::InvalidFraction(
             "denominator cannot be zero".into(),

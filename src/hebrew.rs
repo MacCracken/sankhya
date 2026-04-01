@@ -329,6 +329,7 @@ fn hebrew_month_days(year: i64, month: HebrewMonth) -> u8 {
 /// decomposes the day-of-year into month and day.
 #[must_use]
 pub fn jdn_to_hebrew(jdn: f64) -> HebrewDate {
+    tracing::trace!(jdn, "JDN to Hebrew");
     let jdn_int = (jdn + 0.5).floor() as i64;
 
     // Estimate year: approximately (jdn - epoch) / 365.25 + 1
@@ -381,6 +382,7 @@ pub fn jdn_to_hebrew(jdn: f64) -> HebrewDate {
 /// (e.g., Adar I in a common year).
 #[must_use = "returns the JDN or an error"]
 pub fn hebrew_to_jdn(date: &HebrewDate) -> Result<f64> {
+    tracing::trace!(year = date.year, ?date.month, day = date.day, "Hebrew to JDN");
     let is_leap = hebrew_is_leap(date.year);
 
     // Validate month for year type

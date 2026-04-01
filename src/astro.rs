@@ -560,6 +560,13 @@ pub fn star_j2000(name: StarName) -> CelestialCoord {
 /// Based on Meeus, *Astronomical Algorithms* ch. 21.
 #[must_use]
 pub fn precess_coordinates(coord: &CelestialCoord, from_jdn: f64, to_jdn: f64) -> CelestialCoord {
+    tracing::debug!(
+        ra = coord.ra_hours,
+        dec = coord.dec_degrees,
+        from_jdn,
+        to_jdn,
+        "precessing coordinates"
+    );
     let t = (from_jdn - J2000_JDN) / 36_525.0; // centuries from J2000 to start
     let dt = (to_jdn - from_jdn) / 36_525.0; // centuries of precession
 
@@ -678,6 +685,13 @@ pub fn heliacal_rising(
     _observer_lon: f64,
 ) -> crate::error::Result<HeliacalEvent> {
     let s = star(name);
+    tracing::debug!(
+        ?name,
+        star_name = s.name,
+        jdn_start,
+        observer_lat,
+        "computing heliacal rising"
+    );
     let min_depression = arcus_visionis(s.visual_magnitude);
 
     // Search day by day for up to 400 days (slightly more than one year)
@@ -826,6 +840,13 @@ pub fn monument_alignment(
     jdn: f64,
     tolerance_degrees: f64,
 ) -> Vec<AlignmentResult> {
+    tracing::info!(
+        observer_lat,
+        azimuth,
+        jdn,
+        tolerance_degrees,
+        "analyzing monument alignment"
+    );
     let mut results = Vec::new();
 
     // Solstice alignments

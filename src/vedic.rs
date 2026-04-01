@@ -239,6 +239,7 @@ pub fn katapayadi_decode(s: &str) -> Result<u64> {
 /// Returns [`SankhyaError::OverflowError`] if any binomial coefficient overflows u64.
 #[must_use = "returns the triangle rows or an error"]
 pub fn meru_prastara(rows: usize) -> Result<Vec<Vec<u64>>> {
+    tracing::debug!(rows, "generating Meru Prastara (Pingala's triangle)");
     if rows == 0 {
         return Ok(Vec::new());
     }

@@ -218,6 +218,7 @@ pub fn persian_year_days(year: i64) -> u16 {
 /// the `march` day of Nowruz to determine the Jalaali year and day-of-year.
 #[must_use]
 pub fn jdn_to_persian(jdn: f64) -> PersianDate {
+    tracing::trace!(jdn, "JDN to Persian");
     let gy = crate::gregorian::jdn_to_gregorian(jdn);
     let gy_year = gy.year;
 
@@ -276,6 +277,7 @@ pub fn jdn_to_persian(jdn: f64) -> PersianDate {
 /// given month and year.
 #[must_use = "returns the JDN or an error"]
 pub fn persian_to_jdn(date: &PersianDate) -> Result<f64> {
+    tracing::trace!(year = date.year, ?date.month, day = date.day, "Persian to JDN");
     let month_idx = PERSIAN_MONTHS
         .iter()
         .position(|&m| m == date.month)

@@ -64,6 +64,7 @@ pub fn fibonacci_ratio(n: usize) -> f64 {
 /// Returns an empty vec if limit < 2.
 #[must_use]
 pub fn sieve(limit: usize) -> Vec<usize> {
+    tracing::trace!(limit, "Sieve of Eratosthenes");
     if limit < 2 {
         return Vec::new();
     }

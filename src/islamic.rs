@@ -77,6 +77,7 @@ pub struct AlJabrSolution {
 /// positive roots.
 #[must_use = "returns the solution or an error"]
 pub fn solve_al_jabr(a: f64, b: f64, c: f64) -> Result<AlJabrSolution> {
+    tracing::debug!(a, b, c, "solving al-Jabr equation ax² + bx + c = 0");
     if a.abs() < f64::EPSILON && b.abs() < f64::EPSILON && c.abs() < f64::EPSILON {
         return Err(SankhyaError::ComputationError(
             "all coefficients are zero".into(),
@@ -402,6 +403,7 @@ pub fn hijri_year_days(year: i64) -> u16 {
 /// Uses the standard tabular algorithm with the 30-year cycle.
 #[must_use]
 pub fn jdn_to_hijri(jdn: f64) -> HijriDate {
+    tracing::trace!(jdn, "JDN to Hijri");
     let days_since_epoch = (jdn - HIJRI_EPOCH_JDN).floor() as i64;
 
     // 30-year cycles
@@ -453,6 +455,7 @@ pub fn jdn_to_hijri(jdn: f64) -> HijriDate {
 /// Returns [`SankhyaError::InvalidDate`] if the day is out of range for the month.
 #[must_use = "returns the JDN or an error"]
 pub fn hijri_to_jdn(date: &HijriDate) -> Result<f64> {
+    tracing::trace!(year = date.year, ?date.month, day = date.day, "Hijri to JDN");
     let month_idx = HIJRI_MONTHS
         .iter()
         .position(|&m| m == date.month)

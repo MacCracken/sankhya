@@ -221,6 +221,7 @@ const BABYLONIAN_MONTH_DAYS: [u8; 12] = [30, 29, 30, 29, 30, 29, 30, 29, 30, 29,
 /// This is the civil approximation used for administrative purposes.
 #[must_use]
 pub fn jdn_to_babylonian(jdn: f64) -> BabylonianDate {
+    tracing::trace!(jdn, "JDN to Babylonian");
     let days_since_epoch = (jdn - BABYLONIAN_EPOCH_JDN).floor() as i64;
 
     let year_days = i64::from(BABYLONIAN_YEAR_DAYS);
@@ -255,6 +256,7 @@ pub fn jdn_to_babylonian(jdn: f64) -> BabylonianDate {
 /// Returns [`SankhyaError::InvalidDate`] if the day is out of range.
 #[must_use = "returns the JDN or an error"]
 pub fn babylonian_to_jdn(date: &BabylonianDate) -> Result<f64> {
+    tracing::trace!(year = date.year, ?date.month, day = date.day, "Babylonian to JDN");
     let month_idx = BABYLONIAN_MONTHS
         .iter()
         .position(|&m| m == date.month)
@@ -428,6 +430,7 @@ pub fn generate_plimpton_triples() -> Vec<(u64, u64, u64)> {
 /// Returns [`SankhyaError::InvalidBase`] if `iterations` is zero.
 #[must_use = "returns the square root or an error"]
 pub fn babylonian_sqrt(n: f64, iterations: u32) -> Result<f64> {
+    tracing::debug!(n, iterations, "Babylonian/Heron sqrt");
     if n.is_nan() || n.is_infinite() || n < 0.0 {
         return Err(SankhyaError::ComputationError(
             "cannot compute square root of negative, NaN, or infinite number".into(),

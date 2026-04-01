@@ -73,7 +73,11 @@ impl core::fmt::Display for RodNumeral {
             // Odd positions (ones, hundreds, ...) use vertical rods |
             // Even positions (tens, thousands, ...) use horizontal rods -
             let pos_from_right = digits.len() - 1 - i;
-            let rod_char = if pos_from_right.is_multiple_of(2) { '|' } else { '-' };
+            let rod_char = if pos_from_right.is_multiple_of(2) {
+                '|'
+            } else {
+                '-'
+            };
 
             if digit == 0 {
                 write!(f, " ")?;

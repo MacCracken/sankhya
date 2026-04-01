@@ -721,6 +721,70 @@ pub fn correlate(jdn: f64) -> Result<MultiCalendarDate> {
 }
 
 // ---------------------------------------------------------------------------
+// Unified calendar conversion API
+// ---------------------------------------------------------------------------
+
+/// A date in any supported calendar system.
+///
+/// Used as input to [`convert()`] for unified any-to-any calendar conversion
+/// via the JDN pivot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum CalendarDate {
+    /// Julian Day Number (direct).
+    Jdn(f64),
+    /// Proleptic Gregorian calendar.
+    Gregorian(crate::gregorian::GregorianDate),
+    /// Coptic (Alexandrian) calendar.
+    Coptic(crate::coptic::CopticDate),
+    /// Persian (Solar Hijri / Jalaali) calendar.
+    Persian(crate::persian::PersianDate),
+    /// Hebrew (Jewish) calendar.
+    Hebrew(crate::hebrew::HebrewDate),
+    /// Islamic (Hijri) tabular calendar.
+    Hijri(crate::islamic::HijriDate),
+    /// Mayan Long Count.
+    MayanLongCount(crate::mayan::LongCount),
+}
+
+/// Convert any supported calendar date to its Julian Day Number.
+///
+/// This is the first half of the any-to-any conversion: input → JDN.
+/// The second half (JDN → all systems) is handled by [`correlate()`].
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::InvalidDate`] if the input date is invalid
+/// (e.g., out-of-range day for the given month).
+#[must_use = "returns the JDN or an error"]
+pub fn calendar_to_jdn(date: &CalendarDate) -> Result<f64> {
+    match date {
+        CalendarDate::Jdn(jdn) => Ok(*jdn),
+        CalendarDate::Gregorian(d) => crate::gregorian::gregorian_to_jdn(d),
+        CalendarDate::Coptic(d) => crate::coptic::coptic_to_jdn(d),
+        CalendarDate::Persian(d) => crate::persian::persian_to_jdn(d),
+        CalendarDate::Hebrew(d) => crate::hebrew::hebrew_to_jdn(d),
+        CalendarDate::Hijri(d) => crate::islamic::hijri_to_jdn(d),
+        CalendarDate::MayanLongCount(lc) => Ok(lc.to_julian_day() as f64 - 0.5),
+    }
+}
+
+/// Convert any supported calendar date to a [`MultiCalendarDate`] containing
+/// the same moment expressed in every calendar system sankhya knows.
+///
+/// This is the unified any-to-any conversion: input → JDN → all systems.
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::InvalidDate`] if the input date is invalid.
+/// Returns [`SankhyaError::ComputationError`] if any sub-computation fails.
+#[must_use = "returns the multi-calendar date or an error"]
+pub fn convert(date: &CalendarDate) -> Result<MultiCalendarDate> {
+    let jdn = calendar_to_jdn(date)?;
+    correlate(jdn)
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -938,5 +1002,112 @@ mod tests {
         let json = serde_json::to_string(&date).unwrap();
         let back: MultiCalendarDate = serde_json::from_str(&json).unwrap();
         assert_eq!(date, back);
+    }
+
+    // -- Unified convert() API --
+
+    #[test]
+    fn convert_gregorian_to_all() {
+        let greg = crate::gregorian::GregorianDate {
+            year: 2000,
+            month: crate::gregorian::GregorianMonth::January,
+            day: 1,
+        };
+        let result = convert(&CalendarDate::Gregorian(greg)).unwrap();
+        assert_eq!(result.gregorian, greg);
+        assert!((result.jdn - 2_451_544.5).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn convert_hijri_roundtrip() {
+        // Convert a Hijri date to MultiCalendarDate, then verify the Gregorian
+        let hijri = crate::islamic::HijriDate {
+            year: 1,
+            month: crate::islamic::HijriMonth::Muharram,
+            day: 1,
+        };
+        let result = convert(&CalendarDate::Hijri(hijri)).unwrap();
+        // 1 Muharram 1 AH = July 16, 622 CE Gregorian (approximately)
+        assert_eq!(result.gregorian.year, 622);
+    }
+
+    #[test]
+    fn convert_jdn_direct() {
+        let result = convert(&CalendarDate::Jdn(2_451_544.5)).unwrap();
+        assert_eq!(result.gregorian.year, 2000);
+        assert_eq!(
+            result.gregorian.month,
+            crate::gregorian::GregorianMonth::January
+        );
+        assert_eq!(result.gregorian.day, 1);
+    }
+
+    #[test]
+    fn convert_mayan_to_all() {
+        let lc = crate::mayan::LongCount::from_days(1_872_000).unwrap();
+        let result = convert(&CalendarDate::MayanLongCount(lc)).unwrap();
+        // 13.0.0.0.0 = Dec 21, 2012
+        assert_eq!(result.gregorian.year, 2012);
+        assert_eq!(
+            result.gregorian.month,
+            crate::gregorian::GregorianMonth::December
+        );
+        assert_eq!(result.gregorian.day, 21);
+    }
+
+    #[test]
+    fn convert_cross_calendar_consistency() {
+        // Convert Gregorian Jan 1 2025 -> get Hebrew, Persian, Coptic, etc.
+        // Then convert each of those back -> should get the same JDN.
+        let greg = crate::gregorian::GregorianDate {
+            year: 2025,
+            month: crate::gregorian::GregorianMonth::January,
+            day: 1,
+        };
+        let result = convert(&CalendarDate::Gregorian(greg)).unwrap();
+        let jdn_orig = result.jdn;
+
+        // Hebrew roundtrip
+        let jdn_heb = calendar_to_jdn(&CalendarDate::Hebrew(result.hebrew)).unwrap();
+        assert!(
+            (jdn_heb - jdn_orig).abs() < f64::EPSILON,
+            "Hebrew roundtrip: {jdn_heb} != {jdn_orig}"
+        );
+
+        // Coptic roundtrip
+        let jdn_cop = calendar_to_jdn(&CalendarDate::Coptic(result.coptic)).unwrap();
+        assert!(
+            (jdn_cop - jdn_orig).abs() < f64::EPSILON,
+            "Coptic roundtrip: {jdn_cop} != {jdn_orig}"
+        );
+
+        // Persian roundtrip
+        let jdn_per = calendar_to_jdn(&CalendarDate::Persian(result.persian)).unwrap();
+        assert!(
+            (jdn_per - jdn_orig).abs() < f64::EPSILON,
+            "Persian roundtrip: {jdn_per} != {jdn_orig}"
+        );
+    }
+
+    #[test]
+    fn convert_invalid_date_errors() {
+        let bad = crate::gregorian::GregorianDate {
+            year: 2025,
+            month: crate::gregorian::GregorianMonth::February,
+            day: 30,
+        };
+        assert!(convert(&CalendarDate::Gregorian(bad)).is_err());
+    }
+
+    #[test]
+    fn calendar_date_serde_roundtrip() {
+        let cd = CalendarDate::Gregorian(crate::gregorian::GregorianDate {
+            year: 2025,
+            month: crate::gregorian::GregorianMonth::April,
+            day: 1,
+        });
+        let json = serde_json::to_string(&cd).unwrap();
+        let back: CalendarDate = serde_json::from_str(&json).unwrap();
+        assert_eq!(cd, back);
     }
 }

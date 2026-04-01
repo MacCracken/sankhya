@@ -51,6 +51,7 @@ pub mod greek;
 pub mod gregorian;
 pub mod islamic;
 pub mod mayan;
+pub mod persian;
 pub mod roman;
 pub mod vedic;
 

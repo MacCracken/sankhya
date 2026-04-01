@@ -17,6 +17,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "lipi")]
 use crate::error::{Result, SankhyaError};
 
 // ---------------------------------------------------------------------------

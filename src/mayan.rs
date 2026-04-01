@@ -46,6 +46,7 @@ pub fn to_vigesimal(mut n: u64) -> Vec<u8> {
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidBase`] if any digit is >= 20.
+#[must_use = "returns the converted value or an error"]
 pub fn from_vigesimal(digits: &[u8]) -> Result<u64> {
     let mut result: u64 = 0;
     for &d in digits {
@@ -89,6 +90,7 @@ impl MayanNumeral {
     /// # Errors
     ///
     /// Returns [`SankhyaError::InvalidBase`] if value > 19.
+    #[must_use = "returns the numeral or an error"]
     pub fn from_value(value: u8) -> Result<Self> {
         if value > 19 {
             return Err(SankhyaError::InvalidBase(format!(
@@ -160,6 +162,7 @@ impl LongCount {
     ///
     /// Returns [`SankhyaError::InvalidDate`] if katun >= 20, tun >= 20,
     /// uinal >= 18, or kin >= 20.
+    #[must_use = "returns the Long Count or an error"]
     pub fn new(baktun: u32, katun: u32, tun: u32, uinal: u32, kin: u32) -> Result<Self> {
         if katun >= 20 {
             return Err(SankhyaError::InvalidDate(format!(
@@ -196,6 +199,7 @@ impl LongCount {
     ///
     /// Returns [`SankhyaError::OverflowError`] if the day count produces a
     /// baktun value that exceeds `u32::MAX`.
+    #[must_use = "returns the Long Count or an error"]
     pub fn from_days(mut days: u64) -> Result<Self> {
         let baktun = days / 144_000;
         days %= 144_000;
@@ -234,6 +238,7 @@ impl LongCount {
     /// # Errors
     ///
     /// Returns [`SankhyaError::InvalidDate`] if `jdn` is before the Mayan epoch.
+    #[must_use = "returns the Long Count or an error"]
     pub fn from_julian_day(jdn: u64) -> Result<Self> {
         if jdn < EPOCH_JDN {
             return Err(SankhyaError::InvalidDate(format!(
@@ -509,6 +514,7 @@ pub const CALENDAR_ROUND_DAYS: u64 = 18_980;
 /// or the Haab day is out of range for the month.
 /// Returns [`SankhyaError::ComputationError`] if no match is found within
 /// one full Calendar Round cycle (should not happen for valid inputs).
+#[must_use = "returns the matching day or an error"]
 pub fn find_calendar_round(
     tzolkin_number: u8,
     tzolkin_sign: DaySign,
@@ -560,6 +566,7 @@ pub fn find_calendar_round(
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidDate`] if the Tzolkin number is not 1–13.
+#[must_use = "returns the matching day or an error"]
 pub fn find_tzolkin(tzolkin_number: u8, tzolkin_sign: DaySign, start_day: u64) -> Result<u64> {
     if !(1..=13).contains(&tzolkin_number) {
         return Err(SankhyaError::InvalidDate(format!(

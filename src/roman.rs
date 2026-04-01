@@ -64,6 +64,7 @@ impl RomanNumeral {
     /// # Errors
     ///
     /// Returns [`SankhyaError::InvalidBase`] if `value` is 0 or exceeds 3999.
+    #[must_use = "returns the numeral or an error"]
     pub fn from_value(value: u32) -> Result<Self> {
         if value == 0 || value > MAX_VALUE {
             return Err(SankhyaError::InvalidBase(format!(
@@ -85,6 +86,7 @@ impl RomanNumeral {
     ///
     /// Returns [`SankhyaError::InvalidBase`] if the string contains invalid
     /// characters or is not a valid Roman numeral.
+    #[must_use = "returns the numeral or an error"]
     pub fn parse(s: &str) -> Result<Self> {
         let value = from_roman(s)?;
         Ok(Self {
@@ -112,6 +114,7 @@ impl RomanNumeral {
     /// # Errors
     ///
     /// Returns [`SankhyaError::OverflowError`] if the sum exceeds 3999.
+    #[must_use = "returns the sum or an error"]
     pub fn add(&self, other: &Self) -> Result<Self> {
         roman_add(self.value, other.value)
     }
@@ -122,6 +125,7 @@ impl RomanNumeral {
     ///
     /// Returns [`SankhyaError::ComputationError`] if the result would be
     /// zero or negative (Roman numerals have no zero).
+    #[must_use = "returns the difference or an error"]
     pub fn subtract(&self, other: &Self) -> Result<Self> {
         roman_subtract(self.value, other.value)
     }
@@ -131,6 +135,7 @@ impl RomanNumeral {
     /// # Errors
     ///
     /// Returns [`SankhyaError::OverflowError`] if the product exceeds 3999.
+    #[must_use = "returns the product or an error"]
     pub fn multiply(&self, other: &Self) -> Result<Self> {
         roman_multiply(self.value, other.value)
     }
@@ -142,6 +147,7 @@ impl RomanNumeral {
     /// Returns [`SankhyaError::InvalidFraction`] if the divisor is zero
     /// (which cannot happen with valid `RomanNumeral` values, but guards
     /// against future API changes).
+    #[must_use = "returns the quotient and remainder or an error"]
     pub fn divide(&self, other: &Self) -> Result<(Self, Option<Self>)> {
         roman_divide(self.value, other.value)
     }
@@ -182,6 +188,7 @@ fn to_roman(mut n: u32) -> String {
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidBase`] if `value` is 0 or exceeds 3999.
+#[must_use = "returns the Roman numeral string or an error"]
 pub fn to_roman_str(value: u32) -> Result<String> {
     if value == 0 || value > MAX_VALUE {
         return Err(SankhyaError::InvalidBase(format!(
@@ -202,6 +209,7 @@ pub fn to_roman_str(value: u32) -> Result<String> {
 ///
 /// Returns [`SankhyaError::InvalidBase`] if the input is empty, contains
 /// invalid characters, or is not a valid Roman numeral.
+#[must_use = "returns the decimal value or an error"]
 pub fn from_roman(s: &str) -> Result<u32> {
     if s.is_empty() {
         return Err(SankhyaError::InvalidBase(
@@ -269,6 +277,7 @@ fn char_value(ch: char) -> Result<u32> {
 /// # Errors
 ///
 /// Returns [`SankhyaError::OverflowError`] if the sum exceeds 3999.
+#[must_use = "returns the sum or an error"]
 pub fn roman_add(a: u32, b: u32) -> Result<RomanNumeral> {
     let sum = a.checked_add(b).ok_or_else(|| {
         SankhyaError::OverflowError(format!("Roman addition overflow: {a} + {b}"))
@@ -282,6 +291,7 @@ pub fn roman_add(a: u32, b: u32) -> Result<RomanNumeral> {
 ///
 /// Returns [`SankhyaError::ComputationError`] if a ≤ b (Roman numerals
 /// have no zero or negative values).
+#[must_use = "returns the difference or an error"]
 pub fn roman_subtract(a: u32, b: u32) -> Result<RomanNumeral> {
     if a <= b {
         return Err(SankhyaError::ComputationError(format!(
@@ -296,6 +306,7 @@ pub fn roman_subtract(a: u32, b: u32) -> Result<RomanNumeral> {
 /// # Errors
 ///
 /// Returns [`SankhyaError::OverflowError`] if the product exceeds 3999.
+#[must_use = "returns the product or an error"]
 pub fn roman_multiply(a: u32, b: u32) -> Result<RomanNumeral> {
     let product = a.checked_mul(b).ok_or_else(|| {
         SankhyaError::OverflowError(format!("Roman multiplication overflow: {a} * {b}"))
@@ -312,6 +323,7 @@ pub fn roman_multiply(a: u32, b: u32) -> Result<RomanNumeral> {
 /// Returns [`SankhyaError::InvalidFraction`] if `b` is zero.
 /// Returns [`SankhyaError::ComputationError`] if the quotient is zero
 /// (i.e., a < b).
+#[must_use = "returns the quotient and remainder or an error"]
 pub fn roman_divide(a: u32, b: u32) -> Result<(RomanNumeral, Option<RomanNumeral>)> {
     if b == 0 {
         return Err(SankhyaError::InvalidFraction("division by zero".into()));

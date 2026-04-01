@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] — 2026-04-01
+
+### Added
+
+- **avatara** — Optional feature-gated dependency on avatara for Saptarishi archetype profiles. When enabled, `MultiCalendarDate` includes `saptarishi_profiles` with personality data for all seven sages
+- **itihas** — Optional feature-gated dependency on itihas for historical context. When enabled, `MultiCalendarDate` includes `eras`, `civilizations`, and `events` fields populated by `correlate()`
+
+### Fixed
+
+- **all modules** — Added `#[must_use]` to all 41 `Result`-returning public functions that were missing it, achieving full compliance with the `#[must_use]` on all pure functions principle
+
 ## [1.0.0] — 2026-04-01
 
 ### Added

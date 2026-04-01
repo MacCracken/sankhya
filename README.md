@@ -47,6 +47,8 @@ assert_eq!(roman::from_roman("MCMXCIX").unwrap(), 1999);
 
 | Feature | Default | Description |
 |---------|---------|-------------|
+| `avatara` | off | Saptarishi archetype profiles on `MultiCalendarDate` via avatara divine engine |
+| `itihas` | off | Historical context: eras, civilizations, and events on `MultiCalendarDate` |
 | `varna` | off | Script rendering: cuneiform, hieroglyphic, Devanagari, Greek alphabetic, CJK rod numerals |
 | `logging` | off | Structured tracing via `tracing-subscriber` |
 
@@ -63,7 +65,7 @@ make bench   # criterion benchmarks with history tracking
 
 - Rust 1.89+ (MSRV)
 - Dependencies: hisab, serde, thiserror, tracing
-- Optional: varna (script rendering)
+- Optional: avatara (archetype profiles), itihas (historical context), varna (script rendering)
 
 ## License
 

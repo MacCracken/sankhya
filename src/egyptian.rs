@@ -32,6 +32,7 @@ use crate::error::{Result, SankhyaError};
 /// Returns [`SankhyaError::InvalidFraction`] if the denominator is zero.
 /// Returns [`SankhyaError::ComputationError`] if decomposition exceeds
 /// the iteration limit (prevents infinite loops on pathological inputs).
+#[must_use = "returns the unit fraction denominators or an error"]
 pub fn decompose(mut numerator: u64, mut denominator: u64) -> Result<Vec<u64>> {
     if denominator == 0 {
         return Err(SankhyaError::InvalidFraction(
@@ -163,6 +164,7 @@ pub fn egyptian_multiply(a: u64, b: u64) -> u64 {
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidFraction`] if divisor is zero.
+#[must_use = "returns the quotient and remainder or an error"]
 pub fn egyptian_divide(dividend: u64, divisor: u64) -> Result<(u64, Vec<u64>)> {
     if divisor == 0 {
         return Err(SankhyaError::InvalidFraction(
@@ -495,6 +497,7 @@ pub fn sothic_position(jdn: f64) -> (i32, u32, f64) {
 ///
 /// Returns [`SankhyaError::InvalidDate`] if the latitude is outside
 /// the observable range for Sirius (-60 to +60 degrees).
+#[must_use = "returns the predicted JDN or an error"]
 pub fn next_sopdet_rising(jdn: f64, latitude: f64) -> Result<f64> {
     if !(-60.0..=60.0).contains(&latitude) {
         return Err(SankhyaError::InvalidDate(format!(

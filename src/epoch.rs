@@ -241,6 +241,20 @@ pub struct MultiCalendarDate {
     pub precessional_age: AgePosition,
     /// Approximate Julian calendar year (negative = BCE).
     pub julian_year: f64,
+    /// Proleptic Gregorian calendar date.
+    pub gregorian: crate::gregorian::GregorianDate,
+    /// Historical eras active at this date (requires `itihas` feature).
+    #[cfg(feature = "itihas")]
+    pub eras: Vec<itihas::era::Era>,
+    /// Civilizations active at this date (requires `itihas` feature).
+    #[cfg(feature = "itihas")]
+    pub civilizations: Vec<itihas::civilization::Civilization>,
+    /// Events at this year (requires `itihas` feature).
+    #[cfg(feature = "itihas")]
+    pub events: Vec<itihas::event::Event>,
+    /// Saptarishi archetype profiles from avatara (requires `avatara` feature).
+    #[cfg(feature = "avatara")]
+    pub saptarishi_profiles: Vec<(String, avatara::ArchetypeProfile)>,
 }
 
 /// A cycle alignment event: multiple cycles reaching integer multiples
@@ -554,6 +568,7 @@ pub fn cycles_elapsed(
 /// Returns [`SankhyaError::InvalidDate`] if `start_jdn >= end_jdn`.
 /// Returns [`SankhyaError::ComputationError`] if the search exceeds
 /// 10,000,000 steps.
+#[must_use = "returns the alignments or an error"]
 pub fn find_cycle_alignments(
     cycles: &[CycleName],
     start_jdn: f64,
@@ -632,6 +647,7 @@ pub fn find_cycle_alignments(
 ///
 /// Returns [`SankhyaError::ComputationError`] if any sub-computation fails
 /// (e.g., Mayan Long Count overflow for extreme dates).
+#[must_use = "returns the multi-calendar date or an error"]
 pub fn correlate(jdn: f64) -> Result<MultiCalendarDate> {
     // Mayan calendars (None if before the Mayan epoch)
     let mayan_epoch = crate::mayan::EPOCH_JDN as f64;
@@ -656,6 +672,10 @@ pub fn correlate(jdn: f64) -> Result<MultiCalendarDate> {
     // Julian year
     let year = jdn_to_julian_year(jdn);
 
+    // Historical context from itihas (when feature-gated)
+    #[cfg(feature = "itihas")]
+    let approx_year = year.round() as i32;
+
     Ok(MultiCalendarDate {
         jdn,
         mayan_long_count: mayan_lc,
@@ -664,6 +684,21 @@ pub fn correlate(jdn: f64) -> Result<MultiCalendarDate> {
         sothic_position: sothic,
         precessional_age: age,
         julian_year: year,
+        gregorian: crate::gregorian::jdn_to_gregorian(jdn),
+        #[cfg(feature = "itihas")]
+        eras: itihas::era::eras_containing(approx_year),
+        #[cfg(feature = "itihas")]
+        civilizations: itihas::civilization::active_at(approx_year),
+        #[cfg(feature = "itihas")]
+        events: itihas::event::at_year(approx_year),
+        #[cfg(feature = "avatara")]
+        saptarishi_profiles: avatara::incarnate::IncarnateSage::ALL
+            .iter()
+            .map(|sage| {
+                use avatara::Archetype;
+                (sage.name().to_string(), sage.profile())
+            })
+            .collect(),
     })
 }
 

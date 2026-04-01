@@ -49,6 +49,7 @@ pub fn vedic_multiply(a: u64, b: u64) -> u64 {
 ///
 /// Returns [`SankhyaError::ComputationError`] if the numbers are not
 /// suitable for the Nikhilam method (both must be <= base).
+#[must_use = "returns the multiplication steps or an error"]
 pub fn vedic_multiply_nikhilam(a: u64, b: u64) -> Result<(u64, u64, u64, u64, u64)> {
     // Find the nearest power of 10 >= max(a, b)
     let max_val = a.max(b);
@@ -176,6 +177,7 @@ pub fn katapayadi_encode(n: u64) -> String {
 ///
 /// Returns [`SankhyaError::ComputationError`] if the string contains
 /// unrecognized consonant groups.
+#[must_use = "returns the decoded number or an error"]
 pub fn katapayadi_decode(s: &str) -> Result<u64> {
     let consonants = [
         ("nya", 0u64),
@@ -235,6 +237,7 @@ pub fn katapayadi_decode(s: &str) -> Result<u64> {
 /// # Errors
 ///
 /// Returns [`SankhyaError::OverflowError`] if any binomial coefficient overflows u64.
+#[must_use = "returns the triangle rows or an error"]
 pub fn meru_prastara(rows: usize) -> Result<Vec<Vec<u64>>> {
     if rows == 0 {
         return Ok(Vec::new());

@@ -75,6 +75,7 @@ pub struct AlJabrSolution {
 /// Returns [`SankhyaError::ComputationError`] if all coefficients are zero.
 /// Returns [`SankhyaError::InvalidBase`] if `a`, `b`, and `c` produce no
 /// positive roots.
+#[must_use = "returns the solution or an error"]
 pub fn solve_al_jabr(a: f64, b: f64, c: f64) -> Result<AlJabrSolution> {
     if a.abs() < f64::EPSILON && b.abs() < f64::EPSILON && c.abs() < f64::EPSILON {
         return Err(SankhyaError::ComputationError(
@@ -190,6 +191,7 @@ pub enum KhayyamCubicType {
 ///
 /// Returns [`SankhyaError::ComputationError`] if the cubic has no real roots
 /// or if the iteration fails to converge.
+#[must_use = "returns the classification and roots or an error"]
 pub fn classify_khayyam_cubic(
     a3: f64,
     a2: f64,
@@ -283,6 +285,7 @@ pub fn classify_khayyam_cubic(
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidBase`] if b or c is not positive.
+#[must_use = "returns the root and completed area or an error"]
 pub fn complete_the_square(b: f64, c: f64) -> Result<(f64, f64)> {
     if b <= 0.0 || c <= 0.0 {
         return Err(SankhyaError::InvalidBase(
@@ -448,6 +451,7 @@ pub fn jdn_to_hijri(jdn: f64) -> HijriDate {
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidDate`] if the day is out of range for the month.
+#[must_use = "returns the JDN or an error"]
 pub fn hijri_to_jdn(date: &HijriDate) -> Result<f64> {
     let month_idx = HIJRI_MONTHS
         .iter()

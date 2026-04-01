@@ -42,6 +42,7 @@ pub fn to_sexagesimal(mut n: u64) -> Vec<u8> {
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidBase`] if any digit is >= 60.
+#[must_use = "returns the converted value or an error"]
 pub fn from_sexagesimal(digits: &[u8]) -> Result<u64> {
     let mut result: u64 = 0;
     for &d in digits {
@@ -81,6 +82,7 @@ impl BabylonianNumeral {
     /// # Errors
     ///
     /// Returns [`SankhyaError::InvalidBase`] if value >= 60.
+    #[must_use = "returns the numeral or an error"]
     pub fn from_value(value: u8) -> Result<Self> {
         if value >= 60 {
             return Err(SankhyaError::InvalidBase(format!(
@@ -251,6 +253,7 @@ pub fn jdn_to_babylonian(jdn: f64) -> BabylonianDate {
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidDate`] if the day is out of range.
+#[must_use = "returns the JDN or an error"]
 pub fn babylonian_to_jdn(date: &BabylonianDate) -> Result<f64> {
     let month_idx = BABYLONIAN_MONTHS
         .iter()
@@ -423,6 +426,7 @@ pub fn generate_plimpton_triples() -> Vec<(u64, u64, u64)> {
 ///
 /// Returns [`SankhyaError::ComputationError`] if `n` is negative.
 /// Returns [`SankhyaError::InvalidBase`] if `iterations` is zero.
+#[must_use = "returns the square root or an error"]
 pub fn babylonian_sqrt(n: f64, iterations: u32) -> Result<f64> {
     if n.is_nan() || n.is_infinite() || n < 0.0 {
         return Err(SankhyaError::ComputationError(
@@ -464,6 +468,7 @@ pub fn babylonian_sqrt(n: f64, iterations: u32) -> Result<f64> {
 ///
 /// Returns [`SankhyaError::InvalidBase`] if `digit` >= 60.
 #[cfg(feature = "varna")]
+#[must_use = "returns the cuneiform string or an error"]
 pub fn cuneiform_digit(digit: u8) -> Result<String> {
     if digit >= 60 {
         return Err(SankhyaError::InvalidBase(format!(
@@ -516,6 +521,7 @@ pub fn cuneiform_digit(digit: u8) -> Result<String> {
 ///
 /// Returns [`SankhyaError::InvalidBase`] if any internal digit is invalid.
 #[cfg(feature = "varna")]
+#[must_use = "returns the cuneiform string or an error"]
 pub fn to_cuneiform(n: u64) -> Result<String> {
     let digits = to_sexagesimal(n);
     let mut parts = Vec::with_capacity(digits.len());

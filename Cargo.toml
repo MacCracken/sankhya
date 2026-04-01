@@ -1,6 +1,6 @@
 [package]
 name = "sankhya"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.89"
 license = "GPL-3.0-only"
@@ -14,7 +14,9 @@ categories = ["mathematics", "science"]
 exclude = [".claude/", ".github/", "docs/", "scripts/"]
 
 [dependencies]
+avatara = { version = "1", default-features = false, optional = true }
 hisab = { version = "1", default-features = false }
+itihas = { version = "1", default-features = false, optional = true }
 varna = { version = "1", default-features = false, optional = true }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
@@ -28,6 +30,8 @@ serde_json = "1"
 
 [features]
 default = []
+avatara = ["dep:avatara"]
+itihas = ["dep:itihas"]
 varna = ["dep:varna"]
 logging = ["dep:tracing-subscriber"]
 

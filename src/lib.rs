@@ -47,6 +47,7 @@ pub mod egyptian;
 pub mod epoch;
 pub mod error;
 pub mod greek;
+pub mod gregorian;
 pub mod islamic;
 pub mod mayan;
 pub mod roman;

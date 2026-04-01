@@ -247,6 +247,8 @@ pub struct MultiCalendarDate {
     pub coptic: crate::coptic::CopticDate,
     /// Persian (Solar Hijri / Jalaali) calendar date.
     pub persian: crate::persian::PersianDate,
+    /// Hebrew (Jewish) calendar date.
+    pub hebrew: crate::hebrew::HebrewDate,
     /// Historical eras active at this date (requires `itihas` feature).
     #[cfg(feature = "itihas")]
     pub eras: Vec<itihas::era::Era>,
@@ -691,6 +693,7 @@ pub fn correlate(jdn: f64) -> Result<MultiCalendarDate> {
         gregorian: crate::gregorian::jdn_to_gregorian(jdn),
         coptic: crate::coptic::jdn_to_coptic(jdn),
         persian: crate::persian::jdn_to_persian(jdn),
+        hebrew: crate::hebrew::jdn_to_hebrew(jdn),
         #[cfg(feature = "itihas")]
         eras: itihas::era::eras_containing(approx_year),
         #[cfg(feature = "itihas")]

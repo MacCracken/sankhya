@@ -18,6 +18,7 @@
 //! | [`chinese`] | China | Rod numerals, Chinese Remainder Theorem, magic squares |
 //! | [`greek`] | Greece | Golden ratio, Sieve of Eratosthenes, Euclidean GCD, Archimedes' pi, Antikythera |
 //! | [`islamic`] | Islam | Al-Khwarizmi algebra, Khayyam cubics, completion of the square, Hijri calendar |
+//! | [`roman`] | Rome | Roman numeral conversion, validation, arithmetic (I–MMMCMXCIX) |
 //! | [`epoch`] | Cross-civilizational | Precession, precessional ages, Younger Dryas, Seven Sages, cycle alignment |
 //!
 //! ## Quick Start
@@ -48,6 +49,7 @@ pub mod error;
 pub mod greek;
 pub mod islamic;
 pub mod mayan;
+pub mod roman;
 pub mod vedic;
 
 // Re-export key types at the crate root for convenience.

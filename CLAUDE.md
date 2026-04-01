@@ -7,7 +7,7 @@
 - **Type**: Flat library crate
 - **License**: GPL-3.0
 - **MSRV**: 1.89
-- **Version**: SemVer 0.1.0
+- **Version**: SemVer 1.0.0
 
 ## Consumers
 
@@ -24,6 +24,7 @@ AGNOS ecosystem crates that need historical/ancient mathematical computations, c
 | `vedic` | Nikhilam multiplication, Sulba Sutra, Katapayadi, Meru Prastara |
 | `chinese` | Rod numerals, Chinese Remainder Theorem, magic squares |
 | `greek` | Golden ratio, sieve, GCD/LCM, Archimedes' pi, Antikythera |
+| `roman` | Roman numeral conversion, validation, arithmetic (I–MMMCMXCIX) |
 | `islamic` | Al-Khwarizmi algebra, Khayyam cubics, completion of the square, Hijri calendar |
 | `epoch` | Precession, precessional ages, Younger Dryas, Seven Sages, cycle alignment |
 

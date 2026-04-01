@@ -126,6 +126,17 @@ fn epoch_correlate(c: &mut Criterion) {
     });
 }
 
+fn roman_roundtrip_3999(c: &mut Criterion) {
+    c.bench_function("roman/roundtrip_3999", |b| {
+        b.iter(|| {
+            for n in 1..=3999u32 {
+                let s = sankhya::roman::to_roman_str(black_box(n)).unwrap();
+                black_box(sankhya::roman::from_roman(&s).unwrap());
+            }
+        });
+    });
+}
+
 fn archimedes_pi_iterations(c: &mut Criterion) {
     c.bench_function("greek/archimedes_pi_20", |b| {
         b.iter(|| {
@@ -145,6 +156,7 @@ criterion_group!(
     vedic_nikhilam_multiply,
     islamic_cubic_newton,
     epoch_correlate,
+    roman_roundtrip_3999,
     archimedes_pi_iterations,
 );
 criterion_main!(benches);

@@ -18,12 +18,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **chinese** — Rod numeral arithmetic, Chinese Remainder Theorem (Sun Tzu's algorithm), Lo Shu magic square (3x3), Siamese method for odd-order magic squares, Unicode counting rod display via varna (feature-gated)
 - **greek** — Golden ratio (PHI), Fibonacci ratio convergence, Sieve of Eratosthenes, Euclidean GCD/LCM, Archimedes' pi (polygon exhaustion method), Antikythera mechanism gear ratios (7 astronomical cycles), isopsephy and Greek alphabetic numerals via varna (feature-gated)
 - **islamic** — Al-Khwarizmi's six canonical quadratic equation forms with solver, Omar Khayyam's cubic equation classification (5 types) with Newton's method root-finding, geometric completion of the square, Hijri calendar (tabular 30-year cycle, leap year logic, JDN conversions, 12 months with Display)
+- **roman** — Roman numeral system: decimal ↔ Roman conversion (1–3999), canonical subtractive notation with round-trip validation, arithmetic (add, subtract, multiply, divide with remainder), `RomanNumeral` type with serde support, `is_valid_roman()` validator
 - **epoch** — Cross-civilizational epoch correlation: precession of the equinoxes (25,920-year Great Year, canonical ancient value), 12 precessional ages (Leo anchored to Younger Dryas ~10,800 BCE), Seven Sages traditions for all 6 civilizations, `correlate()` multi-calendar "Rosetta Stone" function, cycle alignment search across Sothic/Saros/Venus/Calendar Round/Metonic/precession, Julian year and BP ↔ JDN conversion utilities
 - **error** — `SankhyaError` with `InvalidDate`, `InvalidBase`, `InvalidFraction`, `OverflowError`, `ComputationError` variants (`#[non_exhaustive]`, serde, thiserror)
 - **varna** optional feature — gates all script-aware display functions (cuneiform, hieroglyphic, Devanagari, Greek alphabetic, CJK counting rods) via the varna multilingual engine
 - Full serde (Serialize + Deserialize) support on all public types
-- 235 tests: 132 unit, 54 adversarial (hostile input fuzzing), 48 integration, 1 doc test
-- 10 Criterion benchmarks across all modules
-- 8 per-module examples + 1 overview example
+- 275 tests: 155 unit, 64 adversarial (hostile input fuzzing), 55 integration, 1 doc test
+- 9 modules covering 7 civilizations + cross-civilizational epoch correlation
+- 11 Criterion benchmarks across all modules
+- 9 per-module examples + 1 overview example
 - 5 Architecture Decision Records (ADRs)
 - CI/CD: check, clippy, security audit, cargo-deny, MSRV (1.89), cross-platform tests (Linux/macOS), coverage (85% gate), doc warnings, automated release pipeline

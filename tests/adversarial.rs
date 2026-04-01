@@ -288,6 +288,73 @@ fn fuzz_fibonacci_ratio_zero() {
     assert!(r.is_finite());
 }
 
+// ===== Roman =====
+
+#[test]
+fn fuzz_roman_zero() {
+    assert!(sankhya::roman::to_roman_str(0).is_err());
+    assert!(sankhya::roman::RomanNumeral::from_value(0).is_err());
+}
+
+#[test]
+fn fuzz_roman_too_large() {
+    assert!(sankhya::roman::to_roman_str(4000).is_err());
+    assert!(sankhya::roman::to_roman_str(u32::MAX).is_err());
+    assert!(sankhya::roman::RomanNumeral::from_value(4000).is_err());
+}
+
+#[test]
+fn fuzz_roman_parse_empty() {
+    assert!(sankhya::roman::from_roman("").is_err());
+}
+
+#[test]
+fn fuzz_roman_parse_garbage() {
+    assert!(sankhya::roman::from_roman("HELLO").is_err());
+    assert!(sankhya::roman::from_roman("123").is_err());
+    assert!(sankhya::roman::from_roman("🏛️").is_err());
+    assert!(sankhya::roman::from_roman(" ").is_err());
+}
+
+#[test]
+fn fuzz_roman_parse_non_canonical() {
+    assert!(sankhya::roman::from_roman("IIII").is_err());
+    assert!(sankhya::roman::from_roman("VV").is_err());
+    assert!(sankhya::roman::from_roman("LL").is_err());
+    assert!(sankhya::roman::from_roman("DD").is_err());
+    assert!(sankhya::roman::from_roman("IC").is_err());
+    assert!(sankhya::roman::from_roman("IL").is_err());
+    assert!(sankhya::roman::from_roman("XM").is_err());
+}
+
+#[test]
+fn fuzz_roman_add_overflow() {
+    assert!(sankhya::roman::roman_add(3999, 1).is_err());
+    assert!(sankhya::roman::roman_add(2000, 2000).is_err());
+}
+
+#[test]
+fn fuzz_roman_subtract_to_zero() {
+    assert!(sankhya::roman::roman_subtract(5, 5).is_err());
+    assert!(sankhya::roman::roman_subtract(1, 10).is_err());
+}
+
+#[test]
+fn fuzz_roman_multiply_overflow() {
+    assert!(sankhya::roman::roman_multiply(100, 100).is_err());
+    assert!(sankhya::roman::roman_multiply(64, 63).is_err());
+}
+
+#[test]
+fn fuzz_roman_divide_by_zero() {
+    assert!(sankhya::roman::roman_divide(10, 0).is_err());
+}
+
+#[test]
+fn fuzz_roman_divide_zero_quotient() {
+    assert!(sankhya::roman::roman_divide(3, 10).is_err());
+}
+
 // ===== Islamic =====
 
 #[test]

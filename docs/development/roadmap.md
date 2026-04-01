@@ -1,22 +1,9 @@
 # Development Roadmap
 
-> **Status**: Pre-1.0 | **Current**: 0.5.0
+> **Current**: 1.0.0
 
-## v1.0 Criteria
+## v1.1
 
-- [x] 8 civilization modules (mayan, babylonian, egyptian, vedic, chinese, greek, islamic, epoch)
-- [x] All public functions return Result (no panics)
-- [x] Full serde support on all types
-- [x] Script rendering via varna (feature-gated)
-- [ ] 85%+ test coverage (adversarial + integration)
-- [ ] Comprehensive benchmarks (all modules)
-- [ ] Per-module examples
-- [ ] Architecture Decision Records
-- [ ] Published on crates.io
-
-## v1.1 Backlog
-
-- [ ] Roman numeral system (conversion, arithmetic)
 - [ ] Inca quipu (knot-based recording system)
 - [ ] Vedic astronomical computations (Surya Siddhanta)
 - [ ] Chinese astronomical calendar (Sexagenary cycle)

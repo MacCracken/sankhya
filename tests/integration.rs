@@ -5,6 +5,7 @@ use sankhya::chinese;
 use sankhya::egyptian;
 use sankhya::greek;
 use sankhya::mayan;
+use sankhya::roman;
 use sankhya::vedic;
 
 // ===== Mayan =====
@@ -394,6 +395,66 @@ fn greek_antikythera_metonic_cycle() {
     assert_eq!(metonic.gear_teeth, 235);
 }
 
+// ===== Roman =====
+
+#[test]
+fn roman_to_str_notable_years() {
+    assert_eq!(roman::to_roman_str(1776).unwrap(), "MDCCLXXVI");
+    assert_eq!(roman::to_roman_str(1999).unwrap(), "MCMXCIX");
+    assert_eq!(roman::to_roman_str(2024).unwrap(), "MMXXIV");
+    assert_eq!(roman::to_roman_str(3999).unwrap(), "MMMCMXCIX");
+}
+
+#[test]
+fn roman_parse_roundtrip_all() {
+    // Exhaustive roundtrip for the full valid range
+    for n in 1..=3999u32 {
+        let s = roman::to_roman_str(n).unwrap();
+        let parsed = roman::from_roman(&s).unwrap();
+        assert_eq!(parsed, n, "roundtrip failed for {n}");
+    }
+}
+
+#[test]
+fn roman_subtractive_pairs() {
+    assert_eq!(roman::from_roman("IV").unwrap(), 4);
+    assert_eq!(roman::from_roman("IX").unwrap(), 9);
+    assert_eq!(roman::from_roman("XL").unwrap(), 40);
+    assert_eq!(roman::from_roman("XC").unwrap(), 90);
+    assert_eq!(roman::from_roman("CD").unwrap(), 400);
+    assert_eq!(roman::from_roman("CM").unwrap(), 900);
+}
+
+#[test]
+fn roman_arithmetic_basic() {
+    let sum = roman::roman_add(14, 28).unwrap();
+    assert_eq!(sum.value(), 42);
+    assert_eq!(sum.text(), "XLII");
+
+    let diff = roman::roman_subtract(100, 1).unwrap();
+    assert_eq!(diff.value(), 99);
+    assert_eq!(diff.text(), "XCIX");
+
+    let product = roman::roman_multiply(12, 12).unwrap();
+    assert_eq!(product.value(), 144);
+    assert_eq!(product.text(), "CXLIV");
+}
+
+#[test]
+fn roman_division_with_remainder() {
+    let (q, r) = roman::roman_divide(17, 5).unwrap();
+    assert_eq!(q.value(), 3);
+    assert_eq!(r.unwrap().value(), 2);
+}
+
+#[test]
+fn roman_validation() {
+    assert!(roman::is_valid_roman("MCMXCIX"));
+    assert!(!roman::is_valid_roman("IIII"));
+    assert!(!roman::is_valid_roman("VV"));
+    assert!(!roman::is_valid_roman("IC"));
+}
+
 // ===== Serde roundtrips =====
 
 #[test]
@@ -450,6 +511,14 @@ fn serde_roundtrip_venus_phase() {
     let json = serde_json::to_string(&phase).unwrap();
     let phase2: mayan::VenusPhase = serde_json::from_str(&json).unwrap();
     assert_eq!(phase, phase2);
+}
+
+#[test]
+fn serde_roundtrip_roman_numeral() {
+    let r = roman::RomanNumeral::from_value(1776).unwrap();
+    let json = serde_json::to_string(&r).unwrap();
+    let r2: roman::RomanNumeral = serde_json::from_str(&json).unwrap();
+    assert_eq!(r, r2);
 }
 
 #[test]

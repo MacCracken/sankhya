@@ -11,6 +11,7 @@ sankhya (lib.rs)
   |-- vedic.rs      Nikhilam, Sulba Sutra, Katapayadi, Meru Prastara
   |-- chinese.rs    Rod numerals, CRT, magic squares
   |-- greek.rs      PHI, sieve, GCD, Archimedes pi, Antikythera
+  |-- roman.rs      Roman numeral conversion, validation, arithmetic
   |-- islamic.rs    Al-Khwarizmi algebra, Khayyam cubics, Hijri calendar
   |-- epoch.rs      Precession, precessional ages, Seven Sages, cycle alignment, correlate()
 ```

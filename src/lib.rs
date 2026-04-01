@@ -13,10 +13,11 @@
 //! |--------|-------------|------------|
 //! | [`mayan`] | Maya | Vigesimal numbers, Long Count calendar, Tzolkin, Haab, Venus tables |
 //! | [`babylonian`] | Babylon | Sexagesimal numbers, Saros cycle, Plimpton 322 triples, Heron's sqrt |
-//! | [`egyptian`] | Egypt | Unit fractions, doubling multiplication, stellar decans |
+//! | [`egyptian`] | Egypt | Unit fractions, doubling multiplication, stellar decans, Sothic cycle |
 //! | [`vedic`] | India | Nikhilam multiplication, Sulba Sutra geometry, Katapayadi, Meru Prastara |
 //! | [`chinese`] | China | Rod numerals, Chinese Remainder Theorem, magic squares |
 //! | [`greek`] | Greece | Golden ratio, Sieve of Eratosthenes, Euclidean GCD, Archimedes' pi, Antikythera |
+//! | [`epoch`] | Cross-civilizational | Precession, precessional ages, Younger Dryas, Seven Sages, cycle alignment |
 //!
 //! ## Quick Start
 //!
@@ -41,6 +42,7 @@
 pub mod babylonian;
 pub mod chinese;
 pub mod egyptian;
+pub mod epoch;
 pub mod error;
 pub mod greek;
 pub mod mayan;

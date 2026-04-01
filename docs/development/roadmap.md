@@ -1,18 +1,6 @@
 # Development Roadmap
 
-## Completed (v0.1.0)
-
-- [x] Error types with thiserror + serde
-- [x] Mayan: vigesimal, Long Count, Tzolkin, Haab, Calendar Round, Venus
-- [x] Babylonian: sexagesimal, Saros, reciprocals, Plimpton 322, Heron's sqrt
-- [x] Egyptian: unit fractions, multiplication, division, 36 decans
-- [x] Vedic: Nikhilam, Sulba Sutra, Katapayadi, Meru Prastara
-- [x] Chinese: rod numerals, CRT, magic squares (Lo Shu + Siamese)
-- [x] Greek: PHI, Fibonacci, sieve, GCD/LCM, Archimedes pi, Antikythera
-- [x] Full serde roundtrip coverage
-- [x] Integration tests (40+)
-- [x] Criterion benchmarks (5)
-- [x] CI/CD workflows
+> **Status**: Pre-1.0 | **Current**: 0.1.0
 
 ## Backlog
 
@@ -21,7 +9,6 @@
 - [ ] Islamic/Arabic mathematics (Al-Khwarizmi algebra, Omar Khayyam)
 - [ ] Mayan Calendar Round date search (find next occurrence)
 - [ ] Babylonian lunar calendar
-- [ ] Egyptian Sothic cycle
 - [ ] Vedic astronomical computations (Surya Siddhanta)
 - [ ] Chinese astronomical calendar (Sexagenary cycle)
 - [ ] Greek geometric constructions (compass and straightedge)
@@ -29,6 +16,7 @@
 
 ## Future
 
+- [ ] avatara integration — optional dep on avatara crate to enrich Seven Sages with archetype profiles (IncarnateSage personality data, system prompts, tradition metadata)
 - [ ] AI-assisted historical date correlation
 - [ ] Cross-civilization calendar converter
 - [ ] Interactive visualization examples

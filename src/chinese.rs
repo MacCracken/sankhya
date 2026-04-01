@@ -307,22 +307,22 @@ pub fn is_magic_square(square: &[Vec<u64>]) -> bool {
 }
 
 // ---------------------------------------------------------------------------
-// Unicode rod numeral display (requires lipi)
+// Unicode rod numeral display (requires varna)
 // ---------------------------------------------------------------------------
 
 /// Render a positive number using Unicode counting rod numeral characters.
 ///
-/// Uses the CJK Counting Rod Numerals block (U+1D360–U+1D371) from lipi's
+/// Uses the CJK Counting Rod Numerals block (U+1D360–U+1D371) from varna's
 /// Chinese rod numeral system. These are the vertical forms (𝍠=1 through 𝍨=9).
 /// Zero positions are shown as a space.
 ///
-/// Requires the `lipi` feature.
+/// Requires the `varna` feature.
 ///
 /// # Errors
 ///
 /// Returns [`crate::SankhyaError::InvalidBase`] if `n` is zero (rod numerals have
 /// no zero representation — an empty space on the counting board).
-#[cfg(feature = "lipi")]
+#[cfg(feature = "varna")]
 #[must_use = "returns the Unicode rod numeral string without side effects"]
 pub fn to_unicode_rods(n: u64) -> crate::error::Result<String> {
     if n == 0 {
@@ -331,7 +331,7 @@ pub fn to_unicode_rods(n: u64) -> crate::error::Result<String> {
         ));
     }
 
-    let system = lipi::script::numerals::chinese_rod_numerals();
+    let system = varna::script::numerals::chinese_rod_numerals();
     let mut digits = Vec::new();
     let mut remaining = n;
 
@@ -402,7 +402,7 @@ mod tests {
         assert!(magic_square(4).is_none());
     }
 
-    #[cfg(feature = "lipi")]
+    #[cfg(feature = "varna")]
     mod unicode_rod_tests {
         use super::*;
 

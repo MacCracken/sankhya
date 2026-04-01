@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Adversarial test suite for hostile input fuzzing across all modules
+- Expanded benchmark suite (babylonian sqrt, vedic multiply, islamic cubic, epoch correlation)
+- Per-module examples (mayan, babylonian, egyptian, vedic, chinese, greek, islamic, epoch)
+- Architecture Decision Records (ADRs)
+- Coverage gate raised to 85%
+
+### Changed
+
+- **dependencies** — `lipi` renamed to `varna` (crate rename)
+
+## [0.5.0] - 2026-04-01
+
+### Added
+
+- **islamic** — Islamic and Arabic mathematics module:
+  - Al-Khwarizmi's six canonical quadratic equation forms with solver
+  - Omar Khayyam's cubic equation classification (5 types) with Newton's method root-finding
+  - Al-Khwarizmi's geometric completion of the square
+  - Hijri (Islamic) calendar: tabular 30-year cycle, leap year logic, JDN conversions
+  - 12 Hijri months with Display implementations
 - **epoch** — Cross-civilizational epoch correlation module:
   - Precession of the equinoxes (25,920-year Great Year, canonical ancient value)
   - Precessional ages (12 zodiacal ages, Leo anchored to Younger Dryas ~10,800 BCE)
@@ -22,12 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `sothic_drift()`, `sothic_position()` — calendar drift and cycle position anchored to Censorinus epoch (139 CE)
   - `next_sopdet_rising()` — heliacal rising prediction with latitude adjustment
   - Constants: `SOTHIC_CYCLE_CIVIL_YEARS`, `SOTHIC_CYCLE_DAYS`, `CENSORINUS_EPOCH_JDN`
-- **greek** — `isopsephy()` and `to_greek_numeral()` — Greek alphabetic numeral system via lipi (feature-gated)
-- **babylonian** — `cuneiform_digit()` and `to_cuneiform()` — cuneiform sexagesimal display via lipi (feature-gated)
-- **egyptian** — `to_hieroglyphic()` — Egyptian hieroglyphic numeral display via lipi (feature-gated)
-- **vedic** — `katapayadi_encode_devanagari()` and `to_devanagari_digits()` — Devanagari script output via lipi (feature-gated)
-- **chinese** — `to_unicode_rods()` — Unicode counting rod numeral display via lipi (feature-gated)
-- `lipi` optional feature — gates all script-aware display functions via the lipi multilingual engine
+- **babylonian** — Lunar calendar (Seleucid Era epoch, 12 months, alternating 30/29 days, JDN conversions, synodic month computation)
+- **babylonian** — `cuneiform_digit()` and `to_cuneiform()` — cuneiform sexagesimal display via varna (feature-gated)
+- **egyptian** — `to_hieroglyphic()` — Egyptian hieroglyphic numeral display via varna (feature-gated)
+- **vedic** — `katapayadi_encode_devanagari()` and `to_devanagari_digits()` — Devanagari script output via varna (feature-gated)
+- **chinese** — `to_unicode_rods()` — Unicode counting rod numeral display via varna (feature-gated)
+- **greek** — `isopsephy()` and `to_greek_numeral()` — Greek alphabetic numeral system via varna (feature-gated)
+- **mayan** — Calendar Round date search (`find_calendar_round()`, `find_tzolkin()`)
+- `varna` optional feature — gates all script-aware display functions via the varna multilingual engine
 
 ### Changed
 

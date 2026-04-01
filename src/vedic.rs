@@ -263,27 +263,27 @@ pub fn meru_prastara(rows: usize) -> Result<Vec<Vec<u64>>> {
 }
 
 // ---------------------------------------------------------------------------
-// Devanagari Katapayadi encoding (requires lipi)
+// Devanagari Katapayadi encoding (requires varna)
 // ---------------------------------------------------------------------------
 
 /// Encode a number using Katapayadi with Devanagari script output.
 ///
 /// Like [`katapayadi_encode`], but returns the encoding in Devanagari
-/// consonants rather than romanized syllables, using lipi's IAST
+/// consonants rather than romanized syllables, using varna's IAST
 /// transliteration table for accurate script conversion.
 ///
 /// Each digit maps to a Devanagari consonant from the ka-varga and
 /// ca-varga groups: क=1, ख=2, ग=3, घ=4, ङ=5, च=6, छ=7, ज=8, झ=9, ञ=0.
 ///
-/// Requires the `lipi` feature.
-#[cfg(feature = "lipi")]
+/// Requires the `varna` feature.
+#[cfg(feature = "varna")]
 #[must_use]
 pub fn katapayadi_encode_devanagari(n: u64) -> String {
-    let table = lipi::script::transliteration::devanagari_iast();
+    let table = varna::script::transliteration::devanagari_iast();
     let reverse = table.reverse_map();
 
     // IAST syllables for each digit (with inherent 'a' vowel, matching
-    // lipi's Devanagari→IAST table which maps क→"ka", ख→"kha", etc.).
+    // varna's Devanagari→IAST table which maps क→"ka", ख→"kha", etc.).
     // We reverse-lookup: "ka" → "क".
     let iast_syllables = [
         "ña", "ka", "kha", "ga", "gha", "ṅa", "ca", "cha", "ja", "jha",
@@ -311,13 +311,13 @@ pub fn katapayadi_encode_devanagari(n: u64) -> String {
 
 /// Render a number in Devanagari digits (०-९).
 ///
-/// Uses lipi's Devanagari numeral system for digit-by-digit conversion.
+/// Uses varna's Devanagari numeral system for digit-by-digit conversion.
 ///
-/// Requires the `lipi` feature.
-#[cfg(feature = "lipi")]
+/// Requires the `varna` feature.
+#[cfg(feature = "varna")]
 #[must_use]
 pub fn to_devanagari_digits(n: u64) -> String {
-    let system = lipi::script::numerals::devanagari_digits();
+    let system = varna::script::numerals::devanagari_digits();
     if n == 0 {
         return system.char_for(0).unwrap_or("०").to_string();
     }
@@ -388,7 +388,7 @@ mod tests {
         assert_eq!(triangle[4], vec![1, 4, 6, 4, 1]);
     }
 
-    #[cfg(feature = "lipi")]
+    #[cfg(feature = "varna")]
     mod devanagari_tests {
         use super::*;
 

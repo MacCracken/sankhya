@@ -424,9 +424,9 @@ pub fn generate_plimpton_triples() -> Vec<(u64, u64, u64)> {
 /// Returns [`SankhyaError::ComputationError`] if `n` is negative.
 /// Returns [`SankhyaError::InvalidBase`] if `iterations` is zero.
 pub fn babylonian_sqrt(n: f64, iterations: u32) -> Result<f64> {
-    if n < 0.0 {
+    if n.is_nan() || n.is_infinite() || n < 0.0 {
         return Err(SankhyaError::ComputationError(
-            "cannot compute square root of negative number".into(),
+            "cannot compute square root of negative, NaN, or infinite number".into(),
         ));
     }
     if n == 0.0 {
@@ -446,24 +446,24 @@ pub fn babylonian_sqrt(n: f64, iterations: u32) -> Result<f64> {
 }
 
 // ---------------------------------------------------------------------------
-// Cuneiform display (requires lipi)
+// Cuneiform display (requires varna)
 // ---------------------------------------------------------------------------
 
 /// Render a sexagesimal digit (0-59) in cuneiform notation.
 ///
-/// Uses the Babylonian cuneiform numeral system from lipi: 𒐕 (diš) for
+/// Uses the Babylonian cuneiform numeral system from varna: 𒐕 (diš) for
 /// units 1-9, 𒌋/𒌋𒌋/𒌍 for tens 10/20/30. Digits above 30 are composed
 /// additively (e.g., 42 = 𒌍 + 𒐖 + 𒌋 = "𒌍𒌋𒐖").
 ///
 /// Returns a space `" "` for zero (Babylonians had no zero symbol in
 /// early periods).
 ///
-/// Requires the `lipi` feature.
+/// Requires the `varna` feature.
 ///
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidBase`] if `digit` >= 60.
-#[cfg(feature = "lipi")]
+#[cfg(feature = "varna")]
 pub fn cuneiform_digit(digit: u8) -> Result<String> {
     if digit >= 60 {
         return Err(SankhyaError::InvalidBase(format!(
@@ -474,7 +474,7 @@ pub fn cuneiform_digit(digit: u8) -> Result<String> {
         return Ok(" ".into());
     }
 
-    let system = lipi::script::numerals::babylonian_sexagesimal();
+    let system = varna::script::numerals::babylonian_sexagesimal();
     let tens = digit / 10;
     let units = digit % 10;
     let mut result = String::new();
@@ -510,12 +510,12 @@ pub fn cuneiform_digit(digit: u8) -> Result<String> {
 /// Digits are separated by a middle dot `·` for readability,
 /// matching the modern convention for displaying sexagesimal.
 ///
-/// Requires the `lipi` feature.
+/// Requires the `varna` feature.
 ///
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidBase`] if any internal digit is invalid.
-#[cfg(feature = "lipi")]
+#[cfg(feature = "varna")]
 pub fn to_cuneiform(n: u64) -> Result<String> {
     let digits = to_sexagesimal(n);
     let mut parts = Vec::with_capacity(digits.len());
@@ -628,7 +628,7 @@ mod tests {
         assert_eq!(date, back);
     }
 
-    #[cfg(feature = "lipi")]
+    #[cfg(feature = "varna")]
     mod cuneiform_tests {
         use super::*;
 

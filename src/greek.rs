@@ -17,7 +17,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-#[cfg(feature = "lipi")]
+#[cfg(feature = "varna")]
 use crate::error::{Result, SankhyaError};
 
 // ---------------------------------------------------------------------------
@@ -183,13 +183,13 @@ pub fn archimedes_pi(iterations: u32) -> (f64, f64) {
 /// Each letter maps to a value: α=1, β=2, ... θ=9, ι=10, κ=20, ... π=80,
 /// ρ=100, σ=200, ... ω=800. The word value is the additive sum.
 ///
-/// Requires the `lipi` feature for the numeral system tables.
+/// Requires the `varna` feature for the numeral system tables.
 ///
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidBase`] if the input is empty or contains
 /// characters with no isopsephy mapping.
-#[cfg(feature = "lipi")]
+#[cfg(feature = "varna")]
 #[must_use = "returns the computed isopsephy value without side effects"]
 pub fn isopsephy(word: &str) -> Result<u32> {
     if word.is_empty() {
@@ -197,7 +197,7 @@ pub fn isopsephy(word: &str) -> Result<u32> {
             "empty string has no isopsephy value".into(),
         ));
     }
-    let system = lipi::script::numerals::greek_isopsephy();
+    let system = varna::script::numerals::greek_isopsephy();
     system.string_value(word).ok_or_else(|| {
         SankhyaError::InvalidBase(format!(
             "word contains characters with no isopsephy mapping: {word}"
@@ -214,13 +214,13 @@ pub fn isopsephy(word: &str) -> Result<u32> {
 ///
 /// Numbers are decomposed additively: 358 = τ (300) + ν (50) + η (8) = "τνη".
 ///
-/// Requires the `lipi` feature.
+/// Requires the `varna` feature.
 ///
 /// # Errors
 ///
 /// Returns [`SankhyaError::InvalidBase`] if `n` is 0 or exceeds the
 /// representable range.
-#[cfg(feature = "lipi")]
+#[cfg(feature = "varna")]
 #[must_use = "returns the numeral string without side effects"]
 pub fn to_greek_numeral(n: u32) -> Result<String> {
     if n == 0 {
@@ -229,7 +229,7 @@ pub fn to_greek_numeral(n: u32) -> Result<String> {
         ));
     }
 
-    let system = lipi::script::numerals::greek_isopsephy();
+    let system = varna::script::numerals::greek_isopsephy();
 
     // Decompose into hundreds, tens, units using available letter values.
     // Available values in descending order from the isopsephy table.
@@ -404,7 +404,7 @@ mod tests {
         assert_eq!(metonic.period_years, "19");
     }
 
-    #[cfg(feature = "lipi")]
+    #[cfg(feature = "varna")]
     mod isopsephy_tests {
         use super::*;
 

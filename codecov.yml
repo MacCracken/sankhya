@@ -2,11 +2,11 @@ coverage:
   status:
     project:
       default:
-        target: 80%
+        target: 85%
         threshold: 2%
     patch:
       default:
-        target: 75%
+        target: 80%
 
 ignore:
   - "benches/"

@@ -523,7 +523,7 @@ pub fn next_sopdet_rising(jdn: f64, latitude: f64) -> Result<f64> {
 }
 
 // ---------------------------------------------------------------------------
-// Hieroglyphic numeral display (requires lipi)
+// Hieroglyphic numeral display (requires varna)
 // ---------------------------------------------------------------------------
 
 /// Render a number in Egyptian hieroglyphic notation.
@@ -541,13 +541,13 @@ pub fn next_sopdet_rising(jdn: f64, latitude: f64) -> Result<f64> {
 /// - 𓆐 = 100,000 (tadpole)
 /// - 𓁨 = 1,000,000 (god Heh)
 ///
-/// Requires the `lipi` feature.
+/// Requires the `varna` feature.
 ///
 /// # Errors
 ///
 /// Returns [`SankhyaError::OverflowError`] if the number exceeds what the
 /// hieroglyphic system can represent (> 9,999,999).
-#[cfg(feature = "lipi")]
+#[cfg(feature = "varna")]
 #[must_use = "returns the hieroglyphic string without side effects"]
 pub fn to_hieroglyphic(n: u64) -> Result<String> {
     if n == 0 {
@@ -559,7 +559,7 @@ pub fn to_hieroglyphic(n: u64) -> Result<String> {
         )));
     }
 
-    let system = lipi::script::numerals::egyptian_hieroglyphic();
+    let system = varna::script::numerals::egyptian_hieroglyphic();
     let powers: &[u64] = &[1_000_000, 100_000, 10_000, 1_000, 100, 10, 1];
     let mut result = String::new();
     let mut remainder = n;
@@ -687,7 +687,7 @@ mod tests {
         assert!(next_sopdet_rising(2_451_545.0, 80.0).is_err());
     }
 
-    #[cfg(feature = "lipi")]
+    #[cfg(feature = "varna")]
     mod hieroglyphic_tests {
         use super::*;
 

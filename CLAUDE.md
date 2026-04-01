@@ -20,10 +20,12 @@ AGNOS ecosystem crates that need historical/ancient mathematical computations, c
 | `error` | SankhyaError enum (thiserror, serde, non_exhaustive) |
 | `mayan` | Vigesimal numbers, Long Count, Tzolkin, Haab, Calendar Round, Venus tables |
 | `babylonian` | Sexagesimal numbers, Saros cycle, reciprocals, Plimpton 322, Heron's sqrt |
-| `egyptian` | Unit fractions, doubling multiplication, division, stellar decans |
+| `egyptian` | Unit fractions, doubling multiplication, division, stellar decans, Sothic cycle |
 | `vedic` | Nikhilam multiplication, Sulba Sutra, Katapayadi, Meru Prastara |
 | `chinese` | Rod numerals, Chinese Remainder Theorem, magic squares |
 | `greek` | Golden ratio, sieve, GCD/LCM, Archimedes' pi, Antikythera |
+| `islamic` | Al-Khwarizmi algebra, Khayyam cubics, completion of the square, Hijri calendar |
+| `epoch` | Precession, precessional ages, Younger Dryas, Seven Sages, cycle alignment |
 
 ## Key Principles
 

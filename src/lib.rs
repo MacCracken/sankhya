@@ -26,7 +26,7 @@
 //! use sankhya::greek;
 //!
 //! // Convert days to Mayan Long Count
-//! let lc = LongCount::from_days(1_872_000); // 13.0.0.0.0 (Dec 21, 2012)
+//! let lc = LongCount::from_days(1_872_000).unwrap(); // 13.0.0.0.0 (Dec 21, 2012)
 //! assert_eq!(lc.baktun, 13);
 //!
 //! // Babylonian square root

@@ -14,7 +14,7 @@ fn mayan_long_count_dec_21_2012() {
     // December 21, 2012 corresponds to Mayan Long Count 13.0.0.0.0
     // = 13 baktun = 13 * 144,000 = 1,872,000 days from creation
     let days = 13u64 * 144_000;
-    let lc = mayan::LongCount::from_days(days);
+    let lc = mayan::LongCount::from_days(days).unwrap();
     assert_eq!(lc.baktun, 13);
     assert_eq!(lc.katun, 0);
     assert_eq!(lc.tun, 0);
@@ -27,7 +27,7 @@ fn mayan_long_count_dec_21_2012() {
 fn mayan_long_count_roundtrip() {
     // Roundtrip: days -> LongCount -> days
     for days in [0, 1, 20, 360, 7200, 144_000, 1_872_000, 2_000_000] {
-        let lc = mayan::LongCount::from_days(days);
+        let lc = mayan::LongCount::from_days(days).unwrap();
         assert_eq!(lc.to_days(), days, "roundtrip failed for {days} days");
     }
 }
@@ -398,7 +398,7 @@ fn greek_antikythera_metonic_cycle() {
 
 #[test]
 fn serde_roundtrip_long_count() {
-    let lc = mayan::LongCount::from_days(1_872_000);
+    let lc = mayan::LongCount::from_days(1_872_000).unwrap();
     let json = serde_json::to_string(&lc).unwrap();
     let lc2: mayan::LongCount = serde_json::from_str(&json).unwrap();
     assert_eq!(lc, lc2);

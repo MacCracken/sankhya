@@ -23,9 +23,8 @@ use crate::error::{Result, SankhyaError};
 
 /// Convert a decimal number to vigesimal (base-20) digits, most significant first.
 ///
-/// Returns an empty vec for zero (the Maya had a zero glyph, but we represent
-/// it as an empty digit sequence at the top level; use [`MayanNumeral`] for
-/// glyph-level representation).
+/// Returns `[0]` for zero (the Maya had an explicit zero glyph — the shell).
+/// Use [`MayanNumeral`] for glyph-level representation.
 #[must_use]
 pub fn to_vigesimal(mut n: u64) -> Vec<u8> {
     if n == 0 {
@@ -192,8 +191,12 @@ impl LongCount {
     }
 
     /// Convert a day count (days since the Mayan creation date) to Long Count.
-    #[must_use]
-    pub fn from_days(mut days: u64) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SankhyaError::OverflowError`] if the day count produces a
+    /// baktun value that exceeds `u32::MAX`.
+    pub fn from_days(mut days: u64) -> Result<Self> {
         let baktun = days / 144_000;
         days %= 144_000;
         let katun = days / 7_200;
@@ -202,13 +205,17 @@ impl LongCount {
         days %= 360;
         let uinal = days / 20;
         let kin = days % 20;
-        Self {
-            baktun: baktun as u32,
+        Ok(Self {
+            baktun: u32::try_from(baktun).map_err(|_| {
+                SankhyaError::OverflowError(format!(
+                    "day count {days} exceeds maximum representable baktun"
+                ))
+            })?,
             katun: katun as u32,
             tun: tun as u32,
             uinal: uinal as u32,
             kin: kin as u32,
-        }
+        })
     }
 
     /// Convert this Long Count to a day count (days since creation date).
@@ -233,7 +240,7 @@ impl LongCount {
                 "JDN {jdn} is before the Mayan epoch (JDN {EPOCH_JDN})"
             )));
         }
-        Ok(Self::from_days(jdn - EPOCH_JDN))
+        Self::from_days(jdn - EPOCH_JDN)
     }
 
     /// Convert this Long Count to a Julian Day Number.
@@ -569,7 +576,7 @@ mod tests {
     #[test]
     fn long_count_creation_date() {
         // The creation date is 0.0.0.0.0
-        let lc = LongCount::from_days(0);
+        let lc = LongCount::from_days(0).unwrap();
         assert_eq!(lc.to_days(), 0);
         assert_eq!(lc.baktun, 0);
     }
@@ -578,7 +585,7 @@ mod tests {
     fn long_count_dec_21_2012() {
         // Dec 21, 2012 = 13.0.0.0.0 = 1,872,000 days from creation
         let days = 13u64 * 144_000;
-        let lc = LongCount::from_days(days);
+        let lc = LongCount::from_days(days).unwrap();
         assert_eq!(lc.baktun, 13);
         assert_eq!(lc.katun, 0);
         assert_eq!(lc.tun, 0);

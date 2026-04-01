@@ -282,9 +282,9 @@ pub fn katapayadi_encode_devanagari(n: u64) -> String {
     let table = lipi::script::transliteration::devanagari_iast();
     let reverse = table.reverse_map();
 
-    // IAST consonants for each digit (without trailing 'a')
-    // The IAST table maps Devanagari -> "ka", "kha", etc.
-    // We need the reverse: "ka" -> "क", etc.
+    // IAST syllables for each digit (with inherent 'a' vowel, matching
+    // lipi's Devanagari→IAST table which maps क→"ka", ख→"kha", etc.).
+    // We reverse-lookup: "ka" → "क".
     let iast_syllables = [
         "ña", "ka", "kha", "ga", "gha", "ṅa", "ca", "cha", "ja", "jha",
     ];

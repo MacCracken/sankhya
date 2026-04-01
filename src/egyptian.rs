@@ -403,6 +403,126 @@ pub fn decan_from_longitude(degrees: f64) -> &'static Decan {
 }
 
 // ---------------------------------------------------------------------------
+// Sothic cycle (Sopdet / Sirius)
+// ---------------------------------------------------------------------------
+
+/// The Sothic cycle length in Julian years: 1,461 civil years = 1,460 Julian years.
+///
+/// The Egyptian civil calendar had exactly 365 days (no leap year). The true
+/// solar year is ~365.25 days. This 0.25-day annual drift accumulates until
+/// the heliacal rising of Sopdet (Sirius) returns to the same civil calendar
+/// date after 1,461 civil years (365 * 1461 = 365.25 * 1460 = 533,265 days).
+///
+/// The Sothic cycle was the backbone of Egyptian chronology. The Roman writer
+/// Censorinus recorded a Sothic rising on 1 Thoth in 139 CE, allowing
+/// historians to anchor the entire Egyptian calendar.
+pub const SOTHIC_CYCLE_CIVIL_YEARS: u32 = 1461;
+
+/// Days in one Sothic cycle: 365 * 1461 = 533,265 days.
+pub const SOTHIC_CYCLE_DAYS: u64 = 533_265;
+
+/// Annual drift of the civil calendar against the heliacal rising of
+/// Sopdet, in days per civil year. Approximately 0.25 days/year.
+pub const SOTHIC_DRIFT_PER_YEAR: f64 = 0.25;
+
+/// The Julian Day Number of the Censorinus epoch: 1 Thoth coincided with
+/// the heliacal rising of Sopdet on July 20, 139 CE (Julian).
+///
+/// JDN 1,772,028.5 = July 20, 139 CE (Julian calendar).
+/// This is the most securely dated Sothic rising in the historical record.
+pub const CENSORINUS_EPOCH_JDN: f64 = 1_772_028.5;
+
+/// Return a reference to the Sopdet decan — Sirius, the brightest star,
+/// whose heliacal rising governed the Egyptian calendar and heralded
+/// the annual Nile flood (Akhet season).
+///
+/// Sopdet is decan #20 (ecliptic longitude ~190 degrees).
+#[must_use]
+#[inline]
+pub fn sopdet() -> &'static Decan {
+    &DECANS[19] // 0-indexed: decan #20
+}
+
+/// Compute the drift in days between the civil calendar and the heliacal
+/// rising of Sopdet for a given number of years since a Sothic epoch.
+///
+/// At a Sothic epoch (e.g., 139 CE Censorinus), the drift is zero.
+/// Each year, the civil calendar falls behind by ~0.25 days.
+/// After 1,461 civil years the cycle resets.
+///
+/// Returns the drift in days (0.0 to ~365.25).
+#[must_use]
+pub fn sothic_drift(years_since_epoch: u32) -> f64 {
+    let years_in_cycle = years_since_epoch % SOTHIC_CYCLE_CIVIL_YEARS;
+    f64::from(years_in_cycle) * SOTHIC_DRIFT_PER_YEAR
+}
+
+/// Determine the position within the current Sothic cycle for a given
+/// Julian Day Number, referenced to the Censorinus epoch (139 CE).
+///
+/// Returns `(cycle_number, year_within_cycle, drift_days)`:
+/// - `cycle_number`: which Sothic cycle (0 = the cycle containing 139 CE)
+/// - `year_within_cycle`: civil year position (0-1460) within the cycle
+/// - `drift_days`: accumulated calendar drift in days
+#[must_use]
+pub fn sothic_position(jdn: f64) -> (i32, u32, f64) {
+    let days_from_epoch = jdn - CENSORINUS_EPOCH_JDN;
+    let civil_years_from_epoch = days_from_epoch / 365.0;
+
+    let cycle_number =
+        (civil_years_from_epoch / f64::from(SOTHIC_CYCLE_CIVIL_YEARS)).floor() as i32;
+    let year_in_cycle = ((civil_years_from_epoch % f64::from(SOTHIC_CYCLE_CIVIL_YEARS))
+        + f64::from(SOTHIC_CYCLE_CIVIL_YEARS))
+        % f64::from(SOTHIC_CYCLE_CIVIL_YEARS);
+    let year_in_cycle_u32 = year_in_cycle as u32;
+    let drift = sothic_drift(year_in_cycle_u32);
+
+    (cycle_number, year_in_cycle_u32, drift)
+}
+
+/// Predict the Julian Day Number of the next heliacal rising of Sopdet
+/// after a given JDN, for a given geographic latitude.
+///
+/// The heliacal rising of Sirius occurs when it first becomes visible
+/// at dawn after its period of invisibility (conjunction with the Sun).
+/// At Memphis (30 degrees N), this historically occurred around July 19
+/// (Julian). The date shifts by roughly 1 day per degree of latitude.
+///
+/// This is an approximation based on the Sothic cycle drift model.
+/// For precise astronomical computation, external ephemeris data is needed.
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::InvalidDate`] if the latitude is outside
+/// the observable range for Sirius (-60 to +60 degrees).
+pub fn next_sopdet_rising(jdn: f64, latitude: f64) -> Result<f64> {
+    if !(-60.0..=60.0).contains(&latitude) {
+        return Err(SankhyaError::InvalidDate(format!(
+            "latitude {latitude} outside observable range for Sirius (-60 to +60)"
+        )));
+    }
+
+    // Base heliacal rising at Memphis (30 degrees N): ~July 19 Julian
+    // Approximate: JDN offset from Jan 1 to July 19 = 200 days
+    // Latitude adjustment: roughly +1 day per degree north of 30 degrees N
+    let latitude_offset = latitude - 30.0;
+
+    // Find the year of the input JDN relative to J2000.0
+    let year_approx = 2000.0 + (jdn - 2_451_545.0) / 365.25;
+    let jan1_jdn = 2_451_545.0 + (year_approx.floor() - 2000.0) * 365.25;
+
+    // Approximate heliacal rising for this year
+    let rising_jdn = jan1_jdn + 200.0 + latitude_offset;
+
+    // If the rising already passed this year, return next year's
+    if rising_jdn <= jdn {
+        Ok(rising_jdn + 365.25)
+    } else {
+        Ok(rising_jdn)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Hieroglyphic numeral display (requires lipi)
 // ---------------------------------------------------------------------------
 
@@ -510,6 +630,61 @@ mod tests {
     fn decan_negative_longitude() {
         let d = decan_from_longitude(-10.0);
         assert_eq!(d.number, 36); // 350 degrees
+    }
+
+    // -- Sothic cycle tests --
+
+    #[test]
+    fn sopdet_is_decan_20() {
+        let s = sopdet();
+        assert_eq!(s.number, 20);
+        assert_eq!(s.name, "Sopdet");
+    }
+
+    #[test]
+    fn sothic_drift_at_epoch_is_zero() {
+        let drift = sothic_drift(0);
+        assert!((drift - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn sothic_drift_after_4_years() {
+        // 4 years * 0.25 days/year = 1 day drift
+        let drift = sothic_drift(4);
+        assert!((drift - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn sothic_drift_full_cycle_resets() {
+        // At exactly 1461 years, the cycle resets
+        let drift = sothic_drift(SOTHIC_CYCLE_CIVIL_YEARS);
+        assert!((drift - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn sothic_position_at_censorinus_epoch() {
+        let (cycle, year, drift) = sothic_position(CENSORINUS_EPOCH_JDN);
+        assert_eq!(cycle, 0);
+        assert_eq!(year, 0);
+        assert!((drift - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn sothic_cycle_days_consistent() {
+        // 365 * 1461 = 533,265
+        assert_eq!(365 * u64::from(SOTHIC_CYCLE_CIVIL_YEARS), SOTHIC_CYCLE_DAYS);
+    }
+
+    #[test]
+    fn next_sopdet_rising_memphis() {
+        // At Memphis (30 degrees N), should return a valid JDN
+        let rising = next_sopdet_rising(2_451_545.0, 30.0).unwrap(); // J2000.0
+        assert!(rising > 2_451_545.0);
+    }
+
+    #[test]
+    fn next_sopdet_rising_invalid_latitude() {
+        assert!(next_sopdet_rising(2_451_545.0, 80.0).is_err());
     }
 
     #[cfg(feature = "lipi")]

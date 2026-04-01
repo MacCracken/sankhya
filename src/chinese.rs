@@ -320,7 +320,7 @@ pub fn is_magic_square(square: &[Vec<u64>]) -> bool {
 ///
 /// # Errors
 ///
-/// Returns [`SankhyaError::InvalidBase`] if `n` is zero (rod numerals have
+/// Returns [`crate::SankhyaError::InvalidBase`] if `n` is zero (rod numerals have
 /// no zero representation — an empty space on the counting board).
 #[cfg(feature = "lipi")]
 #[must_use = "returns the Unicode rod numeral string without side effects"]

@@ -1,10 +1,12 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
+use std::hint::black_box;
+
+use criterion::{Criterion, criterion_group, criterion_main};
 
 fn long_count_conversion_1000(c: &mut Criterion) {
     c.bench_function("mayan/long_count_conversion_1000", |b| {
         b.iter(|| {
             for days in 0..1000u64 {
-                let lc = sankhya::mayan::LongCount::from_days(black_box(days));
+                let lc = sankhya::mayan::LongCount::from_days(black_box(days)).unwrap();
                 black_box(lc.to_days());
             }
         });

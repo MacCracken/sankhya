@@ -17,6 +17,7 @@
 //! | [`vedic`] | India | Nikhilam multiplication, Sulba Sutra geometry, Katapayadi, Meru Prastara |
 //! | [`chinese`] | China | Rod numerals, Chinese Remainder Theorem, magic squares |
 //! | [`greek`] | Greece | Golden ratio, Sieve of Eratosthenes, Euclidean GCD, Archimedes' pi, Antikythera |
+//! | [`islamic`] | Islam | Al-Khwarizmi algebra, Khayyam cubics, completion of the square, Hijri calendar |
 //! | [`epoch`] | Cross-civilizational | Precession, precessional ages, Younger Dryas, Seven Sages, cycle alignment |
 //!
 //! ## Quick Start
@@ -45,6 +46,7 @@ pub mod egyptian;
 pub mod epoch;
 pub mod error;
 pub mod greek;
+pub mod islamic;
 pub mod mayan;
 pub mod vedic;
 

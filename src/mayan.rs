@@ -495,6 +495,91 @@ pub fn calendar_round(days: u64) -> (Tzolkin, Haab) {
 /// The Calendar Round cycle length in days: lcm(260, 365) = 18,980.
 pub const CALENDAR_ROUND_DAYS: u64 = 18_980;
 
+/// Find the next occurrence of a specific Calendar Round date on or after
+/// a given day count.
+///
+/// A Calendar Round date is a (Tzolkin, Haab) pair that repeats every
+/// 18,980 days (~52 years). Given a target Tzolkin number, day sign, Haab
+/// day, and Haab month, this function searches forward from `start_day`
+/// to find the next matching date.
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::InvalidDate`] if the Tzolkin number is not 1–13
+/// or the Haab day is out of range for the month.
+/// Returns [`SankhyaError::ComputationError`] if no match is found within
+/// one full Calendar Round cycle (should not happen for valid inputs).
+pub fn find_calendar_round(
+    tzolkin_number: u8,
+    tzolkin_sign: DaySign,
+    haab_day: u8,
+    haab_month: HaabMonth,
+    start_day: u64,
+) -> Result<u64> {
+    if !(1..=13).contains(&tzolkin_number) {
+        return Err(SankhyaError::InvalidDate(format!(
+            "Tzolkin number {tzolkin_number} out of range 1..13"
+        )));
+    }
+
+    let haab_max = if haab_month == HaabMonth::Wayeb {
+        4
+    } else {
+        19
+    };
+    if haab_day > haab_max {
+        return Err(SankhyaError::InvalidDate(format!(
+            "Haab day {haab_day} out of range for {haab_month:?} (max {haab_max})"
+        )));
+    }
+
+    // Search day by day within one Calendar Round cycle
+    for offset in 0..CALENDAR_ROUND_DAYS {
+        let day = start_day + offset;
+        let tz = Tzolkin::from_days(day);
+        let hb = Haab::from_days(day);
+
+        if tz.number == tzolkin_number
+            && tz.day_sign == tzolkin_sign
+            && hb.day == haab_day
+            && hb.month == haab_month
+        {
+            return Ok(day);
+        }
+    }
+
+    Err(SankhyaError::ComputationError(
+        "no matching Calendar Round date found within one cycle".into(),
+    ))
+}
+
+/// Find the next occurrence of a given Tzolkin date on or after a given day count.
+///
+/// The Tzolkin cycle repeats every 260 days.
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::InvalidDate`] if the Tzolkin number is not 1–13.
+pub fn find_tzolkin(tzolkin_number: u8, tzolkin_sign: DaySign, start_day: u64) -> Result<u64> {
+    if !(1..=13).contains(&tzolkin_number) {
+        return Err(SankhyaError::InvalidDate(format!(
+            "Tzolkin number {tzolkin_number} out of range 1..13"
+        )));
+    }
+
+    for offset in 0..260u64 {
+        let day = start_day + offset;
+        let tz = Tzolkin::from_days(day);
+        if tz.number == tzolkin_number && tz.day_sign == tzolkin_sign {
+            return Ok(day);
+        }
+    }
+
+    Err(SankhyaError::ComputationError(
+        "no matching Tzolkin date found within one cycle".into(),
+    ))
+}
+
 // ---------------------------------------------------------------------------
 // Venus table
 // ---------------------------------------------------------------------------
@@ -612,5 +697,41 @@ mod tests {
     fn venus_cycle_length() {
         // 236 + 90 + 250 + 8 = 584
         assert_eq!(236 + 90 + 250 + 8, 584);
+    }
+
+    // -- Calendar Round search --
+
+    #[test]
+    fn find_calendar_round_at_creation() {
+        // Creation date is 4 Ahau 8 Kumku — should find day 0
+        let day = find_calendar_round(4, DaySign::Ahau, 8, HaabMonth::Kumku, 0).unwrap();
+        assert_eq!(day, 0);
+    }
+
+    #[test]
+    fn find_calendar_round_next_cycle() {
+        // Same date should recur at day 18,980
+        let day = find_calendar_round(4, DaySign::Ahau, 8, HaabMonth::Kumku, 1).unwrap();
+        assert_eq!(day, CALENDAR_ROUND_DAYS);
+    }
+
+    #[test]
+    fn find_calendar_round_invalid_tzolkin() {
+        assert!(find_calendar_round(0, DaySign::Ahau, 0, HaabMonth::Pop, 0).is_err());
+        assert!(find_calendar_round(14, DaySign::Ahau, 0, HaabMonth::Pop, 0).is_err());
+    }
+
+    #[test]
+    fn find_tzolkin_at_creation() {
+        // 4 Ahau at day 0
+        let day = find_tzolkin(4, DaySign::Ahau, 0).unwrap();
+        assert_eq!(day, 0);
+    }
+
+    #[test]
+    fn find_tzolkin_next_occurrence() {
+        // 4 Ahau should recur every 260 days
+        let day = find_tzolkin(4, DaySign::Ahau, 1).unwrap();
+        assert_eq!(day, 260);
     }
 }

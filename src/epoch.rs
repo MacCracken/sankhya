@@ -249,6 +249,12 @@ pub struct MultiCalendarDate {
     pub persian: crate::persian::PersianDate,
     /// Hebrew (Jewish) calendar date.
     pub hebrew: crate::hebrew::HebrewDate,
+    /// Chinese sexagenary (60-year) cycle year.
+    pub chinese_sexagenary: crate::chinese::SexagenaryYear,
+    /// Aztec Tonalpohualli (260-day sacred cycle) date.
+    pub aztec_tonalpohualli: crate::aztec::Tonalpohualli,
+    /// Aztec Xiuhpohualli (365-day solar cycle) date.
+    pub aztec_xiuhpohualli: crate::aztec::Xiuhpohualli,
     /// Historical eras active at this date (requires `itihas` feature).
     #[cfg(feature = "itihas")]
     pub eras: Vec<itihas::era::Era>,
@@ -694,6 +700,9 @@ pub fn correlate(jdn: f64) -> Result<MultiCalendarDate> {
         coptic: crate::coptic::jdn_to_coptic(jdn),
         persian: crate::persian::jdn_to_persian(jdn),
         hebrew: crate::hebrew::jdn_to_hebrew(jdn),
+        chinese_sexagenary: crate::chinese::sexagenary_from_jdn(jdn),
+        aztec_tonalpohualli: crate::aztec::tonalpohualli_from_jdn(jdn),
+        aztec_xiuhpohualli: crate::aztec::xiuhpohualli_from_jdn(jdn),
         #[cfg(feature = "itihas")]
         eras: itihas::era::eras_containing(approx_year),
         #[cfg(feature = "itihas")]

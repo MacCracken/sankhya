@@ -307,6 +307,210 @@ pub fn is_magic_square(square: &[Vec<u64>]) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// Sexagenary cycle (Heavenly Stems + Earthly Branches)
+// ---------------------------------------------------------------------------
+
+/// The 10 Heavenly Stems (Tiangan 天干) of the Chinese sexagenary cycle.
+///
+/// Combined with the 12 Earthly Branches, they produce a 60-year cycle
+/// used for year naming since at least the Shang dynasty (c. 1250 BCE).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum HeavenlyStem {
+    /// 甲 Jiǎ (Wood, Yang)
+    Jia,
+    /// 乙 Yǐ (Wood, Yin)
+    Yi,
+    /// 丙 Bǐng (Fire, Yang)
+    Bing,
+    /// 丁 Dīng (Fire, Yin)
+    Ding,
+    /// 戊 Wù (Earth, Yang)
+    Wu,
+    /// 己 Jǐ (Earth, Yin)
+    Ji,
+    /// 庚 Gēng (Metal, Yang)
+    Geng,
+    /// 辛 Xīn (Metal, Yin)
+    Xin,
+    /// 壬 Rén (Water, Yang)
+    Ren,
+    /// 癸 Guǐ (Water, Yin)
+    Gui,
+}
+
+const HEAVENLY_STEMS: [HeavenlyStem; 10] = [
+    HeavenlyStem::Jia,
+    HeavenlyStem::Yi,
+    HeavenlyStem::Bing,
+    HeavenlyStem::Ding,
+    HeavenlyStem::Wu,
+    HeavenlyStem::Ji,
+    HeavenlyStem::Geng,
+    HeavenlyStem::Xin,
+    HeavenlyStem::Ren,
+    HeavenlyStem::Gui,
+];
+
+impl core::fmt::Display for HeavenlyStem {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let name = match self {
+            Self::Jia => "Jiǎ (甲)",
+            Self::Yi => "Yǐ (乙)",
+            Self::Bing => "Bǐng (丙)",
+            Self::Ding => "Dīng (丁)",
+            Self::Wu => "Wù (戊)",
+            Self::Ji => "Jǐ (己)",
+            Self::Geng => "Gēng (庚)",
+            Self::Xin => "Xīn (辛)",
+            Self::Ren => "Rén (壬)",
+            Self::Gui => "Guǐ (癸)",
+        };
+        write!(f, "{name}")
+    }
+}
+
+/// The 12 Earthly Branches (Dizhi 地支) of the Chinese sexagenary cycle.
+///
+/// Each branch is associated with a zodiac animal and a two-hour period
+/// of the day. Combined with the 10 Heavenly Stems to produce the
+/// 60-unit sexagenary cycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[non_exhaustive]
+pub enum EarthlyBranch {
+    /// 子 Zǐ (Rat)
+    Zi,
+    /// 丑 Chǒu (Ox)
+    Chou,
+    /// 寅 Yín (Tiger)
+    Yin,
+    /// 卯 Mǎo (Rabbit)
+    Mao,
+    /// 辰 Chén (Dragon)
+    Chen,
+    /// 巳 Sì (Snake)
+    Si,
+    /// 午 Wǔ (Horse)
+    Wu,
+    /// 未 Wèi (Goat)
+    Wei,
+    /// 申 Shēn (Monkey)
+    Shen,
+    /// 酉 Yǒu (Rooster)
+    You,
+    /// 戌 Xū (Dog)
+    Xu,
+    /// 亥 Hài (Pig)
+    Hai,
+}
+
+const EARTHLY_BRANCHES: [EarthlyBranch; 12] = [
+    EarthlyBranch::Zi,
+    EarthlyBranch::Chou,
+    EarthlyBranch::Yin,
+    EarthlyBranch::Mao,
+    EarthlyBranch::Chen,
+    EarthlyBranch::Si,
+    EarthlyBranch::Wu,
+    EarthlyBranch::Wei,
+    EarthlyBranch::Shen,
+    EarthlyBranch::You,
+    EarthlyBranch::Xu,
+    EarthlyBranch::Hai,
+];
+
+/// The zodiac animal names for each Earthly Branch.
+const ZODIAC_ANIMALS: [&str; 12] = [
+    "Rat", "Ox", "Tiger", "Rabbit", "Dragon", "Snake", "Horse", "Goat", "Monkey", "Rooster", "Dog",
+    "Pig",
+];
+
+impl core::fmt::Display for EarthlyBranch {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let idx = EARTHLY_BRANCHES
+            .iter()
+            .position(|&b| b == *self)
+            .unwrap_or(0);
+        let name = match self {
+            Self::Zi => "Zǐ (子)",
+            Self::Chou => "Chǒu (丑)",
+            Self::Yin => "Yín (寅)",
+            Self::Mao => "Mǎo (卯)",
+            Self::Chen => "Chén (辰)",
+            Self::Si => "Sì (巳)",
+            Self::Wu => "Wǔ (午)",
+            Self::Wei => "Wèi (未)",
+            Self::Shen => "Shēn (申)",
+            Self::You => "Yǒu (酉)",
+            Self::Xu => "Xū (戌)",
+            Self::Hai => "Hài (亥)",
+        };
+        write!(f, "{name} — {}", ZODIAC_ANIMALS[idx])
+    }
+}
+
+/// A year in the Chinese sexagenary (60-year) cycle.
+///
+/// Each year is identified by a Heavenly Stem + Earthly Branch pair.
+/// The cycle repeats every lcm(10, 12) = 60 years.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SexagenaryYear {
+    /// The Heavenly Stem for this year.
+    pub stem: HeavenlyStem,
+    /// The Earthly Branch (zodiac animal) for this year.
+    pub branch: EarthlyBranch,
+    /// Position in the 60-year cycle (1–60).
+    pub cycle_position: u8,
+}
+
+impl core::fmt::Display for SexagenaryYear {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let branch_idx = EARTHLY_BRANCHES
+            .iter()
+            .position(|&b| b == self.branch)
+            .unwrap_or(0);
+        write!(
+            f,
+            "{:?}-{:?} ({}, {})",
+            self.stem, self.branch, ZODIAC_ANIMALS[branch_idx], self.cycle_position
+        )
+    }
+}
+
+/// Compute the sexagenary year for a given Gregorian/Julian year.
+///
+/// The cycle is anchored so that 4 CE = Jiǎ-Zǐ (position 1), the
+/// traditional start of the current cycle era.
+///
+/// Negative years represent BCE: year 0 = 1 BCE, year -1 = 2 BCE.
+#[must_use]
+pub fn sexagenary_from_year(year: i64) -> SexagenaryYear {
+    // 4 CE = Jia-Zi (stem 0, branch 0, position 1)
+    // So offset = year - 4, mod 60
+    let offset = (year - 4).rem_euclid(60);
+
+    let stem_idx = offset.rem_euclid(10) as usize;
+    let branch_idx = offset.rem_euclid(12) as usize;
+    let cycle_position = (offset % 60 + 1) as u8;
+
+    SexagenaryYear {
+        stem: HEAVENLY_STEMS[stem_idx],
+        branch: EARTHLY_BRANCHES[branch_idx],
+        cycle_position,
+    }
+}
+
+/// Compute the sexagenary year for a given Julian Day Number.
+///
+/// Converts the JDN to an approximate Gregorian year, then computes
+/// the sexagenary year from that.
+#[must_use]
+pub fn sexagenary_from_jdn(jdn: f64) -> SexagenaryYear {
+    let greg = crate::gregorian::jdn_to_gregorian(jdn);
+    sexagenary_from_year(greg.year)
+}
+
+// ---------------------------------------------------------------------------
 // Unicode rod numeral display (requires varna)
 // ---------------------------------------------------------------------------
 
@@ -400,6 +604,80 @@ mod tests {
     #[test]
     fn magic_square_even_returns_none() {
         assert!(magic_square(4).is_none());
+    }
+
+    // -- Sexagenary cycle --
+
+    #[test]
+    fn sexagenary_2024_wood_dragon() {
+        let s = sexagenary_from_year(2024);
+        assert_eq!(s.stem, HeavenlyStem::Jia);
+        assert_eq!(s.branch, EarthlyBranch::Chen); // Dragon
+        assert_eq!(s.cycle_position, 41);
+    }
+
+    #[test]
+    fn sexagenary_2025_wood_snake() {
+        let s = sexagenary_from_year(2025);
+        assert_eq!(s.stem, HeavenlyStem::Yi);
+        assert_eq!(s.branch, EarthlyBranch::Si); // Snake
+    }
+
+    #[test]
+    fn sexagenary_4_ce_jia_zi() {
+        // 4 CE = Jia-Zi, position 1 (cycle anchor)
+        let s = sexagenary_from_year(4);
+        assert_eq!(s.stem, HeavenlyStem::Jia);
+        assert_eq!(s.branch, EarthlyBranch::Zi);
+        assert_eq!(s.cycle_position, 1);
+    }
+
+    #[test]
+    fn sexagenary_60_year_cycle() {
+        // Same stem-branch pair every 60 years
+        let s1 = sexagenary_from_year(2024);
+        let s2 = sexagenary_from_year(2024 + 60);
+        assert_eq!(s1.stem, s2.stem);
+        assert_eq!(s1.branch, s2.branch);
+    }
+
+    #[test]
+    fn sexagenary_all_60_unique() {
+        let mut pairs = std::collections::HashSet::new();
+        for i in 0..60 {
+            let s = sexagenary_from_year(4 + i);
+            pairs.insert((format!("{:?}", s.stem), format!("{:?}", s.branch)));
+        }
+        assert_eq!(pairs.len(), 60);
+    }
+
+    #[test]
+    fn sexagenary_from_jdn_matches_year() {
+        // JDN 2460676.5 = Jan 1, 2025
+        let s = sexagenary_from_jdn(2_460_676.5);
+        let s2 = sexagenary_from_year(2025);
+        assert_eq!(s, s2);
+    }
+
+    #[test]
+    fn sexagenary_serde_roundtrip() {
+        let s = sexagenary_from_year(2024);
+        let json = serde_json::to_string(&s).unwrap();
+        let back: SexagenaryYear = serde_json::from_str(&json).unwrap();
+        assert_eq!(s, back);
+    }
+
+    #[test]
+    fn stem_display() {
+        assert_eq!(HeavenlyStem::Jia.to_string(), "Jiǎ (甲)");
+        assert_eq!(HeavenlyStem::Gui.to_string(), "Guǐ (癸)");
+    }
+
+    #[test]
+    fn branch_display() {
+        let d = EarthlyBranch::Chen.to_string();
+        assert!(d.contains("Dragon"));
+        assert!(d.contains("辰"));
     }
 
     #[cfg(feature = "varna")]

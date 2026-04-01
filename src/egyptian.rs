@@ -402,6 +402,63 @@ pub fn decan_from_longitude(degrees: f64) -> &'static Decan {
     &DECANS[index]
 }
 
+// ---------------------------------------------------------------------------
+// Hieroglyphic numeral display (requires lipi)
+// ---------------------------------------------------------------------------
+
+/// Render a number in Egyptian hieroglyphic notation.
+///
+/// The Egyptian system is additive decimal: each power of 10 has a distinct
+/// hieroglyph, and the number is composed by repeating symbols. For example,
+/// 23 = 𓎆𓎆𓏺𓏺𓏺 (two heel-bones + three strokes).
+///
+/// Symbols (from the Rhind Papyrus and temple inscriptions):
+/// - 𓏺 = 1 (stroke)
+/// - 𓎆 = 10 (heel bone)
+/// - 𓍢 = 100 (coil of rope)
+/// - 𓆼 = 1,000 (lotus flower)
+/// - 𓂭 = 10,000 (bent finger)
+/// - 𓆐 = 100,000 (tadpole)
+/// - 𓁨 = 1,000,000 (god Heh)
+///
+/// Requires the `lipi` feature.
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::OverflowError`] if the number exceeds what the
+/// hieroglyphic system can represent (> 9,999,999).
+#[cfg(feature = "lipi")]
+#[must_use = "returns the hieroglyphic string without side effects"]
+pub fn to_hieroglyphic(n: u64) -> Result<String> {
+    if n == 0 {
+        return Ok(String::new());
+    }
+    if n > 9_999_999 {
+        return Err(SankhyaError::OverflowError(format!(
+            "cannot represent {n} in Egyptian hieroglyphic numerals (max 9,999,999)"
+        )));
+    }
+
+    let system = lipi::script::numerals::egyptian_hieroglyphic();
+    let powers: &[u64] = &[1_000_000, 100_000, 10_000, 1_000, 100, 10, 1];
+    let mut result = String::new();
+    let mut remainder = n;
+
+    for &power in powers {
+        let count = remainder / power;
+        remainder %= power;
+        if count > 0
+            && let Some(ch) = system.char_for(power as u32)
+        {
+            for _ in 0..count {
+                result.push_str(ch);
+            }
+        }
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -453,5 +510,41 @@ mod tests {
     fn decan_negative_longitude() {
         let d = decan_from_longitude(-10.0);
         assert_eq!(d.number, 36); // 350 degrees
+    }
+
+    #[cfg(feature = "lipi")]
+    mod hieroglyphic_tests {
+        use super::*;
+
+        #[test]
+        fn hieroglyphic_single_digit() {
+            let s = to_hieroglyphic(3).unwrap();
+            assert_eq!(s, "𓏺𓏺𓏺");
+        }
+
+        #[test]
+        fn hieroglyphic_mixed() {
+            // 23 = two 10s + three 1s
+            let s = to_hieroglyphic(23).unwrap();
+            assert_eq!(s, "𓎆𓎆𓏺𓏺𓏺");
+        }
+
+        #[test]
+        fn hieroglyphic_powers() {
+            let s = to_hieroglyphic(1_000).unwrap();
+            assert_eq!(s, "𓆼");
+            let s = to_hieroglyphic(1_000_000).unwrap();
+            assert_eq!(s, "𓁨");
+        }
+
+        #[test]
+        fn hieroglyphic_zero() {
+            assert_eq!(to_hieroglyphic(0).unwrap(), "");
+        }
+
+        #[test]
+        fn hieroglyphic_overflow() {
+            assert!(to_hieroglyphic(10_000_000).is_err());
+        }
     }
 }

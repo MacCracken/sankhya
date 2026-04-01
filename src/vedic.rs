@@ -262,6 +262,77 @@ pub fn meru_prastara(rows: usize) -> Result<Vec<Vec<u64>>> {
     Ok(triangle)
 }
 
+// ---------------------------------------------------------------------------
+// Devanagari Katapayadi encoding (requires lipi)
+// ---------------------------------------------------------------------------
+
+/// Encode a number using Katapayadi with Devanagari script output.
+///
+/// Like [`katapayadi_encode`], but returns the encoding in Devanagari
+/// consonants rather than romanized syllables, using lipi's IAST
+/// transliteration table for accurate script conversion.
+///
+/// Each digit maps to a Devanagari consonant from the ka-varga and
+/// ca-varga groups: क=1, ख=2, ग=3, घ=4, ङ=5, च=6, छ=7, ज=8, झ=9, ञ=0.
+///
+/// Requires the `lipi` feature.
+#[cfg(feature = "lipi")]
+#[must_use]
+pub fn katapayadi_encode_devanagari(n: u64) -> String {
+    let table = lipi::script::transliteration::devanagari_iast();
+    let reverse = table.reverse_map();
+
+    // IAST consonants for each digit (without trailing 'a')
+    // The IAST table maps Devanagari -> "ka", "kha", etc.
+    // We need the reverse: "ka" -> "क", etc.
+    let iast_syllables = [
+        "ña", "ka", "kha", "ga", "gha", "ṅa", "ca", "cha", "ja", "jha",
+    ];
+
+    if n == 0 {
+        return reverse.get("ña").copied().unwrap_or("ञ").to_string();
+    }
+
+    let mut result = String::new();
+    let mut remaining = n;
+
+    while remaining > 0 {
+        let digit = (remaining % 10) as usize;
+        remaining /= 10;
+        if !result.is_empty() {
+            result.push(' ');
+        }
+        let syllable = iast_syllables[digit];
+        result.push_str(reverse.get(syllable).copied().unwrap_or("?"));
+    }
+
+    result
+}
+
+/// Render a number in Devanagari digits (०-९).
+///
+/// Uses lipi's Devanagari numeral system for digit-by-digit conversion.
+///
+/// Requires the `lipi` feature.
+#[cfg(feature = "lipi")]
+#[must_use]
+pub fn to_devanagari_digits(n: u64) -> String {
+    let system = lipi::script::numerals::devanagari_digits();
+    if n == 0 {
+        return system.char_for(0).unwrap_or("०").to_string();
+    }
+
+    let mut digits = Vec::new();
+    let mut remaining = n;
+    while remaining > 0 {
+        let d = (remaining % 10) as u32;
+        digits.push(system.char_for(d).unwrap_or("?").to_string());
+        remaining /= 10;
+    }
+    digits.reverse();
+    digits.join("")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -315,5 +386,37 @@ mod tests {
         assert_eq!(triangle[2], vec![1, 2, 1]);
         assert_eq!(triangle[3], vec![1, 3, 3, 1]);
         assert_eq!(triangle[4], vec![1, 4, 6, 4, 1]);
+    }
+
+    #[cfg(feature = "lipi")]
+    mod devanagari_tests {
+        use super::*;
+
+        #[test]
+        fn devanagari_digits_basic() {
+            assert_eq!(to_devanagari_digits(0), "०");
+            assert_eq!(to_devanagari_digits(123), "१२३");
+            assert_eq!(to_devanagari_digits(9876), "९८७६");
+        }
+
+        #[test]
+        fn katapayadi_devanagari_zero() {
+            let s = katapayadi_encode_devanagari(0);
+            assert_eq!(s, "ञ");
+        }
+
+        #[test]
+        fn katapayadi_devanagari_single() {
+            // 1 -> ka -> क
+            let s = katapayadi_encode_devanagari(1);
+            assert_eq!(s, "क");
+        }
+
+        #[test]
+        fn katapayadi_devanagari_multi() {
+            // 21 -> digit 1 (ka, क) then digit 2 (kha, ख)
+            let s = katapayadi_encode_devanagari(21);
+            assert_eq!(s, "क ख");
+        }
     }
 }

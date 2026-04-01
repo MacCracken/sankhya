@@ -256,6 +256,86 @@ pub fn babylonian_sqrt(n: f64, iterations: u32) -> Result<f64> {
     Ok(x)
 }
 
+// ---------------------------------------------------------------------------
+// Cuneiform display (requires lipi)
+// ---------------------------------------------------------------------------
+
+/// Render a sexagesimal digit (0-59) in cuneiform notation.
+///
+/// Uses the Babylonian cuneiform numeral system from lipi: 𒐕 (diš) for
+/// units 1-9, 𒌋/𒌋𒌋/𒌍 for tens 10/20/30. Digits above 30 are composed
+/// additively (e.g., 42 = 𒌍 + 𒐖 + 𒌋 = "𒌍𒌋𒐖").
+///
+/// Returns a space `" "` for zero (Babylonians had no zero symbol in
+/// early periods).
+///
+/// Requires the `lipi` feature.
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::InvalidBase`] if `digit` >= 60.
+#[cfg(feature = "lipi")]
+pub fn cuneiform_digit(digit: u8) -> Result<String> {
+    if digit >= 60 {
+        return Err(SankhyaError::InvalidBase(format!(
+            "cuneiform digit {digit} out of range 0..60"
+        )));
+    }
+    if digit == 0 {
+        return Ok(" ".into());
+    }
+
+    let system = lipi::script::numerals::babylonian_sexagesimal();
+    let tens = digit / 10;
+    let units = digit % 10;
+    let mut result = String::new();
+
+    // Tens: use the highest available symbol, then compose
+    if tens > 0 {
+        // Available tens symbols: 10, 20, 30
+        let mut remaining_tens = tens;
+        for &val in &[30u8, 20, 10] {
+            if remaining_tens * 10 >= val
+                && let Some(ch) = system.char_for(u32::from(val))
+            {
+                result.push_str(ch);
+                remaining_tens -= val / 10;
+            }
+            if remaining_tens == 0 {
+                break;
+            }
+        }
+    }
+
+    if units > 0
+        && let Some(ch) = system.char_for(u32::from(units))
+    {
+        result.push_str(ch);
+    }
+
+    Ok(result)
+}
+
+/// Render a full number in cuneiform sexagesimal notation.
+///
+/// Digits are separated by a middle dot `·` for readability,
+/// matching the modern convention for displaying sexagesimal.
+///
+/// Requires the `lipi` feature.
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::InvalidBase`] if any internal digit is invalid.
+#[cfg(feature = "lipi")]
+pub fn to_cuneiform(n: u64) -> Result<String> {
+    let digits = to_sexagesimal(n);
+    let mut parts = Vec::with_capacity(digits.len());
+    for &d in &digits {
+        parts.push(cuneiform_digit(d)?);
+    }
+    Ok(parts.join("·"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,5 +381,52 @@ mod tests {
     fn saros_cycle_test() {
         let next = saros_cycle(2451545.0); // J2000.0
         assert!((next - (2451545.0 + SAROS_DAYS)).abs() < 1e-10);
+    }
+
+    #[cfg(feature = "lipi")]
+    mod cuneiform_tests {
+        use super::*;
+
+        #[test]
+        fn cuneiform_digit_units() {
+            let s = cuneiform_digit(1).unwrap();
+            assert_eq!(s, "𒐕");
+            let s = cuneiform_digit(9).unwrap();
+            assert_eq!(s, "𒐝");
+        }
+
+        #[test]
+        fn cuneiform_digit_tens() {
+            let s = cuneiform_digit(10).unwrap();
+            assert_eq!(s, "𒌋");
+            let s = cuneiform_digit(30).unwrap();
+            assert_eq!(s, "𒌍");
+        }
+
+        #[test]
+        fn cuneiform_digit_composite() {
+            // 42 = 30 + 10 + 2 = 𒌍𒌋𒐖
+            let s = cuneiform_digit(42).unwrap();
+            assert!(s.contains("𒌍"));
+            assert!(s.contains("𒐖"));
+        }
+
+        #[test]
+        fn cuneiform_digit_zero() {
+            assert_eq!(cuneiform_digit(0).unwrap(), " ");
+        }
+
+        #[test]
+        fn cuneiform_digit_out_of_range() {
+            assert!(cuneiform_digit(60).is_err());
+        }
+
+        #[test]
+        fn to_cuneiform_basic() {
+            // 60 = [1, 0] in sexagesimal
+            let s = to_cuneiform(60).unwrap();
+            assert!(s.contains('·'));
+            assert!(s.contains("𒐕"));
+        }
     }
 }

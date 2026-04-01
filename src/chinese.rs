@@ -306,6 +306,49 @@ pub fn is_magic_square(square: &[Vec<u64>]) -> bool {
     true
 }
 
+// ---------------------------------------------------------------------------
+// Unicode rod numeral display (requires lipi)
+// ---------------------------------------------------------------------------
+
+/// Render a positive number using Unicode counting rod numeral characters.
+///
+/// Uses the CJK Counting Rod Numerals block (U+1D360–U+1D371) from lipi's
+/// Chinese rod numeral system. These are the vertical forms (𝍠=1 through 𝍨=9).
+/// Zero positions are shown as a space.
+///
+/// Requires the `lipi` feature.
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::InvalidBase`] if `n` is zero (rod numerals have
+/// no zero representation — an empty space on the counting board).
+#[cfg(feature = "lipi")]
+#[must_use = "returns the Unicode rod numeral string without side effects"]
+pub fn to_unicode_rods(n: u64) -> crate::error::Result<String> {
+    if n == 0 {
+        return Err(crate::error::SankhyaError::InvalidBase(
+            "zero has no rod numeral representation".into(),
+        ));
+    }
+
+    let system = lipi::script::numerals::chinese_rod_numerals();
+    let mut digits = Vec::new();
+    let mut remaining = n;
+
+    while remaining > 0 {
+        let d = (remaining % 10) as u32;
+        if d == 0 {
+            digits.push(" ".to_string());
+        } else if let Some(ch) = system.char_for(d) {
+            digits.push(ch.to_string());
+        }
+        remaining /= 10;
+    }
+
+    digits.reverse();
+    Ok(digits.join(""))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -357,5 +400,35 @@ mod tests {
     #[test]
     fn magic_square_even_returns_none() {
         assert!(magic_square(4).is_none());
+    }
+
+    #[cfg(feature = "lipi")]
+    mod unicode_rod_tests {
+        use super::*;
+
+        #[test]
+        fn unicode_rods_single_digit() {
+            assert_eq!(to_unicode_rods(1).unwrap(), "𝍠");
+            assert_eq!(to_unicode_rods(9).unwrap(), "𝍨");
+        }
+
+        #[test]
+        fn unicode_rods_multi_digit() {
+            // 42 = 4, 2
+            let s = to_unicode_rods(42).unwrap();
+            assert_eq!(s, "𝍣𝍡");
+        }
+
+        #[test]
+        fn unicode_rods_with_zero() {
+            // 101 = 1, 0, 1
+            let s = to_unicode_rods(101).unwrap();
+            assert_eq!(s, "𝍠 𝍠");
+        }
+
+        #[test]
+        fn unicode_rods_zero_errors() {
+            assert!(to_unicode_rods(0).is_err());
+        }
     }
 }

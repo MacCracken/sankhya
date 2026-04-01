@@ -17,6 +17,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::error::{Result, SankhyaError};
+
 // ---------------------------------------------------------------------------
 // Golden ratio and Fibonacci
 // ---------------------------------------------------------------------------
@@ -166,6 +168,100 @@ pub fn archimedes_pi(iterations: u32) -> (f64, f64) {
 }
 
 // ---------------------------------------------------------------------------
+// Greek isopsephy (alphabetic numeral values)
+// ---------------------------------------------------------------------------
+
+/// Compute the isopsephy value of a Greek word.
+///
+/// Isopsephy (Greek: ἰσοψηφία, "equal pebbles") is the practice of assigning
+/// numeric values to Greek letters and summing them for a word or phrase.
+/// It was widely used in antiquity for numerology, word games, and even
+/// cryptographic identification (e.g., the "number of the beast" in
+/// Revelation uses Greek isopsephy).
+///
+/// Each letter maps to a value: α=1, β=2, ... θ=9, ι=10, κ=20, ... π=80,
+/// ρ=100, σ=200, ... ω=800. The word value is the additive sum.
+///
+/// Requires the `lipi` feature for the numeral system tables.
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::InvalidBase`] if the input is empty or contains
+/// characters with no isopsephy mapping.
+#[cfg(feature = "lipi")]
+#[must_use = "returns the computed isopsephy value without side effects"]
+pub fn isopsephy(word: &str) -> Result<u32> {
+    if word.is_empty() {
+        return Err(SankhyaError::InvalidBase(
+            "empty string has no isopsephy value".into(),
+        ));
+    }
+    let system = lipi::script::numerals::greek_isopsephy();
+    system.string_value(word).ok_or_else(|| {
+        SankhyaError::InvalidBase(format!(
+            "word contains characters with no isopsephy mapping: {word}"
+        ))
+    })
+}
+
+/// Convert a number to its Greek alphabetic numeral representation.
+///
+/// The Greek alphabetic numeral system represents numbers 1-800 using
+/// the 24 letters of the Greek alphabet (plus archaic letters for 6, 90,
+/// and 900 in the full system — this implementation covers the standard
+/// 24-letter range).
+///
+/// Numbers are decomposed additively: 358 = τ (300) + ν (50) + η (8) = "τνη".
+///
+/// Requires the `lipi` feature.
+///
+/// # Errors
+///
+/// Returns [`SankhyaError::InvalidBase`] if `n` is 0 or exceeds the
+/// representable range.
+#[cfg(feature = "lipi")]
+#[must_use = "returns the numeral string without side effects"]
+pub fn to_greek_numeral(n: u32) -> Result<String> {
+    if n == 0 {
+        return Err(SankhyaError::InvalidBase(
+            "zero has no Greek numeral representation".into(),
+        ));
+    }
+
+    let system = lipi::script::numerals::greek_isopsephy();
+
+    // Decompose into hundreds, tens, units using available letter values.
+    // Available values in descending order from the isopsephy table.
+    let available: &[u32] = &[
+        800, 700, 600, 500, 400, 300, 200, 100, 80, 70, 60, 50, 40, 30, 20, 10, 9, 8, 7, 5, 4, 3,
+        2, 1,
+    ];
+
+    let mut remainder = n;
+    let mut result = String::new();
+
+    for &val in available {
+        if remainder >= val
+            && let Some(ch) = system.char_for(val)
+        {
+            result.push_str(ch);
+            remainder -= val;
+        }
+        if remainder == 0 {
+            break;
+        }
+    }
+
+    if remainder > 0 {
+        return Err(SankhyaError::InvalidBase(format!(
+            "cannot represent {n} in Greek alphabetic numerals (remainder {remainder})"
+        )));
+    }
+
+    Ok(result)
+}
+
+// ---------------------------------------------------------------------------
 // Antikythera mechanism
 // ---------------------------------------------------------------------------
 
@@ -305,5 +401,63 @@ mod tests {
         let metonic = ratios.get("Metonic").unwrap();
         assert_eq!(metonic.gear_teeth, 235);
         assert_eq!(metonic.period_years, "19");
+    }
+
+    #[cfg(feature = "lipi")]
+    mod isopsephy_tests {
+        use super::*;
+
+        #[test]
+        fn isopsephy_single_letter() {
+            assert_eq!(isopsephy("α").unwrap(), 1);
+            assert_eq!(isopsephy("ω").unwrap(), 800);
+        }
+
+        #[test]
+        fn isopsephy_word() {
+            // "πι" = 80 + 10 = 90
+            assert_eq!(isopsephy("πι").unwrap(), 90);
+            // "αω" = 1 + 800 = 801
+            assert_eq!(isopsephy("αω").unwrap(), 801);
+        }
+
+        #[test]
+        fn isopsephy_empty_errors() {
+            assert!(isopsephy("").is_err());
+        }
+
+        #[test]
+        fn isopsephy_non_greek_errors() {
+            assert!(isopsephy("hello").is_err());
+        }
+
+        #[test]
+        fn to_greek_numeral_basic() {
+            // 1 = α
+            assert_eq!(to_greek_numeral(1).unwrap(), "α");
+            // 10 = ι
+            assert_eq!(to_greek_numeral(10).unwrap(), "ι");
+            // 100 = ρ
+            assert_eq!(to_greek_numeral(100).unwrap(), "ρ");
+        }
+
+        #[test]
+        fn to_greek_numeral_compound() {
+            // 358 = τ(300) + ν(50) + η(8) = "τνη"
+            assert_eq!(to_greek_numeral(358).unwrap(), "τνη");
+        }
+
+        #[test]
+        fn to_greek_numeral_roundtrip() {
+            // Encode then decode
+            let numeral = to_greek_numeral(358).unwrap();
+            let value = isopsephy(&numeral).unwrap();
+            assert_eq!(value, 358);
+        }
+
+        #[test]
+        fn to_greek_numeral_zero_errors() {
+            assert!(to_greek_numeral(0).is_err());
+        }
     }
 }

@@ -243,6 +243,8 @@ pub struct MultiCalendarDate {
     pub julian_year: f64,
     /// Proleptic Gregorian calendar date.
     pub gregorian: crate::gregorian::GregorianDate,
+    /// Coptic (Alexandrian) calendar date.
+    pub coptic: crate::coptic::CopticDate,
     /// Historical eras active at this date (requires `itihas` feature).
     #[cfg(feature = "itihas")]
     pub eras: Vec<itihas::era::Era>,
@@ -685,6 +687,7 @@ pub fn correlate(jdn: f64) -> Result<MultiCalendarDate> {
         precessional_age: age,
         julian_year: year,
         gregorian: crate::gregorian::jdn_to_gregorian(jdn),
+        coptic: crate::coptic::jdn_to_coptic(jdn),
         #[cfg(feature = "itihas")]
         eras: itihas::era::eras_containing(approx_year),
         #[cfg(feature = "itihas")]

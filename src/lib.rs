@@ -43,6 +43,7 @@
 
 pub mod babylonian;
 pub mod chinese;
+pub mod coptic;
 pub mod egyptian;
 pub mod epoch;
 pub mod error;

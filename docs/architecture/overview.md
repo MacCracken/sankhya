@@ -182,11 +182,11 @@ Consumers include a single file — `dist/sankhya.cyr`, produced by `cyrius dist
 The Rust-era ADRs remain valid and compiler-agnostic (they describe algorithm and
 constant choices, not the Rust surface):
 
-- [ADR-001](adr/001-unit-fraction-algorithm.md) — Egyptian fraction decomposition (greedy algorithm)
-- [ADR-002](adr/002-gmt-correlation-constant.md) — GMT correlation constant (JDN 584,283)
-- [ADR-003](adr/003-canonical-precession-period.md) — Canonical precession period (25,920 years)
-- [ADR-004](adr/004-seven-sages-data-model.md) — Seven Sages data model
-- [ADR-005](adr/005-feature-gated-script-rendering.md) — Feature-gated script rendering via varna
+- [ADR-001](../adr/001-unit-fraction-algorithm.md) — Egyptian fraction decomposition (greedy algorithm)
+- [ADR-002](../adr/002-gmt-correlation-constant.md) — GMT correlation constant (JDN 584,283)
+- [ADR-003](../adr/003-canonical-precession-period.md) — Canonical precession period (25,920 years)
+- [ADR-004](../adr/004-seven-sages-data-model.md) — Seven Sages data model
+- [ADR-005](../adr/005-feature-gated-script-rendering.md) — Feature-gated script rendering via varna (**superseded by [ADR-006](../adr/006-always-on-dependencies.md)**)
 
 > ADR-005's *feature gating* is the design the port cannot yet honor 1:1 — varna
 > is always-on under Cyrius. The algorithmic decision it records (script rendering

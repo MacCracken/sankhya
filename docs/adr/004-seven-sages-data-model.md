@@ -29,4 +29,9 @@ Use a `SagesTradition` struct with `Cow<'static, str>` fields, returned as a fre
 
 - Each call to `seven_sages()` allocates a new `Vec`, but the string data is zero-copy.
 - Adding new civilizations requires modifying the `seven_sages()` function and the `Civilization` enum (which is `#[non_exhaustive]`).
+
+> **Cyrius port note (v3.0.0)** — Cyrius has no `#[non_exhaustive]`; the `Civilization` enum
+> is a set of plain integer constants, and `SagesTradition` is a heap record accessed through
+> offset-enum getters. Extending either is still additive (append new variants / fields at
+> the end), but there is no compiler-enforced non-exhaustiveness for downstream matches.
 - The `SagesTradition` struct can be extended with new fields in a backwards-compatible way.

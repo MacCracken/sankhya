@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted
+**Superseded by [ADR-006](006-always-on-dependencies.md)** — Cyrius port, v3.0.0.
+
+> **Historical record.** This decision applied to the **Rust crate (v1.x–2.0.0)**, where
+> `varna` was an optional Cargo feature, disabled by default. The Cyrius port (v3.0.0)
+> compiles script rendering in unconditionally because Cyrius has no feature-flag system.
+> The rest of this document describes the Rust-era design and is retained for context;
+> for current behaviour see ADR-006.
 
 ## Context
 

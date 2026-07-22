@@ -29,3 +29,8 @@ Use the **greedy algorithm** (Fibonacci-Sylvester) with a 100-iteration cap.
 - Some decompositions are longer than theoretically optimal (e.g., 4/17 produces 4 terms instead of a possible 3).
 - The iteration cap means extremely pathological inputs will return `Err` rather than running indefinitely.
 - Overflow checking on `u64` arithmetic means very large denominators in intermediate steps will error rather than silently truncate.
+
+> **Cyrius port note (v3.0.0)** — Cyrius is i64-only; there is no `u64`. The overflow guard
+> is now an explicit bound-check before each multiply, returning `SKE_OVERFLOW` where the
+> Rust returned `Err(OverflowError)`. Behaviour for all in-range inputs is unchanged; the
+> effective ceiling is `i64::MAX` rather than `u64::MAX`.

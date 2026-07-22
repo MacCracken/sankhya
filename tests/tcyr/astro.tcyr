@@ -1,0 +1,181 @@
+# astro.tcyr — ports every non-serde #[cfg(test)] test from rust-old/src/astro.rs.
+# Serde round-trip tests are skipped (JSON is a later serial.cyr module).
+# Build:  cyrius build tests/tcyr/astro.tcyr build/_v_astro
+# Run:    ./build/_v_astro
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/astro.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# Tolerances (parsed once).
+var TOL_1E12 = 0;
+var TOL_001 = 0;
+var TOL_01 = 0;
+var TOL_1 = 0;
+var TOL_SMALL = 0;
+
+fn tol_init() {
+    TOL_1E12 = f64_parse("0.000000000001");
+    TOL_001 = f64_parse("0.001");
+    TOL_01 = f64_parse("0.01");
+    TOL_1 = f64_parse("0.1");
+    TOL_SMALL = f64_parse("0.000000001");
+    return 0;
+}
+
+fn main() {
+    alloc_init();
+    tol_init();
+    println("=== sankhya astro test suite ===");
+
+    # -- Angle helpers --
+    var deg = f64_from(45);
+    var rad = degrees_to_radians(deg);
+    var degback = radians_to_degrees(rad);
+    ok(f64_approx_eq(degback, deg, TOL_1E12), "deg/rad roundtrip");
+
+    var hours = f64_from(6);
+    var hback = degrees_to_hours(hours_to_degrees(hours));
+    ok(f64_approx_eq(hback, hours, TOL_1E12), "hours/deg roundtrip");
+
+    # -- Obliquity --
+    var eps = obliquity_of_ecliptic(J2000_JDN);
+    ok(f64_approx_eq(eps, f64_parse("23.4393"), TOL_001), "obliquity at J2000 ~23.4393");
+
+    # -- Coordinate conversions --
+    var orig = celestial_new(f64_parse("6.752"), f64_parse("-16.716"));
+    var ecl = equatorial_to_ecliptic(orig, J2000_JDN);
+    var back = ecliptic_to_equatorial(ecl, J2000_JDN);
+    ok(f64_approx_eq(cc_ra_hours(back), f64_parse("6.752"), TOL_01), "eq/ecl RA roundtrip <0.01");
+    ok(f64_approx_eq(cc_dec_degrees(back), f64_parse("-16.716"), TOL_01), "eq/ecl Dec roundtrip <0.01");
+
+    # -- Display --
+    var dispc = celestial_new(f64_parse("6.752"), f64_parse("-16.716"));
+    var disps = celestial_coord_to_str(dispc);
+    ok(str_contains_cstr(disps, "RA"), "coord display has RA");
+    ok(str_contains_cstr(disps, "Dec"), "coord display has Dec");
+
+    # -- Star catalog --
+    var sir = star(SN_SIRIUS);
+    ok(str_eq_cstr(star_name(sir), "Sirius"), "sirius name = Sirius");
+    ok(f64_approx_eq(star_ra_j2000(sir), f64_parse("6.752"), TOL_01), "sirius ra ~6.752");
+    ok(f64_approx_eq(star_dec_j2000(sir), f64_parse("-16.716"), TOL_01), "sirius dec ~-16.716");
+    var sir_magneg = f64_lt(star_visual_magnitude(sir), f64_from(0));
+    ok(sir_magneg, "sirius mag < 0");
+
+    var cat = star_catalog();
+    var cn = vec_len(cat);
+    var allbright = 1;
+    var ci = 0;
+    while (ci < cn) {
+        var st = vec_get(cat, ci);
+        var lt4 = f64_lt(star_visual_magnitude(st), f64_from(4));
+        if (lt4 == 0) { allbright = 0; }
+        ci = ci + 1;
+    }
+    ok(allbright, "all catalog stars mag < 4");
+
+    assert_eq(star_catalog_len(), 20, "catalog has 20 stars");
+
+    var vcoord = star_j2000(SN_VEGA);
+    var vs = star(SN_VEGA);
+    ok(f64_approx_eq(cc_ra_hours(vcoord), star_ra_j2000(vs), TOL_SMALL), "star_j2000 ra matches catalog");
+    ok(f64_approx_eq(cc_dec_degrees(vcoord), star_dec_j2000(vs), TOL_SMALL), "star_j2000 dec matches catalog");
+
+    # -- Precession --
+    var porig = star_j2000(SN_POLARIS);
+    var pprec = precess_coordinates(porig, J2000_JDN, J2000_JDN);
+    ok(f64_approx_eq(cc_ra_hours(pprec), cc_ra_hours(porig), TOL_001), "precess identity RA");
+    ok(f64_approx_eq(cc_dec_degrees(pprec), cc_dec_degrees(porig), TOL_001), "precess identity Dec");
+
+    var jdn_thuban = f64_sub(J2000_JDN, f64_mul(f64_from(4800), JULIAN_YEAR_DAYS));
+    var thpos = star_position_at(SN_THUBAN, jdn_thuban);
+    var thub_gt = f64_gt(cc_dec_degrees(thpos), f64_from(85));
+    ok(thub_gt, "thuban dec > 85 at 2800 BCE");
+
+    var jdn_pol = f64_sub(J2000_JDN, f64_mul(f64_from(5000), JULIAN_YEAR_DAYS));
+    var polpos = star_position_at(SN_POLARIS, jdn_pol);
+    var pol_lt = f64_lt(cc_dec_degrees(polpos), f64_from(80));
+    ok(pol_lt, "polaris dec < 80 at 3000 BCE");
+
+    var sorig = star_j2000(SN_SIRIUS);
+    var jdn_3000 = f64_sub(J2000_JDN, f64_mul(f64_from(3000), JULIAN_YEAR_DAYS));
+    var fwd = precess_coordinates(sorig, J2000_JDN, jdn_3000);
+    var bk = precess_coordinates(fwd, jdn_3000, J2000_JDN);
+    ok(f64_approx_eq(cc_ra_hours(bk), cc_ra_hours(sorig), TOL_1), "precession roundtrip RA <0.1");
+    ok(f64_approx_eq(cc_dec_degrees(bk), cc_dec_degrees(sorig), TOL_1), "precession roundtrip Dec <0.1");
+
+    # -- Solar position --
+    var slon = solar_longitude(J2000_JDN);
+    ok(f64_approx_eq(slon, f64_from(280), f64_from(5)), "solar longitude at J2000 ~280");
+
+    var dec_summer = solar_declination(f64_from(2451720));
+    var ds_gt = f64_gt(dec_summer, f64_from(20));
+    var ds_lt = f64_lt(dec_summer, f64_from(24));
+    ok(ds_gt, "summer solstice dec > 20");
+    ok(ds_lt, "summer solstice dec < 24");
+    var dec_winter = solar_declination(f64_from(2451904));
+    var dw_lt = f64_lt(dec_winter, f64_neg(f64_from(20)));
+    var dw_gt = f64_gt(dec_winter, f64_neg(f64_from(24)));
+    ok(dw_lt, "winter solstice dec < -20");
+    ok(dw_gt, "winter solstice dec > -24");
+
+    # -- Heliacal rising --
+    var hres = heliacal_rising(SN_SIRIUS, f64_from(2451545), f64_from(30), f64_parse("31.2"));
+    ok(is_ok(hres), "heliacal rising ok");
+    var hevt = result_unwrap(hres);
+    assert_eq(he_star(hevt), SN_SIRIUS, "heliacal star = sirius");
+    assert_eq(he_event_type(hevt), HET_RISING, "heliacal type = rising");
+    var hdiff = f64_sub(he_jdn(hevt), f64_from(2451545));
+    var hlt = f64_lt(hdiff, f64_from(250));
+    ok(hlt, "heliacal within 250 days");
+
+    # -- Solstice azimuth --
+    var st_az = solstice_sunrise_azimuth(f64_parse("51.18"), 1);
+    ok(f64_approx_eq(st_az, f64_from(50), f64_from(5)), "stonehenge solstice azimuth ~50");
+
+    var eq_az = solstice_sunrise_azimuth(f64_from(30), 0);
+    var eq_gt = f64_gt(eq_az, f64_from(90));
+    ok(eq_gt, "winter solstice sunrise south of east (>90)");
+
+    # -- Monument alignment --
+    var ma1 = monument_alignment(f64_parse("51.18"), f64_from(51), J2000_JDN, f64_from(5));
+    var has_solstice = 0;
+    var m1n = vec_len(ma1);
+    var mi = 0;
+    while (mi < m1n) {
+        var rr = vec_get(ma1, mi);
+        if (ar_target(rr) == AT_SUMMER_SOLSTICE_SUNRISE) { has_solstice = 1; }
+        mi = mi + 1;
+    }
+    ok(has_solstice, "stonehenge finds summer solstice sunrise");
+
+    var ma2 = monument_alignment(f64_from(30), f64_from(90), J2000_JDN, f64_from(2));
+    var has_equinox = 0;
+    var m2n = vec_len(ma2);
+    var mj = 0;
+    while (mj < m2n) {
+        var rr2 = vec_get(ma2, mj);
+        if (ar_target(rr2) == AT_EQUINOX_SUNRISE) { has_equinox = 1; }
+        mj = mj + 1;
+    }
+    ok(has_equinox, "east-facing monument finds equinox sunrise");
+
+    # -- Display / name-table extras (not in Rust tests but exercise the ports) --
+    ok(str_eq_cstr(heliacal_event_type_to_str(HET_RISING), "heliacal rising"), "HET rising display");
+    ok(str_eq_cstr(heliacal_event_type_to_str(HET_SETTING), "heliacal setting"), "HET setting display");
+    ok(str_eq_cstr(starname_name(SN_VEGA), "Vega"), "starname_name Vega");
+    ok(str_eq_cstr(alignmenttarget_name(AT_STAR_RISING), "StarRising"), "alignmenttarget_name StarRising");
+
+    # -- logging init does not crash --
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

@@ -1,0 +1,99 @@
+[package]
+name = "sankhya"
+version = "${file:VERSION}"
+description = "sankhya — ancient mathematical systems, historical calendars, and archaeoastronomy for AGNOS"
+license = "GPL-3.0-only"
+language = "cyrius"
+cyrius = "6.4.69"
+repository = "https://github.com/MacCracken/sankhya"
+
+[build]
+# Minimal CLI smoke test — does NOT include the library (see src/main.cyr).
+entry = "src/main.cyr"
+output = "build/sankhya"
+
+[lib]
+# `cyrius distlib` bundles these self-contained, dependency-ordered modules into
+# dist/sankhya.cyr — the single file consumers (hisab, ...) include. Every module
+# listed here MUST be include-free (the bundler strips includes and resolves
+# stdlib/deps from the consumer's [deps]); lib.cyr is last (include-only entry).
+# This list GROWS as modules are ported (currently: foundation only).
+modules = [
+    "src/error.cyr",
+    "src/util.cyr",
+    "src/f64_util.cyr",
+    "src/logging.cyr",
+    "src/gregorian.cyr",
+    "src/roman.cyr",
+    "src/greek.cyr",
+    "src/vedic.cyr",
+    "src/mayan.cyr",
+    "src/aztec.cyr",
+    "src/coptic.cyr",
+    "src/egyptian.cyr",
+    "src/babylonian.cyr",
+    "src/hebrew.cyr",
+    "src/islamic.cyr",
+    "src/astro.cyr",
+    "src/chinese.cyr",
+    "src/persian.cyr",
+    "src/epoch.cyr",
+    "src/serial_util.cyr",
+    "src/serial_gregorian.cyr",
+    "src/serial_roman.cyr",
+    "src/serial_greek.cyr",
+    "src/serial_vedic.cyr",
+    "src/serial_mayan.cyr",
+    "src/serial_aztec.cyr",
+    "src/serial_coptic.cyr",
+    "src/serial_egyptian.cyr",
+    "src/serial_babylonian.cyr",
+    "src/serial_hebrew.cyr",
+    "src/serial_islamic.cyr",
+    "src/serial_astro.cyr",
+    "src/serial_chinese.cyr",
+    "src/serial_persian.cyr",
+    "src/serial_epoch.cyr",
+    "src/lib.cyr",
+]
+
+[deps]
+# Folded stdlib modules (auto-included at compile time):
+#   string/fmt/alloc/vec/str/syscalls/io/args — core runtime, strings, vectors
+#   assert            — test harness (assert_eq / assert_summary)
+#   result/tagged     — Result<T,E> + `?` propagation (error handling)
+#   fnptr             — function pointers (vec_sort comparators)
+#   math              — f64 constants (F64_PI...) + f64_parse/min/max/clamp, gcd/lcm
+#   ganita            — EXTENDED math: f64_pow/hypot + asin/acos/atan2/sinh/cosh (astro)
+#   bayan             — JSON serialize + parse (replaces serde/serde_json, round-trip)
+#   sakshi            — structured logging (replaces tracing; sankhya_log_init)
+#   bench             — benchmark harness (benches/*.bcyr, scripts/bench-history.sh)
+#   hashmap           — hash map (required by varna + avatara bundle internals)
+#   net/http          — transitive: itihas's dist bundle ships a hoosh HTTP client
+#                       (we don't call it; these resolve its sockaddr_in/_http_* symbols)
+stdlib = [
+    "string", "fmt", "alloc", "vec", "str", "syscalls", "io", "args",
+    "assert", "result", "tagged", "fnptr", "hashmap",
+    "math", "ganita", "bayan", "sakshi", "bench", "net", "http",
+]
+
+# First-party sibling deps (always-on, full parity — the Rust optional-feature
+# gating is deferred until Cyrius grows feature flags; see docs backlog).
+# varna is wired now (wave-1/2 numeral modules use it); itihas + avatara are
+# added with the epoch capstone.
+[deps.varna]
+git = "https://github.com/MacCracken/varna.git"
+tag = "2.1.0"
+modules = ["dist/varna.cyr"]
+
+# epoch's historical context (eras/civilizations/events) — always-on, full parity.
+[deps.itihas]
+git = "https://github.com/MacCracken/itihas.git"
+tag = "2.4.0"
+modules = ["dist/itihas.cyr"]
+
+# epoch's Saptarishi archetype profiles — always-on, full parity.
+[deps.avatara]
+git = "https://github.com/MacCracken/avatara.git"
+tag = "2.9.0"
+modules = ["dist/avatara.cyr"]

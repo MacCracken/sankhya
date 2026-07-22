@@ -1,0 +1,326 @@
+# roman.cyr — Roman numeral system (was src/roman.rs).
+#
+# Conversion between Roman numerals and decimal values (1–3999), canonical
+# subtractive-notation validation, and Roman-numeral arithmetic
+# (add/subtract/multiply/divide). A self-contained leaf module: no floats, no
+# calendar math — only integer conversion + string parsing.
+#
+# Parity notes vs Rust:
+#   * u32 → i64. Range checks are written as `value < 1 || value > MAX_VALUE`
+#     (Rust used `value == 0 || value > MAX_VALUE`; identical over the u32
+#     domain but also rejects negative i64 callers).
+#   * Rust's checked_add / checked_mul overflow branches are unreachable at
+#     i64 width for in-range roman values, so roman_add / roman_multiply just
+#     compute and defer the range check to from_value (which returns
+#     InvalidBase for >3999 — exactly what Rust does for e.g. 3999+1=4000).
+#   * from_roman keeps the explicit `total < val` underflow guard.
+
+# --- Constants ---------------------------------------------------------------
+
+# The maximum value representable in standard (non-vinculum) Roman numerals.
+enum RomanMax { MAX_VALUE = 3999; }
+
+# --- ROMAN_TABLE: parallel arrays (value, symbol), descending -----------------
+# Built lazily on first use (needs alloc_init()); the Rust const was
+# &[(u32,&str)] of 13 entries.
+
+var roman_vals = 0;
+var roman_syms = 0;
+var roman_table_done = 0;
+
+fn build_roman_table() {
+    roman_vals = alloc(13 * 8);
+    roman_syms = alloc(13 * 8);
+    store64(roman_vals + 0 * 8, 1000); store64(roman_syms + 0 * 8, "M");
+    store64(roman_vals + 1 * 8, 900);  store64(roman_syms + 1 * 8, "CM");
+    store64(roman_vals + 2 * 8, 500);  store64(roman_syms + 2 * 8, "D");
+    store64(roman_vals + 3 * 8, 400);  store64(roman_syms + 3 * 8, "CD");
+    store64(roman_vals + 4 * 8, 100);  store64(roman_syms + 4 * 8, "C");
+    store64(roman_vals + 5 * 8, 90);   store64(roman_syms + 5 * 8, "XC");
+    store64(roman_vals + 6 * 8, 50);   store64(roman_syms + 6 * 8, "L");
+    store64(roman_vals + 7 * 8, 40);   store64(roman_syms + 7 * 8, "XL");
+    store64(roman_vals + 8 * 8, 10);   store64(roman_syms + 8 * 8, "X");
+    store64(roman_vals + 9 * 8, 9);    store64(roman_syms + 9 * 8, "IX");
+    store64(roman_vals + 10 * 8, 5);   store64(roman_syms + 10 * 8, "V");
+    store64(roman_vals + 11 * 8, 4);   store64(roman_syms + 11 * 8, "IV");
+    store64(roman_vals + 12 * 8, 1);   store64(roman_syms + 12 * 8, "I");
+    roman_table_done = 1;
+    return 0;
+}
+
+fn ensure_roman_table() {
+    if (roman_table_done == 0) { build_roman_table(); }
+    return 0;
+}
+
+# --- RomanNumeral struct: { value: i64, text: Str } --------------------------
+
+enum RomanOff { RN_VALUE = 0; RN_TEXT = 8; RN_SIZE = 16; }
+
+#must_use
+fn romannum_new(value, text) {
+    var p = alloc(RN_SIZE);
+    store64(p + RN_VALUE, value);
+    store64(p + RN_TEXT, text);
+    return p;
+}
+
+#must_use
+fn romannum_value(p) { return load64(p + RN_VALUE); }
+
+#must_use
+fn romannum_text(p) { return load64(p + RN_TEXT); }
+
+# Display impl: writes the numeral's text (enables to_string()).
+#must_use
+fn romannum_to_str(p) { return load64(p + RN_TEXT); }
+
+# --- (quotient, Option<remainder>) pair returned by divide -------------------
+# remainder == 0 means None (no remainder).
+
+enum DivOff { DIV_Q = 0; DIV_R = 8; DIV_SIZE = 16; }
+
+#must_use
+fn divresult_new(q, r) {
+    var p = alloc(DIV_SIZE);
+    store64(p + DIV_Q, q);
+    store64(p + DIV_R, r);
+    return p;
+}
+
+#must_use
+fn divresult_quotient(p) { return load64(p + DIV_Q); }
+
+# 0 = None (exact division), else pointer to the remainder RomanNumeral.
+#must_use
+fn divresult_remainder(p) { return load64(p + DIV_R); }
+
+# --- Range helpers -----------------------------------------------------------
+
+#must_use
+fn roman_out_of_range(value) {
+    if (value < 1) { return 1; }
+    if (value > MAX_VALUE) { return 1; }
+    return 0;
+}
+
+# "Roman numeral value {value} out of range 1..{MAX_VALUE}"
+#must_use
+fn roman_oor_msg(value) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "Roman numeral value ");
+    str_builder_add_int(sb, value);
+    str_builder_add_cstr(sb, " out of range 1..");
+    str_builder_add_int(sb, MAX_VALUE);
+    return str_builder_build(sb);
+}
+
+# --- Conversion --------------------------------------------------------------
+
+# Convert a decimal value (1–3999) to a Roman numeral string. Assumes valid
+# input (private helper); use to_roman_str / from_value for validated calls.
+#must_use
+fn to_roman(n) {
+    ensure_roman_table();
+    var sb = str_builder_new();
+    for (var i = 0; i < 13; i = i + 1) {
+        var val = load64(roman_vals + i * 8);
+        var sym = load64(roman_syms + i * 8);
+        while (n >= val) {
+            str_builder_add_cstr(sb, sym);
+            n = n - val;
+        }
+    }
+    return str_builder_build(sb);
+}
+
+# Validated decimal → Roman string. Returns Ok(Str) or Err (InvalidBase).
+#must_use
+fn to_roman_str(value) {
+    if (roman_out_of_range(value) == 1) {
+        return sk_fail(SKE_INVALID_BASE, roman_oor_msg(value));
+    }
+    return Ok(to_roman(value));
+}
+
+# Map a single Roman numeral character (ASCII byte) to its value, or 0 if the
+# character is not a valid Roman symbol.
+#must_use
+fn char_value(ch) {
+    if (ch == 73) { return 1; }     # 'I'
+    if (ch == 86) { return 5; }     # 'V'
+    if (ch == 88) { return 10; }    # 'X'
+    if (ch == 76) { return 50; }    # 'L'
+    if (ch == 67) { return 100; }   # 'C'
+    if (ch == 68) { return 500; }   # 'D'
+    if (ch == 77) { return 1000; }  # 'M'
+    return 0;
+}
+
+# Parse a Roman numeral string to its decimal value. Accepts upper/lowercase.
+# Returns Ok(value) or Err. Validates character set, range, and canonical form.
+#must_use
+fn from_roman(s) {
+    var slen = str_len(s);
+    if (slen == 0) {
+        return sk_fail(SKE_INVALID_BASE, str_from("empty string is not a valid Roman numeral"));
+    }
+    var upper = sk_str_upper(s);
+    var ulen = str_len(upper);
+    var ud = str_data(upper);
+    var total = 0;
+    var prev_value = 0;
+    var i = ulen - 1;
+    while (i >= 0) {
+        var ch = load8(ud + i);
+        var val = char_value(ch);
+        if (val == 0) {
+            var sbc = str_builder_new();
+            str_builder_add_cstr(sbc, "'");
+            str_builder_add_byte(sbc, ch);
+            str_builder_add_cstr(sbc, "' is not a valid Roman numeral character");
+            return sk_fail(SKE_INVALID_BASE, str_builder_build(sbc));
+        }
+        if (val < prev_value) {
+            if (total < val) {
+                return sk_fail(SKE_COMPUTATION, str_from("Roman numeral underflow"));
+            }
+            total = total - val;
+        } else {
+            total = total + val;
+        }
+        prev_value = val;
+        i = i - 1;
+    }
+
+    if (roman_out_of_range(total) == 1) {
+        var sbr = str_builder_new();
+        str_builder_add_cstr(sbr, "Roman numeral '");
+        str_builder_add(sbr, s);
+        str_builder_add_cstr(sbr, "' produces value ");
+        str_builder_add_int(sbr, total);
+        str_builder_add_cstr(sbr, " out of range 1..");
+        str_builder_add_int(sbr, MAX_VALUE);
+        return sk_fail(SKE_INVALID_BASE, str_builder_build(sbr));
+    }
+
+    # Validate canonical form: round-trip check.
+    var canonical = to_roman(total);
+    if (str_eq(canonical, upper) == 0) {
+        var sbn = str_builder_new();
+        str_builder_add_cstr(sbn, "'");
+        str_builder_add(sbn, s);
+        str_builder_add_cstr(sbn, "' is not canonical Roman notation (expected '");
+        str_builder_add(sbn, canonical);
+        str_builder_add_cstr(sbn, "' for ");
+        str_builder_add_int(sbn, total);
+        str_builder_add_cstr(sbn, ")");
+        return sk_fail(SKE_INVALID_BASE, str_builder_build(sbn));
+    }
+
+    return Ok(total);
+}
+
+# --- RomanNumeral constructors -----------------------------------------------
+
+# Build a numeral from a decimal value. Returns Ok(RomanNumeral) or Err.
+#must_use
+fn romannum_from_value(value) {
+    if (roman_out_of_range(value) == 1) {
+        return sk_fail(SKE_INVALID_BASE, roman_oor_msg(value));
+    }
+    return Ok(romannum_new(value, to_roman(value)));
+}
+
+# Parse a Roman string into a RomanNumeral (re-canonicalizing the text).
+#must_use
+fn romannum_parse(s) {
+    var r = from_roman(s);
+    if (is_ok(r) == 0) { return r; }
+    var value = result_unwrap(r);
+    return Ok(romannum_new(value, to_roman(value)));
+}
+
+# --- Arithmetic --------------------------------------------------------------
+
+# Add two values → RomanNumeral. Sum > 3999 → InvalidBase (via from_value).
+#must_use
+fn roman_add(a, b) {
+    var sum = a + b;
+    return romannum_from_value(sum);
+}
+
+# Subtract b from a → RomanNumeral. a <= b → ComputationError.
+#must_use
+fn roman_subtract(a, b) {
+    if (a <= b) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "Roman subtraction would produce zero or negative: ");
+        str_builder_add_int(sb, a);
+        str_builder_add_cstr(sb, " - ");
+        str_builder_add_int(sb, b);
+        return sk_fail(SKE_COMPUTATION, str_builder_build(sb));
+    }
+    return romannum_from_value(a - b);
+}
+
+# Multiply two values → RomanNumeral. Product > 3999 → InvalidBase.
+#must_use
+fn roman_multiply(a, b) {
+    var product = a * b;
+    return romannum_from_value(product);
+}
+
+# Divide a by b → Ok(DivResult{quotient, Option<remainder>}) or Err.
+# b == 0 → InvalidFraction; quotient == 0 → ComputationError.
+#must_use
+fn roman_divide(a, b) {
+    if (b == 0) {
+        return sk_fail(SKE_INVALID_FRACTION, str_from("division by zero"));
+    }
+    var quotient = a / b;
+    var remainder = a % b;
+    if (quotient == 0) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "Roman division ");
+        str_builder_add_int(sb, a);
+        str_builder_add_cstr(sb, " / ");
+        str_builder_add_int(sb, b);
+        str_builder_add_cstr(sb, " produces zero quotient");
+        return sk_fail(SKE_COMPUTATION, str_builder_build(sb));
+    }
+    var qr = romannum_from_value(quotient);
+    if (is_ok(qr) == 0) { return qr; }
+    var q = result_unwrap(qr);
+    var r = 0;
+    if (remainder > 0) {
+        var rr = romannum_from_value(remainder);
+        if (is_ok(rr) == 0) { return rr; }
+        r = result_unwrap(rr);
+    }
+    return Ok(divresult_new(q, r));
+}
+
+# --- RomanNumeral methods (delegate to the free functions) -------------------
+
+#must_use
+fn romannum_add(x, y) { return roman_add(romannum_value(x), romannum_value(y)); }
+
+#must_use
+fn romannum_subtract(x, y) { return roman_subtract(romannum_value(x), romannum_value(y)); }
+
+#must_use
+fn romannum_multiply(x, y) { return roman_multiply(romannum_value(x), romannum_value(y)); }
+
+#must_use
+fn romannum_divide(x, y) { return roman_divide(romannum_value(x), romannum_value(y)); }
+
+# --- Utility -----------------------------------------------------------------
+
+# 1 iff s is a valid Roman numeral in canonical form.
+#must_use
+fn is_valid_roman(s) {
+    var r = from_roman(s);
+    if (is_ok(r) == 1) { return 1; }
+    return 0;
+}

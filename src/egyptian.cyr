@@ -1,0 +1,478 @@
+# egyptian.cyr — Ancient Egyptian mathematics and stellar astronomy.
+#
+# Ported from rust-old/src/egyptian.rs (full parity, v3.0.0):
+#   - greedy (Fibonacci-Sylvester) unit-fraction decomposition
+#   - Rhind-Papyrus doubling multiplication and its inverse division
+#   - the 36 stellar decans (star-clock catalog)
+#   - the Sothic (Sirius/Sopdet) cycle: drift + JDN-position math anchored to
+#     the Censorinus 139 CE epoch
+#   - hieroglyphic numeral rendering (via varna, always-on)
+#
+# Self-contained: NO include lines (the distlib bundler resolves stdlib + varna
+# from the consumer's [deps]). All `%` here operate on non-negative operands
+# (u32/u64 in Rust); the float positive-modulo idioms use the floor-based
+# f64_fmod, which already returns the canonical [0, turn) representative.
+
+# ---------------------------------------------------------------------------
+# Constants (Sothic cycle)
+# ---------------------------------------------------------------------------
+
+# Integer constants — literal globals (cheap, no global-init cost).
+var SOTHIC_CYCLE_CIVIL_YEARS = 1461;   # civil years per Sothic cycle
+var SOTHIC_CYCLE_DAYS = 533265;        # 365 * 1461
+
+# f64 constants — bit patterns set once in egyptian_init() / egy_ensure().
+var SOTHIC_DRIFT_PER_YEAR = 0;         # 0.25 days per civil year
+var CENSORINUS_EPOCH_JDN = 0;          # 1_772_028.5 (139 CE Sopdet rising)
+
+# f64 scratch constants (whole numbers) also lazily initialized.
+var EGY_F64_360 = 0;
+var EGY_F64_10 = 0;
+var EGY_F64_365 = 0;
+var EGY_F64_1461 = 0;
+var EGY_F64_30 = 0;
+var EGY_F64_60 = 0;
+var EGY_F64_NEG60 = 0;
+var EGY_F64_2000 = 0;
+var EGY_F64_200 = 0;
+
+var egy_consts_done = 0;
+
+fn egyptian_init() {
+    SOTHIC_DRIFT_PER_YEAR = f64_parse("0.25");
+    CENSORINUS_EPOCH_JDN = f64_parse("1772028.5");
+    EGY_F64_360 = f64_from(360);
+    EGY_F64_10 = f64_from(10);
+    EGY_F64_365 = f64_from(365);
+    EGY_F64_1461 = f64_from(1461);
+    EGY_F64_30 = f64_from(30);
+    EGY_F64_60 = f64_from(60);
+    EGY_F64_NEG60 = f64_neg(f64_from(60));
+    EGY_F64_2000 = f64_from(2000);
+    EGY_F64_200 = f64_from(200);
+    egy_consts_done = 1;
+    return 0;
+}
+
+# Lazy guard so the module is correct even if a consumer forgets egyptian_init().
+fn egy_ensure() {
+    if (egy_consts_done == 0) { egyptian_init(); }
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# Egyptian fractions (unit fraction decomposition)
+# ---------------------------------------------------------------------------
+
+# Private GCD (mirrors the Rust module's own gcd, not the stdlib one).
+#must_use
+fn egy_gcd(a, b) {
+    var x = a;
+    var y = b;
+    while (y != 0) {
+        var t = y;
+        y = x % y;
+        x = t;
+    }
+    return x;
+}
+
+# Decompose numerator/denominator into distinct unit-fraction denominators via
+# the greedy (Fibonacci-Sylvester) algorithm. Returns Ok(vec of denominators)
+# or Err on zero denominator / overflow / non-termination.
+#must_use
+fn decompose(numerator, denominator) {
+    # tracing::debug!(numerator, denominator, "Egyptian fraction decomposition")
+    sakshi_debug("Egyptian fraction decomposition", 31);
+
+    if (denominator == 0) {
+        return sk_fail(SKE_INVALID_FRACTION, str_from("denominator cannot be zero"));
+    }
+    if (numerator == 0) {
+        return Ok(vec_new());
+    }
+
+    var num = numerator;
+    var den = denominator;
+
+    # Simplify the fraction first.
+    var g = egy_gcd(num, den);
+    num = num / g;
+    den = den / g;
+
+    # If already a unit fraction.
+    if (num == 1) {
+        var v1 = vec_new();
+        vec_push(v1, den);
+        return Ok(v1);
+    }
+
+    var result = vec_new();
+    var iter = 0;
+    var LIMIT = 0x7FFFFFFFFFFFFFFF;
+
+    while (iter < 100) {
+        if (num == 0) { break; }
+        if (num == 1) {
+            vec_push(result, den);
+            break;
+        }
+
+        # d = ceil(den / num)
+        var d = (den + num - 1) / num;
+        vec_push(result, d);
+
+        # new_num = num*d - den ; new_den = den*d  (checked, in Rust order)
+        if (d != 0) {
+            var lim1 = LIMIT / d;
+            if (num > lim1) {
+                return sk_fail(SKE_OVERFLOW, str_from("Egyptian fraction decomposition overflow"));
+            }
+        }
+        var prod_nd = num * d;
+        if (prod_nd < den) {
+            return sk_fail(SKE_OVERFLOW, str_from("Egyptian fraction decomposition overflow"));
+        }
+        var new_num = prod_nd - den;
+
+        if (d != 0) {
+            var lim2 = LIMIT / d;
+            if (den > lim2) {
+                return sk_fail(SKE_OVERFLOW, str_from("Egyptian fraction decomposition overflow"));
+            }
+        }
+        var new_den = den * d;
+
+        if (new_num == 0) { break; }
+
+        var g2 = egy_gcd(new_num, new_den);
+        num = new_num / g2;
+        den = new_den / g2;
+        iter = iter + 1;
+    }
+
+    # Non-termination check (matches Rust's final guard).
+    var bad = 0;
+    if (num != 0) {
+        if (vec_len(result) == 0) { bad = 1; }
+        if (num != 1) { bad = 1; }
+    }
+    if (bad == 1) {
+        return sk_fail(SKE_COMPUTATION, str_from("Egyptian fraction decomposition did not terminate"));
+    }
+
+    return Ok(result);
+}
+
+# ---------------------------------------------------------------------------
+# Rhind Papyrus multiplication (doubling method)
+# ---------------------------------------------------------------------------
+
+# Multiply via repeated doubling/halving (binary multiplication). Bare +/<<
+# are 2's-complement wrapping, matching Rust wrapping_add / wrapping_shl(1).
+#must_use
+fn egyptian_multiply(a, b) {
+    var result = 0;
+    var multiplicand = a;
+    var multiplier = b;
+    while (multiplier > 0) {
+        var bit = multiplier & 1;
+        if (bit == 1) { result = result + multiplicand; }
+        multiplicand = multiplicand << 1;
+        multiplier = multiplier >> 1;
+    }
+    return result;
+}
+
+# ---------------------------------------------------------------------------
+# Egyptian division
+# ---------------------------------------------------------------------------
+
+# Result record for egyptian_divide: { quotient, fractions(vec) } — 16 bytes.
+enum EgyDivOff { ED_QUOT = 0; ED_FRACS = 8; ED_SIZE = 16; }
+
+#must_use
+fn egydiv_new(quotient, fractions) {
+    var p = alloc(ED_SIZE);
+    store64(p + ED_QUOT, quotient);
+    store64(p + ED_FRACS, fractions);
+    return p;
+}
+#must_use
+fn egydiv_quotient(p) { return load64(p + ED_QUOT); }
+#must_use
+fn egydiv_fractions(p) { return load64(p + ED_FRACS); }
+
+# Divide via the Egyptian method: integer quotient + remainder as unit
+# fractions. Returns Ok(EgyDiv record) or Err(InvalidFraction) on zero divisor.
+#must_use
+fn egyptian_divide(dividend, divisor) {
+    if (divisor == 0) {
+        return sk_fail(SKE_INVALID_FRACTION, str_from("divisor cannot be zero"));
+    }
+
+    var quotient = dividend / divisor;
+    var remainder = dividend % divisor;
+
+    if (remainder == 0) {
+        return Ok(egydiv_new(quotient, vec_new()));
+    }
+
+    var dres = decompose(remainder, divisor);
+    if (is_err_result(dres) == 1) { return dres; }
+    var fractions = result_unwrap(dres);
+    return Ok(egydiv_new(quotient, fractions));
+}
+
+# ---------------------------------------------------------------------------
+# Stellar decans
+# ---------------------------------------------------------------------------
+
+# Decan record: { number(u8), name(Str), ecliptic_longitude(f64) } — 24 bytes.
+enum DecanOff { DEC_NUMBER = 0; DEC_NAME = 8; DEC_LON = 16; DEC_SIZE = 24; }
+
+#must_use
+fn decan_new(number, name, ecliptic_longitude) {
+    var p = alloc(DEC_SIZE);
+    store64(p + DEC_NUMBER, number);
+    store64(p + DEC_NAME, name);
+    store64(p + DEC_LON, ecliptic_longitude);
+    return p;
+}
+#must_use
+fn decan_number(p) { return load64(p + DEC_NUMBER); }
+#must_use
+fn decan_name(p) { return load64(p + DEC_NAME); }
+#must_use
+fn decan_longitude(p) { return load64(p + DEC_LON); }
+
+# The 36 Egyptian stellar decans, longitudes 0.0..350.0 in 10-degree steps.
+# Lazy-init singleton vec of Decan pointers (index i == decan #(i+1)).
+var decans_vec = 0;
+var decans_done = 0;
+
+fn build_decans() {
+    var v = vec_new();
+    vec_push(v, decan_new(1, str_from("Kenmet"), f64_from(0)));
+    vec_push(v, decan_new(2, str_from("Khentet Hrt"), f64_from(10)));
+    vec_push(v, decan_new(3, str_from("Khentet Khrt"), f64_from(20)));
+    vec_push(v, decan_new(4, str_from("Hat Djat"), f64_from(30)));
+    vec_push(v, decan_new(5, str_from("Pehui Djat"), f64_from(40)));
+    vec_push(v, decan_new(6, str_from("Temat Hrt"), f64_from(50)));
+    vec_push(v, decan_new(7, str_from("Temat Khrt"), f64_from(60)));
+    vec_push(v, decan_new(8, str_from("Ushat"), f64_from(70)));
+    vec_push(v, decan_new(9, str_from("Bekati"), f64_from(80)));
+    vec_push(v, decan_new(10, str_from("Tepai"), f64_from(90)));
+    vec_push(v, decan_new(11, str_from("Khentu Hrt"), f64_from(100)));
+    vec_push(v, decan_new(12, str_from("Khentu Khrt"), f64_from(110)));
+    vec_push(v, decan_new(13, str_from("Sapt Khenmet"), f64_from(120)));
+    vec_push(v, decan_new(14, str_from("Khenmet"), f64_from(130)));
+    vec_push(v, decan_new(15, str_from("Seshmu"), f64_from(140)));
+    vec_push(v, decan_new(16, str_from("Kenmu"), f64_from(150)));
+    vec_push(v, decan_new(17, str_from("Semed"), f64_from(160)));
+    vec_push(v, decan_new(18, str_from("Seret"), f64_from(170)));
+    vec_push(v, decan_new(19, str_from("Sah"), f64_from(180)));
+    vec_push(v, decan_new(20, str_from("Sopdet"), f64_from(190)));
+    vec_push(v, decan_new(21, str_from("Knmt"), f64_from(200)));
+    vec_push(v, decan_new(22, str_from("Sah Sapt"), f64_from(210)));
+    vec_push(v, decan_new(23, str_from("Tepy Khentet"), f64_from(220)));
+    vec_push(v, decan_new(24, str_from("Khentet Hrt S"), f64_from(230)));
+    vec_push(v, decan_new(25, str_from("Khentet Khrt S"), f64_from(240)));
+    vec_push(v, decan_new(26, str_from("Apt Hnt"), f64_from(250)));
+    vec_push(v, decan_new(27, str_from("Ipds"), f64_from(260)));
+    vec_push(v, decan_new(28, str_from("Sba N Hry Ib"), f64_from(270)));
+    vec_push(v, decan_new(29, str_from("Kher Khept Khentet"), f64_from(280)));
+    vec_push(v, decan_new(30, str_from("Tepy Ahui"), f64_from(290)));
+    vec_push(v, decan_new(31, str_from("Ahui"), f64_from(300)));
+    vec_push(v, decan_new(32, str_from("Pehui Ahui"), f64_from(310)));
+    vec_push(v, decan_new(33, str_from("Tepy Baka"), f64_from(320)));
+    vec_push(v, decan_new(34, str_from("Baka"), f64_from(330)));
+    vec_push(v, decan_new(35, str_from("Tepy Akhui"), f64_from(340)));
+    vec_push(v, decan_new(36, str_from("Akhui"), f64_from(350)));
+    return v;
+}
+
+#must_use
+fn all_decans() {
+    if (decans_done == 0) {
+        decans_vec = build_decans();
+        decans_done = 1;
+    }
+    return decans_vec;
+}
+
+# Find the decan for a given ecliptic longitude (input normalized to 0..360).
+# Each decan spans 10 degrees. Returns a Decan pointer from all_decans().
+#must_use
+fn decan_from_longitude(degrees) {
+    egy_ensure();
+    # normalized = ((degrees % 360) + 360) % 360  (floor-based fmod gives [0,360))
+    var m1 = f64_fmod(degrees, EGY_F64_360);
+    var normalized = f64_fmod(f64_add(m1, EGY_F64_360), EGY_F64_360);
+    # index = (normalized / 10.0) as usize  (truncate toward zero)
+    # Rust's `as usize` saturates negatives (and NaN) to 0; f64_to does not, so
+    # guard the lower bound too (matches Rust's [0,35] clamp; avoids a negative
+    # vec_get abort on non-finite/extreme inputs).
+    var idx = f64_to(f64_div(normalized, EGY_F64_10));
+    if (idx < 0) { idx = 0; }
+    if (idx >= 36) { idx = 35; }
+    return vec_get(all_decans(), idx);
+}
+
+# ---------------------------------------------------------------------------
+# Sothic cycle (Sopdet / Sirius)
+# ---------------------------------------------------------------------------
+
+# Sopdet (Sirius) — decan #20 (0-indexed 19).
+#must_use
+fn sopdet() {
+    return vec_get(all_decans(), 19);
+}
+
+# Drift in days between the civil calendar and the heliacal rising of Sopdet
+# for a given number of civil years since a Sothic epoch. Resets each cycle.
+#must_use
+fn sothic_drift(years_since_epoch) {
+    egy_ensure();
+    var years_in_cycle = years_since_epoch % SOTHIC_CYCLE_CIVIL_YEARS;
+    return f64_mul(f64_from(years_in_cycle), SOTHIC_DRIFT_PER_YEAR);
+}
+
+# Position record for sothic_position: { cycle_number(i32), year_in_cycle(u32),
+# drift_days(f64) } — 24 bytes.
+enum SothicPosOff { SP_CYCLE = 0; SP_YEAR = 8; SP_DRIFT = 16; SP_SIZE = 24; }
+
+#must_use
+fn sothicpos_new(cycle, year, drift) {
+    var p = alloc(SP_SIZE);
+    store64(p + SP_CYCLE, cycle);
+    store64(p + SP_YEAR, year);
+    store64(p + SP_DRIFT, drift);
+    return p;
+}
+#must_use
+fn sothicpos_cycle(p) { return load64(p + SP_CYCLE); }
+#must_use
+fn sothicpos_year(p) { return load64(p + SP_YEAR); }
+#must_use
+fn sothicpos_drift(p) { return load64(p + SP_DRIFT); }
+
+# Determine the position within the current Sothic cycle for a given JDN,
+# referenced to the Censorinus epoch (139 CE). Returns a SothicPos record.
+#must_use
+fn sothic_position(jdn) {
+    egy_ensure();
+    var days_from_epoch = f64_sub(jdn, CENSORINUS_EPOCH_JDN);
+    var civil_years = f64_div(days_from_epoch, EGY_F64_365);
+
+    var cycle_f = f64_floor(f64_div(civil_years, EGY_F64_1461));
+    var cycle_number = f64_to(cycle_f);
+
+    # year_in_cycle = ((civil_years % 1461) + 1461) % 1461  (floor-based fmod)
+    var m1 = f64_fmod(civil_years, EGY_F64_1461);
+    var year_in_cycle = f64_fmod(f64_add(m1, EGY_F64_1461), EGY_F64_1461);
+    var year_u32 = f64_to(year_in_cycle);
+
+    var drift = sothic_drift(year_u32);
+    return sothicpos_new(cycle_number, year_u32, drift);
+}
+
+# Predict the JDN of the next heliacal rising of Sopdet after a given JDN for a
+# geographic latitude. Errors (InvalidDate) if latitude outside -60..=60.
+#must_use
+fn next_sopdet_rising(jdn, latitude) {
+    egy_ensure();
+    var below = f64_lt(latitude, EGY_F64_NEG60);
+    var above = f64_gt(latitude, EGY_F64_60);
+    if (below == 1) {
+        var sb1 = str_builder_new();
+        str_builder_add_cstr(sb1, "latitude ");
+        str_builder_add_int(sb1, f64_to(latitude));
+        str_builder_add_cstr(sb1, " outside observable range for Sirius (-60 to +60)");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sb1));
+    }
+    if (above == 1) {
+        var sb2 = str_builder_new();
+        str_builder_add_cstr(sb2, "latitude ");
+        str_builder_add_int(sb2, f64_to(latitude));
+        str_builder_add_cstr(sb2, " outside observable range for Sirius (-60 to +60)");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sb2));
+    }
+
+    var latitude_offset = f64_sub(latitude, EGY_F64_30);
+
+    # year_approx = 2000 + (jdn - J2000) / 365.25
+    var year_approx = f64_add(EGY_F64_2000, f64_div(f64_sub(jdn, J2000_JDN), JULIAN_YEAR_DAYS));
+    # jan1_jdn = J2000 + (floor(year_approx) - 2000) * 365.25
+    var jan1_jdn = f64_add(J2000_JDN, f64_mul(f64_sub(f64_floor(year_approx), EGY_F64_2000), JULIAN_YEAR_DAYS));
+    # rising_jdn = jan1_jdn + 200 + latitude_offset
+    var rising_jdn = f64_add(f64_add(jan1_jdn, EGY_F64_200), latitude_offset);
+
+    var passed = f64_le(rising_jdn, jdn);
+    if (passed == 1) {
+        return Ok(f64_add(rising_jdn, JULIAN_YEAR_DAYS));
+    }
+    return Ok(rising_jdn);
+}
+
+# ---------------------------------------------------------------------------
+# Hieroglyphic numeral display (via varna, always-on)
+# ---------------------------------------------------------------------------
+
+# Powers of ten, high -> low, used by to_hieroglyphic. Lazy-init singleton.
+var egy_powers_vec = 0;
+var egy_powers_done = 0;
+
+fn egy_powers() {
+    if (egy_powers_done == 0) {
+        var v = vec_new();
+        vec_push(v, 1000000);
+        vec_push(v, 100000);
+        vec_push(v, 10000);
+        vec_push(v, 1000);
+        vec_push(v, 100);
+        vec_push(v, 10);
+        vec_push(v, 1);
+        egy_powers_vec = v;
+        egy_powers_done = 1;
+    }
+    return egy_powers_vec;
+}
+
+# Render a number in Egyptian hieroglyphic notation (additive decimal).
+# Returns Ok("") for 0; Err(OverflowError) for n > 9_999_999.
+#must_use
+fn to_hieroglyphic(n) {
+    if (n == 0) {
+        return Ok(str_from(""));
+    }
+    if (n > 9999999) {
+        var sbo = str_builder_new();
+        str_builder_add_cstr(sbo, "cannot represent ");
+        str_builder_add_int(sbo, n);
+        str_builder_add_cstr(sbo, " in Egyptian hieroglyphic numerals (max 9,999,999)");
+        return sk_fail(SKE_OVERFLOW, str_builder_build(sbo));
+    }
+
+    var sys = numerals_egyptian_hieroglyphic();
+    var powers = egy_powers();
+    var np = vec_len(powers);
+    var result = str_builder_new();
+    var remainder = n;
+
+    for (var i = 0; i < np; i = i + 1) {
+        var power = vec_get(powers, i);
+        var count = remainder / power;
+        remainder = remainder % power;
+        if (count > 0) {
+            var ch = numerals_char_for(sys, power);
+            if (ch != 0) {
+                for (var j = 0; j < count; j = j + 1) {
+                    str_builder_add_cstr(result, ch);
+                }
+            }
+        }
+    }
+
+    return Ok(str_builder_build(result));
+}

@@ -1,0 +1,72 @@
+# serial_hebrew.tcyr — round-trip serde parity tests for the hebrew module.
+# Ports the hebrew serde round-trip coverage (rust-old/src/hebrew.rs
+# serde_roundtrip): build HebrewDate / HebrewMonth values, emit JSON, assert it
+# matches serde_json's format (Rust field names, month enum as bare variant-name
+# string, integers bare), then parse it back and assert field-by-field equality.
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/hebrew.cyr"
+include "src/serial_hebrew.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+
+    # --- HebrewDate: common-year date (Nisan) ---
+    var d = hebrewdate_new(5785, HM_NISAN, 15);
+    var js = hebrewdate_to_json(d);
+
+    # serde_json format: compact, field order year/month/day, month as a quoted
+    # variant-name string, year/day as bare integers.
+    var h1 = str_contains_cstr(js, "\"year\":5785");
+    ok(h1, "year is bare integer 5785");
+    var h2 = str_contains_cstr(js, "\"month\":\"Nisan\"");
+    ok(h2, "month is quoted variant-name string Nisan");
+    var h3 = str_contains_cstr(js, "\"day\":15");
+    ok(h3, "day is bare integer 15");
+
+    var parsed = hebrewdate_from_json(sk_json_parse(js));
+    ok(hebrewdate_eq(d, parsed), "HebrewDate serde round-trip (Nisan 5785)");
+
+    # --- HebrewDate: leap-year date (Adar I) — serde identifier has NO space ---
+    var d2 = hebrewdate_new(5784, HM_ADAR_I, 3);
+    var js2 = hebrewdate_to_json(d2);
+    var ha1 = str_contains_cstr(js2, "\"month\":\"AdarI\"");
+    ok(ha1, "Adar I serializes as serde identifier AdarI (no space)");
+    var ha2 = str_contains_cstr(js2, "\"year\":5784");
+    ok(ha2, "leap-year year field 5784");
+    var ha3 = str_contains_cstr(js2, "\"day\":3");
+    ok(ha3, "leap-year day field 3");
+    var parsed2 = hebrewdate_from_json(sk_json_parse(js2));
+    ok(hebrewdate_eq(d2, parsed2), "HebrewDate serde round-trip (Adar I 5784)");
+
+    # --- HebrewMonth standalone enum: bare variant-name string ---
+    var mjs = hebrewmonth_to_json(HM_ELUL);
+    var hm1 = str_contains_cstr(mjs, "\"Elul\"");
+    ok(hm1, "HebrewMonth serializes as bare quoted string Elul");
+    var mparsed = hebrewmonth_from_json(sk_json_parse(mjs));
+    ok(hebrewmonth_eq(HM_ELUL, mparsed), "HebrewMonth serde round-trip (Elul)");
+
+    # Adar II identifier check (Display "Adar II" vs serde "AdarII").
+    var m2js = hebrewmonth_to_json(HM_ADAR_II);
+    var hm2 = str_contains_cstr(m2js, "\"AdarII\"");
+    ok(hm2, "HebrewMonth Adar II serializes as AdarII (no space)");
+    var m2parsed = hebrewmonth_from_json(sk_json_parse(m2js));
+    ok(hebrewmonth_eq(HM_ADAR_II, m2parsed), "HebrewMonth serde round-trip (Adar II)");
+
+    # --- Faithful port of the Rust serde_roundtrip test: jdn_to_hebrew(2460000.5) ---
+    var jdn = f64_add(f64_from(2460000), F64_HALF);
+    var rd = jdn_to_hebrew(jdn);
+    var rjs = hebrewdate_to_json(rd);
+    var rparsed = hebrewdate_from_json(sk_json_parse(rjs));
+    ok(hebrewdate_eq(rd, rparsed), "HebrewDate serde round-trip (jdn_to_hebrew 2460000.5)");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

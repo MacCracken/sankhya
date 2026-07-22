@@ -1,0 +1,53 @@
+# lib.cyr — sankhya library public API (in-tree entry point).
+#
+# This is the ONLY src file that carries `include` lines. `cyrius distlib` strips
+# them when building dist/sankhya.cyr (so the bundle stays a flat concatenation);
+# in-tree builds/tests use these includes to pull the modules together in
+# dependency order. Stdlib + sibling deps are auto-included via cyrius.cyml.
+#
+# The include list GROWS as modules are ported. Order = dependency order.
+
+# --- foundation ---
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+
+# --- calendars / math / archaeoastronomy (wave 1: foundation-only leaves) ---
+include "src/gregorian.cyr"
+include "src/roman.cyr"
+include "src/greek.cyr"
+include "src/vedic.cyr"
+include "src/mayan.cyr"
+include "src/aztec.cyr"
+include "src/coptic.cyr"
+include "src/egyptian.cyr"
+include "src/babylonian.cyr"
+include "src/hebrew.cyr"
+include "src/islamic.cyr"
+include "src/astro.cyr"
+
+# --- wave 2 (depend on gregorian) ---
+include "src/chinese.cyr"
+include "src/persian.cyr"
+
+# --- capstone (depends on all calendar modules + itihas/avatara) ---
+include "src/epoch.cyr"
+
+# --- serial (round-trip JSON for all types; serial_util first, epoch last) ---
+include "src/serial_util.cyr"
+include "src/serial_gregorian.cyr"
+include "src/serial_roman.cyr"
+include "src/serial_greek.cyr"
+include "src/serial_vedic.cyr"
+include "src/serial_mayan.cyr"
+include "src/serial_aztec.cyr"
+include "src/serial_coptic.cyr"
+include "src/serial_egyptian.cyr"
+include "src/serial_babylonian.cyr"
+include "src/serial_hebrew.cyr"
+include "src/serial_islamic.cyr"
+include "src/serial_astro.cyr"
+include "src/serial_chinese.cyr"
+include "src/serial_persian.cyr"
+include "src/serial_epoch.cyr"

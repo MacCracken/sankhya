@@ -1,0 +1,865 @@
+# integration.tcyr — port of rust-old/tests/integration.rs.
+#
+# ~68 #[test]s spanning ALL modules: Mayan, Babylonian, Egyptian, Vedic,
+# Chinese, Greek, Roman, Gregorian/Coptic/Persian/Hebrew JDN round-trips,
+# cross-calendar convert(), Aztec Calendar Round, Astro, and 9 serde
+# round-trips (via the serial layer). One `include "src/lib.cyr"` pulls in the
+# foundation + all 15 modules + epoch + the serial layer (and the
+# itihas/avatara/varna dist deps). Duplicate-fn warnings (str_lower/str_upper/
+# vec_sort) and undefined sockaddr_in/_http_parse_response warnings from the
+# itihas bundle are expected & harmless.
+#
+# Build+run:
+#   cyrius build tests/tcyr/integration.tcyr build/_tt_integration
+#   ./build/_tt_integration
+include "src/lib.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+fn no(v, name) { return assert_eq(v, 0, name); }
+
+# ---- f64 tolerances + constants (parsed once in consts_init) ----
+var TOL_1E15 = 0;
+var TOL_1E12 = 0;
+var TOL_1E10 = 0;
+var TOL_1E5 = 0;
+var TOL_1E6 = 0;
+var TOL_001 = 0;
+var TOL_JDN = 0;
+var SQRT2 = 0;
+fn consts_init() {
+    TOL_1E15 = f64_parse("0.000000000000001");
+    TOL_1E12 = f64_parse("0.000000000001");
+    TOL_1E10 = f64_parse("0.0000000001");
+    TOL_1E5 = f64_parse("0.00001");
+    TOL_1E6 = f64_parse("0.000001");
+    TOL_001 = f64_parse("0.01");
+    TOL_JDN = f64_parse("0.0000001");
+    SQRT2 = f64_parse("1.4142135623730951");
+    return 0;
+}
+
+# Sum of 1/d over a vec of denominators (f64 bits).
+fn unit_frac_sum(v) {
+    var s = f64_from(0);
+    var i = 0;
+    var n = vec_len(v);
+    while (i < n) {
+        s = f64_add(s, f64_div(f64_from(1), f64_from(vec_get(v, i))));
+        i = i + 1;
+    }
+    return s;
+}
+
+# Integer sum over a vec.
+fn int_sum(v) {
+    var s = 0;
+    var i = 0;
+    var n = vec_len(v);
+    while (i < n) { s = s + vec_get(v, i); i = i + 1; }
+    return s;
+}
+
+# ============================ Mayan ============================
+
+fn test_mayan_longcount() {
+    # long_count_dec_21_2012: 13 baktun = 1,872,000 days -> 13.0.0.0.0
+    var days = 13 * 144000;
+    var r = long_count_from_days(days);
+    ok(is_ok(r), "long_count_from_days(1872000) ok");
+    var lc = result_unwrap(r);
+    assert_eq(lc_baktun(lc), 13, "2012 baktun=13");
+    assert_eq(lc_katun(lc), 0, "2012 katun=0");
+    assert_eq(lc_tun(lc), 0, "2012 tun=0");
+    assert_eq(lc_uinal(lc), 0, "2012 uinal=0");
+    assert_eq(lc_kin(lc), 0, "2012 kin=0");
+    ok(str_eq_cstr(longcount_to_str(lc), "13.0.0.0.0"), "longcount display 13.0.0.0.0");
+
+    # long_count_roundtrip: days -> LongCount -> days
+    var vals = vec_new();
+    vec_push(vals, 0); vec_push(vals, 1); vec_push(vals, 20); vec_push(vals, 360);
+    vec_push(vals, 7200); vec_push(vals, 144000); vec_push(vals, 1872000); vec_push(vals, 2000000);
+    var i = 0;
+    var n = vec_len(vals);
+    var fail = 0;
+    while (i < n) {
+        var d = vec_get(vals, i);
+        var rr = long_count_from_days(d);
+        if (is_ok(rr) == 0) { fail = fail + 1; }
+        else { if (long_count_to_days(result_unwrap(rr)) != d) { fail = fail + 1; } }
+        i = i + 1;
+    }
+    assert_eq(fail, 0, "long_count days roundtrip [0..2000000]");
+    return 0;
+}
+
+# One vigesimal roundtrip: to_vigesimal then from_vigesimal == n.
+fn vig_rt(n) {
+    var d = to_vigesimal(n);
+    var r = from_vigesimal(d);
+    if (is_ok(r) == 0) { return 0; }
+    if (result_unwrap(r) == n) { return 1; }
+    return 0;
+}
+
+fn test_mayan_vigesimal() {
+    # vigesimal_roundtrip_400: 400 -> [1,0,0]
+    var d = to_vigesimal(400);
+    assert_eq(vec_len(d), 3, "to_vigesimal(400) len 3");
+    assert_eq(vec_get(d, 0), 1, "to_vigesimal(400)[0]=1");
+    assert_eq(vec_get(d, 1), 0, "to_vigesimal(400)[1]=0");
+    assert_eq(vec_get(d, 2), 0, "to_vigesimal(400)[2]=0");
+    ok(vig_rt(400), "vigesimal roundtrip 400");
+
+    # vigesimal_roundtrip_large
+    ok(vig_rt(0), "vig rt 0");
+    ok(vig_rt(1), "vig rt 1");
+    ok(vig_rt(19), "vig rt 19");
+    ok(vig_rt(20), "vig rt 20");
+    ok(vig_rt(399), "vig rt 399");
+    ok(vig_rt(400), "vig rt 400b");
+    ok(vig_rt(8000), "vig rt 8000");
+    ok(vig_rt(160000), "vig rt 160000");
+    ok(vig_rt(1000000), "vig rt 1000000");
+    return 0;
+}
+
+fn test_mayan_cycles() {
+    # calendar_round_cycle: repeats every 18,980 days
+    var cr1 = calendar_round(0);
+    var cr2 = calendar_round(CALENDAR_ROUND_DAYS);
+    ok(tzolkin_eq(cr_tzolkin(cr1), cr_tzolkin(cr2)), "Tzolkin repeats after 18980 days");
+    ok(haab_eq(cr_haab(cr1), cr_haab(cr2)), "Haab repeats after 18980 days");
+    assert_eq(CALENDAR_ROUND_DAYS, 18980, "CALENDAR_ROUND_DAYS=18980");
+
+    # tzolkin_260_day_cycle
+    ok(tzolkin_eq(tzolkin_from_days(0), tzolkin_from_days(260)), "Tzolkin 260-day cycle");
+    # haab_365_day_cycle
+    ok(haab_eq(haab_from_days(0), haab_from_days(365)), "Haab 365-day cycle");
+
+    # venus_synodic_period ~ 583.92; 584*5 == 365*8
+    ok(f64_approx_eq(venus_synodic_period(), f64_parse("583.92"), TOL_001), "VENUS_SYNODIC_PERIOD ~ 583.92");
+    assert_eq(584 * 5, 365 * 8, "584*5 == 365*8");
+    # venus phases sum to 584
+    assert_eq(236 + 90 + 250 + 8, 584, "venus phases sum to 584");
+    return 0;
+}
+
+# ============================ Babylonian ============================
+
+fn sexa_rt(n) {
+    var d = to_sexagesimal(n);
+    var r = from_sexagesimal(d);
+    if (is_ok(r) == 0) { return 0; }
+    if (result_unwrap(r) == n) { return 1; }
+    return 0;
+}
+
+fn sqrt_check(n, tol) {
+    var r = babylonian_sqrt(f64_from(n), 20);
+    if (is_ok(r) == 0) { return 0; }
+    var got = result_unwrap(r);
+    var exp = f64_sqrt(f64_from(n));
+    return f64_approx_eq(got, exp, tol);
+}
+
+fn test_babylonian() {
+    # sexagesimal_roundtrip_3600: 3600 -> [1,0,0]
+    var d = to_sexagesimal(3600);
+    assert_eq(vec_len(d), 3, "to_sexagesimal(3600) len 3");
+    assert_eq(vec_get(d, 0), 1, "sexa(3600)[0]=1");
+    assert_eq(vec_get(d, 1), 0, "sexa(3600)[1]=0");
+    assert_eq(vec_get(d, 2), 0, "sexa(3600)[2]=0");
+    ok(sexa_rt(3600), "sexagesimal roundtrip 3600");
+
+    # sexagesimal_roundtrip_large
+    ok(sexa_rt(0), "sexa rt 0");
+    ok(sexa_rt(1), "sexa rt 1");
+    ok(sexa_rt(59), "sexa rt 59");
+    ok(sexa_rt(60), "sexa rt 60");
+    ok(sexa_rt(3599), "sexa rt 3599");
+    ok(sexa_rt(3600), "sexa rt 3600b");
+    ok(sexa_rt(216000), "sexa rt 216000");
+    ok(sexa_rt(12960000), "sexa rt 12960000");
+
+    # sqrt2_herons_method: within 1e-15
+    var r2 = babylonian_sqrt(f64_from(2), 10);
+    ok(is_ok(r2), "sqrt(2) ok");
+    ok(f64_approx_eq(result_unwrap(r2), SQRT2, TOL_1E15), "Heron sqrt(2) within 1e-15");
+
+    # sqrt_perfect_squares: within 1e-12
+    ok(sqrt_check(4, TOL_1E12), "sqrt(4) within 1e-12");
+    ok(sqrt_check(9, TOL_1E12), "sqrt(9) within 1e-12");
+    ok(sqrt_check(16, TOL_1E12), "sqrt(16) within 1e-12");
+    ok(sqrt_check(25, TOL_1E12), "sqrt(25) within 1e-12");
+    ok(sqrt_check(100, TOL_1E12), "sqrt(100) within 1e-12");
+
+    # plimpton_322_all_valid: 15 triples, a^2 + b^2 = c^2
+    var tr = generate_plimpton_triples();
+    assert_eq(vec_len(tr), 15, "15 plimpton triples");
+    var i = 0;
+    var allvalid = 1;
+    while (i < 15) {
+        var t = vec_get(tr, i);
+        var a = triple_a(t);
+        var b = triple_b(t);
+        var c = triple_c(t);
+        if (a * a + b * b != c * c) { allvalid = 0; }
+        i = i + 1;
+    }
+    ok(allvalid, "all plimpton triples satisfy a^2+b^2=c^2");
+
+    # reciprocal_table_spot_check
+    var tab = reciprocal_table();
+    var r_2 = reciprocal_lookup(tab, 2);
+    assert_eq(vec_len(r_2), 1, "recip(2) 1 digit");
+    assert_eq(vec_get(r_2, 0), 30, "recip(2)=[30]");
+    var r_3 = reciprocal_lookup(tab, 3);
+    assert_eq(vec_get(r_3, 0), 20, "recip(3)=[20]");
+    var r_4 = reciprocal_lookup(tab, 4);
+    assert_eq(vec_get(r_4, 0), 15, "recip(4)=[15]");
+    var r_8 = reciprocal_lookup(tab, 8);
+    assert_eq(vec_len(r_8), 2, "recip(8) 2 digits");
+    assert_eq(vec_get(r_8, 0), 7, "recip(8)[0]=7");
+    assert_eq(vec_get(r_8, 1), 30, "recip(8)[1]=30");
+    return 0;
+}
+
+# ============================ Egyptian ============================
+
+fn test_egyptian() {
+    # decompose_2_3: 2/3 -> [2,6], sum ~ 2/3 within 1e-15
+    var dr = decompose(2, 3);
+    ok(is_ok(dr), "decompose 2/3 ok");
+    var res = result_unwrap(dr);
+    assert_eq(vec_len(res), 2, "2/3 -> 2 terms");
+    assert_eq(vec_get(res, 0), 2, "2/3[0]=2");
+    assert_eq(vec_get(res, 1), 6, "2/3[1]=6");
+    var twothirds = f64_div(f64_from(2), f64_from(3));
+    ok(f64_approx_eq(unit_frac_sum(res), twothirds, TOL_1E15), "2/3 sum within 1e-15");
+
+    # decompose_various: 3/7 sum ~ 3/7 within 1e-10
+    var dr2 = decompose(3, 7);
+    ok(is_ok(dr2), "decompose 3/7 ok");
+    var threesev = f64_div(f64_from(3), f64_from(7));
+    ok(f64_approx_eq(unit_frac_sum(result_unwrap(dr2)), threesev, TOL_1E10), "3/7 sum within 1e-10");
+
+    # egyptian_multiply
+    assert_eq(egyptian_multiply(12, 13), 156, "12*13=156");
+    assert_eq(egyptian_multiply(0, 100), 0, "0*100=0");
+    assert_eq(egyptian_multiply(1, 1), 1, "1*1=1");
+    assert_eq(egyptian_multiply(7, 11), 77, "7*11=77");
+    assert_eq(egyptian_multiply(100, 100), 10000, "100*100=10000");
+
+    # egyptian_divide_basic: 10/3 -> q=3, rem sum ~ 1/3 within 1e-15
+    var dv = egyptian_divide(10, 3);
+    ok(is_ok(dv), "divide 10/3 ok");
+    var rec = result_unwrap(dv);
+    assert_eq(egydiv_quotient(rec), 3, "10/3 quotient 3");
+    var onethird = f64_div(f64_from(1), f64_from(3));
+    ok(f64_approx_eq(unit_frac_sum(egydiv_fractions(rec)), onethird, TOL_1E15), "10/3 remainder ~ 1/3");
+
+    # decans_count: 36 decans, number i+1, longitude i*10
+    var decs = all_decans();
+    assert_eq(vec_len(decs), 36, "36 decans");
+    var i = 0;
+    var bad = 0;
+    while (i < 36) {
+        var dc = vec_get(decs, i);
+        if (decan_number(dc) != i + 1) { bad = bad + 1; }
+        if (f64_approx_eq(decan_longitude(dc), f64_from(i * 10), TOL_1E10) == 0) { bad = bad + 1; }
+        i = i + 1;
+    }
+    assert_eq(bad, 0, "each decan number/longitude correct");
+    return 0;
+}
+
+# ============================ Vedic ============================
+
+fn test_vedic() {
+    # sulba_sqrt2_baudhayana: == 577/408 within 1e-15, ~ SQRT_2 within 1e-5
+    var approx = sulba_sqrt2();
+    var exp577 = f64_div(f64_from(577), f64_from(408));
+    ok(f64_approx_eq(approx, exp577, TOL_1E15), "sulba_sqrt2 == 577/408");
+    ok(f64_approx_eq(approx, SQRT2, TOL_1E5), "sulba_sqrt2 within 1e-5 of SQRT_2");
+
+    # meru_prastara_matches_pascal (5 rows)
+    var mr = meru_prastara(5);
+    ok(is_ok(mr), "meru_prastara(5) ok");
+    var tri = result_unwrap(mr);
+    assert_eq(vec_len(tri), 5, "meru 5 rows");
+    var row0 = vec_get(tri, 0);
+    assert_eq(vec_len(row0), 1, "meru row0 = [1]");
+    assert_eq(vec_get(row0, 0), 1, "meru row0[0]=1");
+    var row2 = vec_get(tri, 2);
+    assert_eq(vec_get(row2, 0), 1, "meru row2[0]=1");
+    assert_eq(vec_get(row2, 1), 2, "meru row2[1]=2");
+    assert_eq(vec_get(row2, 2), 1, "meru row2[2]=1");
+    var row4 = vec_get(tri, 4);
+    assert_eq(vec_get(row4, 0), 1, "meru row4[0]=1");
+    assert_eq(vec_get(row4, 1), 4, "meru row4[1]=4");
+    assert_eq(vec_get(row4, 2), 6, "meru row4[2]=6");
+    assert_eq(vec_get(row4, 3), 4, "meru row4[3]=4");
+    assert_eq(vec_get(row4, 4), 1, "meru row4[4]=1");
+
+    # meru_prastara_row_sums: row i sums to 2^i
+    var mr10 = meru_prastara(10);
+    ok(is_ok(mr10), "meru_prastara(10) ok");
+    var tri10 = result_unwrap(mr10);
+    var i = 0;
+    var sumbad = 0;
+    while (i < 10) {
+        var rowi = vec_get(tri10, i);
+        if (int_sum(rowi) != (1 << i)) { sumbad = sumbad + 1; }
+        i = i + 1;
+    }
+    assert_eq(sumbad, 0, "meru row i sums to 2^i");
+
+    # sulba_diagonal: 3-4-5 within 1e-15, 5-12-13 within 1e-10
+    ok(f64_approx_eq(sulba_diagonal(f64_from(3), f64_from(4)), f64_from(5), TOL_1E15), "sulba_diagonal(3,4)=5");
+    ok(f64_approx_eq(sulba_diagonal(f64_from(5), f64_from(12)), f64_from(13), TOL_1E10), "sulba_diagonal(5,12)=13");
+
+    # katapayadi_roundtrip
+    var vals = vec_new();
+    vec_push(vals, 0); vec_push(vals, 1); vec_push(vals, 42); vec_push(vals, 123); vec_push(vals, 9876);
+    var k = 0;
+    var n = vec_len(vals);
+    var ktfail = 0;
+    while (k < n) {
+        var v = vec_get(vals, k);
+        var e = katapayadi_encode(v);
+        var r = katapayadi_decode(e);
+        if (is_ok(r) == 0) { ktfail = ktfail + 1; }
+        else { if (result_unwrap(r) != v) { ktfail = ktfail + 1; } }
+        k = k + 1;
+    }
+    assert_eq(ktfail, 0, "katapayadi roundtrip [0,1,42,123,9876]");
+    return 0;
+}
+
+# ============================ Chinese ============================
+
+fn magic_contains_1_to_9(sq) {
+    var marks = alloc(10 * 8);
+    var z = 0;
+    while (z < 10) { store64(marks + z * 8, 0); z = z + 1; }
+    var r = 0;
+    while (r < 3) {
+        var row = vec_get(sq, r);
+        var c = 0;
+        while (c < 3) {
+            store64(marks + vec_get(row, c) * 8, 1);
+            c = c + 1;
+        }
+        r = r + 1;
+    }
+    var present = 1;
+    var k = 1;
+    while (k <= 9) {
+        if (load64(marks + k * 8) == 0) { present = 0; }
+        k = k + 1;
+    }
+    return present;
+}
+
+fn test_chinese() {
+    # chinese_remainder_sun_tzu_original: Some(23)
+    var p = vec_new();
+    vec_push(p, crt_pair(2, 3));
+    vec_push(p, crt_pair(3, 5));
+    vec_push(p, crt_pair(2, 7));
+    var out = 0;
+    assert_eq(chinese_remainder(p, &out), 1, "sun tzu has solution");
+    assert_eq(out, 23, "sun tzu = 23");
+
+    # chinese_remainder_simple: Some(5)
+    var p2 = vec_new();
+    vec_push(p2, crt_pair(1, 2));
+    vec_push(p2, crt_pair(2, 3));
+    var out2 = 0;
+    assert_eq(chinese_remainder(p2, &out2), 1, "simple crt has solution");
+    assert_eq(out2, 5, "simple crt = 5");
+
+    # magic_square_3x3_lo_shu
+    var sq3 = magic_square(3);
+    ok(sq3, "magic_square(3) is Some");
+    ok(is_magic_square(sq3), "lo shu is magic");
+    assert_eq(int_sum(vec_get(sq3, 0)), 15, "lo shu row0 sum 15");
+    ok(magic_contains_1_to_9(sq3), "lo shu contains 1..9");
+
+    # magic_square_5x5
+    var sq5 = magic_square(5);
+    ok(sq5, "magic_square(5) is Some");
+    ok(is_magic_square(sq5), "5x5 is magic");
+    assert_eq(int_sum(vec_get(sq5, 0)), 65, "5x5 row0 sum 65");
+
+    # rod_arithmetic
+    var a = rod_numeral_new(42);
+    var b = rod_numeral_new(17);
+    assert_eq(rod_value(rod_add(a, b)), 59, "42+17=59");
+    assert_eq(rod_value(rod_subtract(a, b)), 25, "42-17=25");
+    assert_eq(rod_value(rod_multiply(a, b)), 714, "42*17=714");
+    return 0;
+}
+
+# ============================ Greek ============================
+
+fn test_greek() {
+    # archimedes_pi_bounds after 10 iterations
+    var lo10, up10 = archimedes_pi(10);
+    var c1 = f64_lt(lo10, F64_PI);
+    ok(c1, "archimedes lower < pi");
+    var c2 = f64_gt(up10, F64_PI);
+    ok(c2, "archimedes upper > pi");
+    var width = f64_sub(up10, lo10);
+    var c3 = f64_lt(width, TOL_1E5);
+    ok(c3, "archimedes bounds tight (<1e-5)");
+
+    # archimedes_pi_initial (hexagon): lower=3, upper=2*sqrt(3)
+    var lo0, up0 = archimedes_pi(0);
+    ok(f64_approx_eq(lo0, f64_from(3), TOL_1E10), "archimedes(0) lower=3");
+    var upexp = f64_mul(f64_from(2), f64_sqrt(f64_from(3)));
+    ok(f64_approx_eq(up0, upexp, TOL_1E10), "archimedes(0) upper=2*sqrt(3)");
+
+    # gcd
+    assert_eq(greek_gcd(48, 18), 6, "gcd(48,18)=6");
+    assert_eq(greek_gcd(17, 13), 1, "gcd(17,13)=1");
+
+    # sieve
+    var primes = sieve(100);
+    assert_eq(vec_len(primes), 25, "25 primes below 100");
+    assert_eq(vec_get(primes, 0), 2, "primes[0]=2");
+    assert_eq(vec_get(primes, 24), 97, "primes[24]=97");
+    assert_eq(vec_len(sieve(10000)), 1229, "1229 primes below 10000");
+
+    # golden_ratio: PHI == (1+sqrt5)/2 within 1e-15
+    var expected = f64_div(f64_add(f64_from(1), f64_sqrt(f64_from(5))), f64_from(2));
+    ok(f64_approx_eq(greek_phi(), expected, TOL_1E15), "golden ratio within 1e-15");
+
+    # fibonacci_ratio_converges: ratio(40) ~ PHI within 1e-10
+    ok(f64_approx_eq(fibonacci_ratio(40), greek_phi(), TOL_1E10), "fibonacci_ratio(40) ~ PHI");
+
+    # antikythera_metonic_cycle: gear_teeth 235
+    var ratios = antikythera_gear_ratios();
+    var metonic = antikythera_lookup(ratios, "Metonic");
+    ok(metonic, "Metonic found");
+    assert_eq(anti_gear_teeth(metonic), 235, "Metonic gear_teeth 235");
+    return 0;
+}
+
+# ============================ Roman ============================
+
+fn check_roman_str(value, cstr, name) {
+    var r = to_roman_str(value);
+    if (is_ok(r) == 0) { return ok(0, name); }
+    return ok(str_eq_cstr(result_unwrap(r), cstr), name);
+}
+
+fn check_from_roman(cstr, expected, name) {
+    var r = from_roman(str_from(cstr));
+    if (is_ok(r) == 0) { return ok(0, name); }
+    return assert_eq(result_unwrap(r), expected, name);
+}
+
+fn roman_rt_fail() {
+    var fail = 0;
+    var n = 1;
+    while (n <= 3999) {
+        var rs = to_roman_str(n);
+        if (is_ok(rs) == 0) { fail = fail + 1; }
+        else {
+            var pr = from_roman(result_unwrap(rs));
+            if (is_ok(pr) == 0) { fail = fail + 1; }
+            else { if (result_unwrap(pr) != n) { fail = fail + 1; } }
+        }
+        n = n + 1;
+    }
+    return fail;
+}
+
+fn test_roman() {
+    # to_str_notable_years
+    check_roman_str(1776, "MDCCLXXVI", "1776 -> MDCCLXXVI");
+    check_roman_str(1999, "MCMXCIX", "1999 -> MCMXCIX");
+    check_roman_str(2024, "MMXXIV", "2024 -> MMXXIV");
+    check_roman_str(3999, "MMMCMXCIX", "3999 -> MMMCMXCIX");
+
+    # parse_roundtrip_all: exhaustive 1..=3999
+    assert_eq(roman_rt_fail(), 0, "exhaustive 1..=3999 roundtrip");
+
+    # subtractive_pairs
+    check_from_roman("IV", 4, "IV=4");
+    check_from_roman("IX", 9, "IX=9");
+    check_from_roman("XL", 40, "XL=40");
+    check_from_roman("XC", 90, "XC=90");
+    check_from_roman("CD", 400, "CD=400");
+    check_from_roman("CM", 900, "CM=900");
+
+    # arithmetic_basic
+    var sum = roman_add(14, 28);
+    ok(is_ok(sum), "add(14,28) ok");
+    var sumv = result_unwrap(sum);
+    assert_eq(romannum_value(sumv), 42, "14+28=42");
+    ok(str_eq_cstr(romannum_text(sumv), "XLII"), "14+28 text XLII");
+
+    var diff = roman_subtract(100, 1);
+    ok(is_ok(diff), "sub(100,1) ok");
+    var diffv = result_unwrap(diff);
+    assert_eq(romannum_value(diffv), 99, "100-1=99");
+    ok(str_eq_cstr(romannum_text(diffv), "XCIX"), "100-1 text XCIX");
+
+    var prod = roman_multiply(12, 12);
+    ok(is_ok(prod), "mul(12,12) ok");
+    var prodv = result_unwrap(prod);
+    assert_eq(romannum_value(prodv), 144, "12*12=144");
+    ok(str_eq_cstr(romannum_text(prodv), "CXLIV"), "12*12 text CXLIV");
+
+    # division_with_remainder: 17/5 -> q=3, r=2
+    var dv = roman_divide(17, 5);
+    ok(is_ok(dv), "div(17,5) ok");
+    var dvv = result_unwrap(dv);
+    assert_eq(romannum_value(divresult_quotient(dvv)), 3, "17/5 quotient 3");
+    var rem = divresult_remainder(dvv);
+    ok(rem, "17/5 remainder Some");
+    assert_eq(romannum_value(rem), 2, "17/5 remainder 2");
+
+    # validation
+    ok(is_valid_roman(str_from("MCMXCIX")), "MCMXCIX valid");
+    no(is_valid_roman(str_from("IIII")), "IIII invalid");
+    no(is_valid_roman(str_from("VV")), "VV invalid");
+    no(is_valid_roman(str_from("IC")), "IC invalid");
+    return 0;
+}
+
+# ============================ Serde round-trips ============================
+
+# Error record round-trip (the serial layer has no error serde; model the
+# ported SankhyaError { code, msg } record as {"code":N,"message":"..."}).
+fn skerr_to_json(e) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "code", sk_err_code(e));
+    sk_json_sep(sb);
+    sk_json_str(sb, "message", sk_err_msg(e));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+fn skerr_from_json(v) {
+    var code = bayan_json_v_int(bayan_json_v_obj_get(v, "code"));
+    var msg = bayan_json_v_str(bayan_json_v_obj_get(v, "message"));
+    return sk_err(code, msg);
+}
+fn skerr_eq(a, b) {
+    if (sk_err_code(a) != sk_err_code(b)) { return 0; }
+    if (str_eq(sk_err_msg(a), sk_err_msg(b)) == 0) { return 0; }
+    return 1;
+}
+
+fn test_serde() {
+    # long_count
+    var lcr = long_count_from_days(1872000);
+    ok(is_ok(lcr), "serde lc from_days ok");
+    var lc = result_unwrap(lcr);
+    var lcj = longcount_to_json(lc);
+    ok(longcount_eq(lc, longcount_from_json(sk_json_parse(lcj))), "LongCount serde roundtrip");
+
+    # tzolkin
+    var tz = tzolkin_from_days(0);
+    var tzj = tzolkin_to_json(tz);
+    ok(tzolkin_eq(tz, tzolkin_from_json(sk_json_parse(tzj))), "Tzolkin serde roundtrip");
+
+    # babylonian_numeral
+    var bnr = babnum_from_value(42);
+    ok(is_ok(bnr), "serde babnum from_value ok");
+    var bn = result_unwrap(bnr);
+    var bnj = babnum_to_json(bn);
+    ok(babnum_eq(bn, babnum_from_json(sk_json_parse(bnj))), "BabylonianNumeral serde roundtrip");
+
+    # mayan_numeral
+    var mnr = mayan_numeral_from_value(13);
+    ok(is_ok(mnr), "serde mayan numeral from_value ok");
+    var mn = result_unwrap(mnr);
+    var mnj = mayan_numeral_to_json(mn);
+    ok(mayan_numeral_eq(mn, mayan_numeral_from_json(sk_json_parse(mnj))), "MayanNumeral serde roundtrip");
+
+    # haab
+    var hb = haab_from_days(100);
+    var hbj = haab_to_json(hb);
+    ok(haab_eq(hb, haab_from_json(sk_json_parse(hbj))), "Haab serde roundtrip");
+
+    # rod_numeral
+    var rn = rod_numeral_new(42);
+    var rnj = rod_numeral_to_json(rn);
+    ok(rod_numeral_eq(rn, rod_numeral_from_json(sk_json_parse(rnj))), "RodNumeral serde roundtrip");
+
+    # venus_phase
+    var vp = venus_phase(100);
+    var vpj = venusphase_to_json(vp);
+    ok(venusphase_eq(vp, venusphase_from_json(sk_json_parse(vpj))), "VenusPhase serde roundtrip");
+
+    # roman_numeral
+    var rr = romannum_from_value(1776);
+    ok(is_ok(rr), "serde roman from_value ok");
+    var rmn = result_unwrap(rr);
+    var rmj = romannum_to_json(rmn);
+    ok(romannum_eq(rmn, romannum_from_json(sk_json_parse(rmj))), "RomanNumeral serde roundtrip");
+
+    # error (InvalidDate "test")
+    var e = sk_err(SKE_INVALID_DATE, str_from("test"));
+    var ej = skerr_to_json(e);
+    ok(skerr_eq(e, skerr_from_json(sk_json_parse(ej))), "SankhyaError serde roundtrip");
+    return 0;
+}
+
+# ============================ Gregorian ============================
+
+fn greg_rt_fail() {
+    var fail = 0;
+    var d = 0;
+    var base = f64_add(f64_from(2451544), F64_HALF);
+    while (d < 36525) {
+        var jdn = f64_add(base, f64_from(d));
+        var date = jdn_to_gregorian(jdn);
+        var r = gregorian_to_jdn(date);
+        if (is_ok(r) == 0) { fail = fail + 1; }
+        else { if (f64_approx_eq(result_unwrap(r), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
+        d = d + 7;
+    }
+    return fail;
+}
+
+fn test_gregorian() {
+    # jdn_roundtrip_modern
+    assert_eq(greg_rt_fail(), 0, "gregorian JDN roundtrip around J2000");
+
+    # known_dates: JDN 2369915.5 -> 1776-07-04
+    var d = jdn_to_gregorian(f64_add(f64_from(2369915), F64_HALF));
+    assert_eq(gd_year(d), 1776, "known date year 1776");
+    assert_eq(gd_month(d), GM_JULY, "known date month July");
+    assert_eq(gd_day(d), 4, "known date day 4");
+    return 0;
+}
+
+# ============================ Coptic ============================
+
+fn coptic_rt_fail(epoch) {
+    var fail = 0;
+    var d = 0;
+    while (d < 1500) {
+        var jdn = f64_add(epoch, f64_from(d));
+        var date = jdn_to_coptic(jdn);
+        var r = coptic_to_jdn(date);
+        if (is_ok(r) == 0) { fail = fail + 1; }
+        else { if (f64_approx_eq(result_unwrap(r), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
+        d = d + 1;
+    }
+    return fail;
+}
+
+fn test_coptic() {
+    assert_eq(coptic_rt_fail(coptic_epoch_jdn()), 0, "coptic JDN roundtrip 1500 days");
+    return 0;
+}
+
+# ============================ Persian ============================
+
+fn persian_rt_fail(start) {
+    var fail = 0;
+    var d = 0;
+    while (d < 1500) {
+        var jdn = f64_add(start, f64_from(d));
+        var date = jdn_to_persian(jdn);
+        var r = persian_to_jdn(date);
+        if (is_ok(r) == 0) { fail = fail + 1; }
+        else { if (f64_approx_eq(result_unwrap(r), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
+        d = d + 1;
+    }
+    return fail;
+}
+
+fn test_persian() {
+    var start = f64_add(f64_from(2459294), F64_HALF);
+    assert_eq(persian_rt_fail(start), 0, "persian JDN roundtrip 1500 days");
+    return 0;
+}
+
+# ============================ Hebrew ============================
+
+fn hebrew_rt_fail(start) {
+    var fail = 0;
+    var d = 0;
+    while (d < 1500) {
+        var jdn = f64_add(start, f64_from(d));
+        var date = jdn_to_hebrew(jdn);
+        var r = hebrew_to_jdn(date);
+        if (is_ok(r) == 0) { fail = fail + 1; }
+        else { if (f64_approx_eq(result_unwrap(r), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
+        d = d + 1;
+    }
+    return fail;
+}
+
+fn test_hebrew() {
+    var start = f64_add(f64_from(2460000), F64_HALF);
+    assert_eq(hebrew_rt_fail(start), 0, "hebrew JDN roundtrip 1500 days");
+
+    # year_types_distribution: 7 leap years over Metonic cycle 5765..5784
+    var y = 5765;
+    var leaps = 0;
+    while (y < 5784) {
+        if (hebrew_is_leap(y) == 1) { leaps = leaps + 1; }
+        y = y + 1;
+    }
+    assert_eq(leaps, 7, "7 leap years in Metonic cycle");
+    return 0;
+}
+
+# ============================ Cross-calendar ============================
+
+fn test_crosscal() {
+    # Convert Jan 1 2025 through hebrew/coptic/persian and back to JDN.
+    var greg = gregorian_date_new(2025, GM_JANUARY, 1);
+    var rj = gregorian_to_jdn(greg);
+    ok(is_ok(rj), "gregorian_to_jdn ok");
+    var jdn = result_unwrap(rj);
+
+    var hebrew = jdn_to_hebrew(jdn);
+    var coptic = jdn_to_coptic(jdn);
+    var persian = jdn_to_persian(jdn);
+
+    var rh = hebrew_to_jdn(hebrew);
+    ok(is_ok(rh), "hebrew_to_jdn ok");
+    ok(f64_approx_eq(result_unwrap(rh), jdn, TOL_JDN), "hebrew roundtrip JDN");
+
+    var rc = coptic_to_jdn(coptic);
+    ok(is_ok(rc), "coptic_to_jdn ok");
+    ok(f64_approx_eq(result_unwrap(rc), jdn, TOL_JDN), "coptic roundtrip JDN");
+
+    var rp = persian_to_jdn(persian);
+    ok(is_ok(rp), "persian_to_jdn ok");
+    ok(f64_approx_eq(result_unwrap(rp), jdn, TOL_JDN), "persian roundtrip JDN");
+    return 0;
+}
+
+fn test_convert_api() {
+    # convert(CalendarDate::Gregorian(April 1 2025))
+    var greg = gregorian_date_new(2025, GM_APRIL, 1);
+    var cvt = convert(caldate_gregorian(greg));
+    ok(is_ok(cvt), "convert gregorian ok");
+    var result = result_unwrap(cvt);
+
+    var rg = mcd_gregorian(result);
+    assert_eq(gd_year(rg), 2025, "convert greg year 2025");
+    assert_eq(gd_month(rg), GM_APRIL, "convert greg month April");
+    assert_eq(gd_day(rg), 1, "convert greg day 1");
+
+    ok(mcd_mayan_lc(result), "mayan_long_count is_some");
+
+    # Hebrew roundtrip through convert
+    var hj = calendar_to_jdn(caldate_hebrew(mcd_hebrew(result)));
+    ok(is_ok(hj), "hebrew calendar_to_jdn ok");
+    ok(f64_approx_eq(result_unwrap(hj), mcd_jdn(result), TOL_JDN), "convert hebrew roundtrip JDN");
+    return 0;
+}
+
+# ============================ Aztec ============================
+
+fn ton_eq(a, b) {
+    if (ton_number(a) != ton_number(b)) { return 0; }
+    if (ton_sign(a) != ton_sign(b)) { return 0; }
+    return 1;
+}
+fn xiu_eq(a, b) {
+    if (xiu_day(a) != xiu_day(b)) { return 0; }
+    if (xiu_month(a) != xiu_month(b)) { return 0; }
+    return 1;
+}
+
+fn test_aztec() {
+    var base = f64_add(f64_from(2451545), F64_HALF);
+    var t1, x1 = aztec_calendar_round(base);
+    var t2, x2 = aztec_calendar_round(f64_add(base, f64_from(18980)));
+    ok(ton_eq(t1, t2), "aztec calendar round tonal @18980");
+    ok(xiu_eq(x1, x2), "aztec calendar round xiuh @18980");
+    return 0;
+}
+
+# ============================ Chinese Sexagenary ============================
+
+fn test_sexagenary() {
+    var s2024 = sexagenary_from_year(2024);
+    assert_eq(sex_stem(s2024), HS_JIA, "2024 stem Jia");
+    assert_eq(sex_branch(s2024), EB_CHEN, "2024 branch Chen");
+
+    var s1984 = sexagenary_from_year(1984);
+    assert_eq(sex_stem(s1984), HS_JIA, "1984 stem Jia");
+    assert_eq(sex_branch(s1984), EB_ZI, "1984 branch Zi (Rat)");
+    return 0;
+}
+
+# ============================ Astro ============================
+
+fn test_astro() {
+    # precession_thuban_pole: dec > 85 at ~2800 BCE
+    var jdn = f64_sub(J2000_JDN, f64_mul(f64_from(4800), JULIAN_YEAR_DAYS));
+    var pos = star_position_at(SN_THUBAN, jdn);
+    var thub = f64_gt(cc_dec_degrees(pos), f64_from(85));
+    ok(thub, "Thuban dec > 85");
+
+    # coordinate_roundtrip
+    var orig = celestial_new(f64_from(12), f64_from(30));
+    var ecl = equatorial_to_ecliptic(orig, J2000_JDN);
+    var back = ecliptic_to_equatorial(ecl, J2000_JDN);
+    ok(f64_approx_eq(cc_ra_hours(back), f64_from(12), TOL_001), "coord roundtrip RA");
+    ok(f64_approx_eq(cc_dec_degrees(back), f64_from(30), TOL_001), "coord roundtrip Dec");
+
+    # stonehenge_alignment: non-empty
+    var results = monument_alignment(f64_parse("51.18"), f64_from(51), J2000_JDN, f64_from(5));
+    var nonempty = vec_len(results) > 0;
+    ok(nonempty, "stonehenge alignment non-empty");
+    return 0;
+}
+
+# ============================ main ============================
+
+fn main() {
+    alloc_init();
+    gregorian_init();
+    babylonian_init();
+    egyptian_init();
+    coptic_init();
+    persian_init();
+    hebrew_init();
+    epoch_init();
+    consts_init();
+
+    println("=== sankhya integration test suite ===");
+
+    test_mayan_longcount();
+    test_mayan_vigesimal();
+    test_mayan_cycles();
+    test_babylonian();
+    test_egyptian();
+    test_vedic();
+    test_chinese();
+    test_greek();
+    test_roman();
+    test_serde();
+    test_gregorian();
+    test_coptic();
+    test_persian();
+    test_hebrew();
+    test_crosscal();
+    test_convert_api();
+    test_aztec();
+    test_sexagenary();
+    test_astro();
+
+    # logging init does not crash
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

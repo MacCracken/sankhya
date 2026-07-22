@@ -1,0 +1,126 @@
+# egyptian.tcyr — integration tests for the egyptian module port.
+# Stdlib + varna auto-resolved by the build tool; include the src modules:
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/egyptian.cyr"
+
+var TOL_1E15 = 0;
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+fn check(v, expected, name) { return assert_eq(v, expected, name); }
+
+fn main() {
+    alloc_init();
+    egyptian_init();
+    TOL_1E15 = f64_parse("0.000000000000001");
+
+    # ---- decompose 2/3 -> [2, 6] + float sum check ----
+    var dr = decompose(2, 3);
+    ok(is_ok(dr), "decompose 2/3 ok");
+    var res = result_unwrap(dr);
+    check(vec_len(res), 2, "2/3 -> 2 terms");
+    check(vec_get(res, 0), 2, "2/3 first denom = 2");
+    check(vec_get(res, 1), 6, "2/3 second denom = 6");
+    var sum = f64_add(f64_div(f64_from(1), f64_from(2)), f64_div(f64_from(1), f64_from(6)));
+    var twothirds = f64_div(f64_from(2), f64_from(3));
+    ok(f64_approx_eq(sum, twothirds, TOL_1E15), "1/2 + 1/6 ~ 2/3");
+
+    # ---- decompose 1/5 -> [5] ----
+    var dr2 = decompose(1, 5);
+    ok(is_ok(dr2), "decompose 1/5 ok");
+    var res2 = result_unwrap(dr2);
+    check(vec_len(res2), 1, "1/5 -> 1 term");
+    check(vec_get(res2, 0), 5, "1/5 -> [5]");
+
+    # ---- egyptian_multiply ----
+    check(egyptian_multiply(12, 13), 156, "12 * 13 = 156");
+    check(egyptian_multiply(7, 11), egyptian_multiply(11, 7), "multiply commutative");
+
+    # ---- egyptian_divide 7/3 -> (2, [3]) ----
+    var dv = egyptian_divide(7, 3);
+    ok(is_ok(dv), "divide 7/3 ok");
+    var rec = result_unwrap(dv);
+    check(egydiv_quotient(rec), 2, "7/3 quotient = 2");
+    var fracs = egydiv_fractions(rec);
+    check(vec_len(fracs), 1, "7/3 one fraction");
+    check(vec_get(fracs, 0), 3, "7/3 remainder 1/3");
+
+    # ---- divide by zero rejected ----
+    var dz = egyptian_divide(7, 0);
+    ok(is_err_result(dz), "divide by zero is_err");
+    check(sk_result_code(dz), SKE_INVALID_FRACTION, "divide by zero -> InvalidFraction");
+
+    # ---- decan lookups ----
+    var d0 = decan_from_longitude(f64_from(0));
+    check(decan_number(d0), 1, "decan(0) number = 1");
+    ok(str_eq_cstr(decan_name(d0), "Kenmet"), "decan(0) name = Kenmet");
+
+    var d195 = decan_from_longitude(f64_from(195));
+    check(decan_number(d195), 20, "decan(195) number = 20 (Sopdet)");
+
+    var dneg = decan_from_longitude(f64_neg(f64_from(10)));
+    check(decan_number(dneg), 36, "decan(-10) number = 36");
+
+    # ---- sopdet is decan 20 ----
+    var sp20 = sopdet();
+    check(decan_number(sp20), 20, "sopdet number = 20");
+    ok(str_eq_cstr(decan_name(sp20), "Sopdet"), "sopdet name = Sopdet");
+
+    # ---- sothic drift ----
+    ok(f64_approx_eq(sothic_drift(0), f64_from(0), TOL_1E15), "drift(0) = 0");
+    ok(f64_approx_eq(sothic_drift(4), f64_from(1), TOL_1E15), "drift(4) = 1 day");
+    ok(f64_approx_eq(sothic_drift(1461), f64_from(0), TOL_1E15), "drift(1461) resets to 0");
+
+    # ---- sothic position at Censorinus epoch ----
+    var pos = sothic_position(CENSORINUS_EPOCH_JDN);
+    check(sothicpos_cycle(pos), 0, "sothic cycle = 0 at epoch");
+    check(sothicpos_year(pos), 0, "sothic year = 0 at epoch");
+    ok(f64_approx_eq(sothicpos_drift(pos), f64_from(0), TOL_1E15), "sothic drift = 0 at epoch");
+
+    # ---- sothic cycle days consistency: 365 * 1461 = 533265 ----
+    check(365 * SOTHIC_CYCLE_CIVIL_YEARS, SOTHIC_CYCLE_DAYS, "365 * 1461 = 533265");
+
+    # ---- next sopdet rising at Memphis (J2000, 30N) -> > input ----
+    var nr = next_sopdet_rising(f64_from(2451545), f64_from(30));
+    ok(is_ok(nr), "next rising at Memphis ok");
+    var rising = result_unwrap(nr);
+    var rgt = f64_gt(rising, f64_from(2451545));
+    ok(rgt, "next rising > input JDN");
+
+    # ---- next sopdet rising invalid latitude ----
+    var ni = next_sopdet_rising(f64_from(2451545), f64_from(80));
+    ok(is_err_result(ni), "latitude 80 is_err");
+    check(sk_result_code(ni), SKE_INVALID_DATE, "latitude 80 -> InvalidDate");
+
+    # ---- hieroglyphic rendering (varna, always-on) ----
+    var h3 = to_hieroglyphic(3);
+    ok(is_ok(h3), "hieroglyphic 3 ok");
+    ok(str_eq_cstr(result_unwrap(h3), "𓏺𓏺𓏺"), "3 -> three strokes");
+
+    var h23 = to_hieroglyphic(23);
+    ok(is_ok(h23), "hieroglyphic 23 ok");
+    ok(str_eq_cstr(result_unwrap(h23), "𓎆𓎆𓏺𓏺𓏺"), "23 -> two tens + three strokes");
+
+    var h1000 = to_hieroglyphic(1000);
+    ok(str_eq_cstr(result_unwrap(h1000), "𓆼"), "1000 -> lotus");
+    var h1m = to_hieroglyphic(1000000);
+    ok(str_eq_cstr(result_unwrap(h1m), "𓁨"), "1000000 -> Heh");
+
+    var h0 = to_hieroglyphic(0);
+    ok(str_eq_cstr(result_unwrap(h0), ""), "0 -> empty string");
+
+    var hov = to_hieroglyphic(10000000);
+    ok(is_err_result(hov), "10000000 overflow is_err");
+    check(sk_result_code(hov), SKE_OVERFLOW, "10000000 -> OverflowError");
+
+    # ---- logging init doesn't crash ----
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

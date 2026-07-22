@@ -1,0 +1,97 @@
+# serial_coptic.cyr — JSON (de)serialization for the coptic module, giving full
+# serde round-trip parity with Rust's derived Serialize + Deserialize.
+#
+# Rust serde types in coptic.rs:
+#   CopticMonth  enum — unit variants serialize as the variant-name string
+#                (external tagging), e.g. CopticMonth::Thout -> "Thout".
+#   CopticDate   struct { year: i64, month: CopticMonth, day: u8 }
+#                -> {"year":Y,"month":"Thout","day":D}
+#
+# The month field is emitted as the serde identifier (variant name) via the
+# module's coptic_month_name(idx) accessor — NOT the integer discriminant and
+# NOT any spaced Display form (they are identical here, but name is authoritative).
+# All fields are integer-valued, so no f64 JSON-number path is needed.
+#
+# Self-contained: no include lines (the distlib bundler resolves stdlib + the
+# coptic module; the serial_util helpers are pulled in by the manifest order).
+
+# ---------------------------------------------------------------------------
+# CopticMonth enum <-> serde variant-name string.
+# ---------------------------------------------------------------------------
+
+# Map a variant-name cstr back to its 0-based month index (the discriminant).
+# Scans the 13 CopticMonth names via coptic_month_name; returns (0 - 1) if none
+# matches (mirrors str_index_of's not-found sentinel).
+#must_use
+fn coptic_month_from_name(cstr) {
+    var i = 0;
+    while (i < 13) {
+        if (str_eq_cstr(coptic_month_name(i), cstr) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# Serialize a CopticMonth as a bare JSON string, e.g. "Thout" (serde emits a
+# unit enum variant as a quoted identifier).
+#must_use
+fn coptic_month_to_json(m) {
+    var msb = str_builder_new();
+    str_builder_add_json_str(msb, coptic_month_name(m));
+    return str_builder_build(msb);
+}
+
+# Parse a CopticMonth from a bayan JSON string node. Returns the discriminant
+# (or 0 - 1 if the variant name is unknown).
+#must_use
+fn coptic_month_from_json(v) {
+    var mname = bayan_json_v_str(v);
+    return coptic_month_from_name(str_data(mname));
+}
+
+# Field-by-field equality for the round-trip test (an enum is a plain i64).
+#must_use
+fn coptic_month_eq(a, b) {
+    if (a == b) { return 1; }
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# CopticDate struct <-> JSON object.
+# ---------------------------------------------------------------------------
+
+# Emit {"year":Y,"month":"NAME","day":D} matching serde_json exactly.
+#must_use
+fn coptic_date_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", coptic_date_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", coptic_month_name(coptic_date_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", coptic_date_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Reconstruct a CopticDate from a bayan JSON object node (from sk_json_parse).
+# year/day are read as integers; month is read as its variant name then mapped
+# back to the discriminant via coptic_month_from_name.
+#must_use
+fn coptic_date_from_json(v) {
+    var year = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var mnode = bayan_json_v_obj_get(v, "month");
+    var mstr = bayan_json_v_str(mnode);
+    var month = coptic_month_from_name(str_data(mstr));
+    var day = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return coptic_date_new(year, month, day);
+}
+
+# Field-by-field equality (year, month, day) for the round-trip test.
+#must_use
+fn coptic_date_eq(a, b) {
+    if (coptic_date_year(a) != coptic_date_year(b)) { return 0; }
+    if (coptic_date_month(a) != coptic_date_month(b)) { return 0; }
+    if (coptic_date_day(a) != coptic_date_day(b)) { return 0; }
+    return 1;
+}

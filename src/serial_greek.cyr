@@ -1,0 +1,67 @@
+# serial_greek.cyr — JSON (de)serialization for the greek module, matching
+# Rust serde_json exactly for full round-trip parity.
+#
+# Self-contained: no include lines. Uses the shared sk_json_* helpers from
+# src/serial_util.cyr, the bayan value-tree API (folded stdlib), and the greek
+# module's anti_new/anti_* accessors.
+#
+# Serde types in greek:
+#   AntikytheraCycle  — struct { name: &str, period_years: &str,
+#                                gear_teeth: u32, description: &str }
+#     serde JSON: {"name":"Metonic","period_years":"19",
+#                  "gear_teeth":235,"description":"..."}
+#     name/period_years/description are STRINGS (period_years holds "19", a
+#     quoted string, NOT the number 19). gear_teeth is an integer. No enums,
+#     no f64, no nested/array/option fields in this module.
+
+# ---------------------------------------------------------------------------
+# AntikytheraCycle
+# ---------------------------------------------------------------------------
+
+# Serialize an AntikytheraCycle record to a JSON object string, byte-for-byte
+# matching serde_json (compact, no spaces, Rust field names).
+#must_use
+fn anti_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_str(sb, "name", anti_name(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "period_years", anti_period_years(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "gear_teeth", anti_gear_teeth(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "description", anti_description(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Deserialize a bayan value-tree node (from sk_json_parse) back into an
+# AntikytheraCycle record via anti_new. String fields via bayan_json_v_str,
+# the integer field via bayan_json_v_int.
+#must_use
+fn anti_from_json(v) {
+    var name = bayan_json_v_str(bayan_json_v_obj_get(v, "name"));
+    var period = bayan_json_v_str(bayan_json_v_obj_get(v, "period_years"));
+    var teeth = bayan_json_v_int(bayan_json_v_obj_get(v, "gear_teeth"));
+    var desc = bayan_json_v_str(bayan_json_v_obj_get(v, "description"));
+    return anti_new(name, period, teeth, desc);
+}
+
+# Field-by-field equality of two AntikytheraCycle records (for round-trip
+# testing). String fields compared with str_eq, the integer field with ==.
+#must_use
+fn anti_eq(a, b) {
+    if (str_eq(anti_name(a), anti_name(b)) == 0) {
+        return 0;
+    }
+    if (str_eq(anti_period_years(a), anti_period_years(b)) == 0) {
+        return 0;
+    }
+    if (anti_gear_teeth(a) != anti_gear_teeth(b)) {
+        return 0;
+    }
+    if (str_eq(anti_description(a), anti_description(b)) == 0) {
+        return 0;
+    }
+    return 1;
+}

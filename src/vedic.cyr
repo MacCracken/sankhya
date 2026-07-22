@@ -1,0 +1,355 @@
+# vedic.cyr — Vedic / Indian mathematics.
+#
+# Ported from rust-old/src/vedic.rs (full parity):
+#   - Nikhilam-Sutra multiplication (product + step-by-step demonstrator)
+#   - Sulba Sutra geometry (rectangle diagonal via Pythagoras; Baudhayana's
+#     577/408 sqrt(2) approximation)
+#   - Katapayadi consonant<->digit encode/decode
+#   - Meru Prastara (Pingala's / Pascal's triangle)
+#   - Devanagari-script Katapayadi + numeral rendering (via varna — always-on).
+#
+# Self-contained: no include lines (the distlib bundler strips them; stdlib +
+# varna symbols are resolved from the consumer's [deps]).
+#
+# Parity note on integers: the Rust code is u64-heavy (wrapping_mul,
+# saturating_mul, checked_add/mul/sub -> Option). Cyrius ints are signed i64;
+# we reproduce wrapping via `*%`, saturating via `*|`, and the checked-overflow
+# Option paths via manual bound checks against the i64 max (0x7FFF...FFFF). For
+# valid inputs (the domain of every test) this is exact; only values above the
+# i64 range would diverge from the u64 original (see parity_notes).
+
+# ---------------------------------------------------------------------------
+# Vedic multiplication (Nikhilam Sutra)
+# ---------------------------------------------------------------------------
+
+# Multiply a and b. The Nikhilam method is pedagogical; the product itself is
+# the direct identity (Rust: a.wrapping_mul(b)).
+#must_use
+fn vedic_multiply(a, b) {
+    return a *% b;
+}
+
+# Smallest power of 10 >= n (minimum 10). Rust used saturating_mul; we saturate
+# to the i64 max manually (the *| operator maps to an unlinked runtime helper).
+#must_use
+fn next_power_of_10(n) {
+    var base = 10;
+    var limit = 0x7FFFFFFFFFFFFFFF;
+    while (base < n) {
+        if (base > limit / 10) { base = limit; }
+        if (base <= limit / 10) { base = base * 10; }
+    }
+    return base;
+}
+
+# NikhilamSteps record: base(0) da(8) db(16) cross(24) product(32) = 40 bytes.
+enum NkOff { NK_BASE = 0; NK_DA = 8; NK_DB = 16; NK_CROSS = 24; NK_PRODUCT = 32; NK_SIZE = 40; }
+
+fn nikhilam_new(base, da, db, cross, product) {
+    var p = alloc(NK_SIZE);
+    store64(p + NK_BASE, base);
+    store64(p + NK_DA, da);
+    store64(p + NK_DB, db);
+    store64(p + NK_CROSS, cross);
+    store64(p + NK_PRODUCT, product);
+    return p;
+}
+
+#must_use
+fn nk_base(p) { return load64(p + NK_BASE); }
+#must_use
+fn nk_da(p) { return load64(p + NK_DA); }
+#must_use
+fn nk_db(p) { return load64(p + NK_DB); }
+#must_use
+fn nk_cross(p) { return load64(p + NK_CROSS); }
+#must_use
+fn nk_product(p) { return load64(p + NK_PRODUCT); }
+
+# Nikhilam multiplication showing the steps. Returns Ok(NikhilamSteps) or an
+# Err carrying the exact Rust message. (Rust returned Result<(base, da, db,
+# cross, product)>; we box the 5 values in a record.)
+#must_use
+fn vedic_multiply_nikhilam(a, b) {
+    var max_val = a;
+    if (b > a) { max_val = b; }
+    var base = next_power_of_10(max_val);
+
+    if (a > base) { return sk_fail(SKE_COMPUTATION, str_from("values exceed the Nikhilam base")); }
+    if (b > base) { return sk_fail(SKE_COMPUTATION, str_from("values exceed the Nikhilam base")); }
+
+    var da = base - a;
+    var db = base - b;
+
+    # cross-subtraction: a - db (Rust checked_sub underflows if db > a)
+    if (db > a) { return sk_fail(SKE_OVERFLOW, str_from("Nikhilam cross-subtraction underflow")); }
+    var cross = a - db;
+
+    # product = cross * base + da * db, guarding overflow like Rust checked_*
+    var limit = 0x7FFFFFFFFFFFFFFF;
+    if (base != 0) {
+        if (cross > limit / base) { return sk_fail(SKE_OVERFLOW, str_from("Nikhilam multiplication overflow")); }
+    }
+    var cb = cross * base;
+    if (db != 0) {
+        if (da > limit / db) { return sk_fail(SKE_OVERFLOW, str_from("Nikhilam multiplication overflow")); }
+    }
+    var dadb = da * db;
+    if (cb > limit - dadb) { return sk_fail(SKE_OVERFLOW, str_from("Nikhilam multiplication overflow")); }
+    var product = cb + dadb;
+
+    return Ok(nikhilam_new(base, da, db, cross, product));
+}
+
+# ---------------------------------------------------------------------------
+# Sulba Sutra geometry
+# ---------------------------------------------------------------------------
+
+# Diagonal of a rectangle: sqrt(a*a + b*b) (Baudhayana Sulba Sutra). f64 args.
+#must_use
+fn sulba_diagonal(a, b) {
+    return f64_sqrt(f64_add(f64_mul(a, a), f64_mul(b, b)));
+}
+
+# Baudhayana's sqrt(2): 1 + 1/3 + 1/(3*4) - 1/(3*4*34) = 577/408. Op order
+# mirrors the Rust expression exactly for bit parity.
+#must_use
+fn sulba_sqrt2() {
+    var d2 = f64_mul(f64_from(3), f64_from(4));
+    var d3 = f64_mul(f64_mul(f64_from(3), f64_from(4)), f64_from(34));
+    var r = f64_add(f64_from(1), f64_div(f64_from(1), f64_from(3)));
+    r = f64_add(r, f64_div(f64_from(1), d2));
+    r = f64_sub(r, f64_div(f64_from(1), d3));
+    return r;
+}
+
+# ---------------------------------------------------------------------------
+# Katapayadi number encoding
+# ---------------------------------------------------------------------------
+
+# Romanized ka-varga/ca-varga consonant for digit 0-9.
+fn _katapayadi_consonant(d) {
+    if (d == 0) { return "nya"; }
+    if (d == 1) { return "ka"; }
+    if (d == 2) { return "kha"; }
+    if (d == 3) { return "ga"; }
+    if (d == 4) { return "gha"; }
+    if (d == 5) { return "nga"; }
+    if (d == 6) { return "ca"; }
+    if (d == 7) { return "cha"; }
+    if (d == 8) { return "ja"; }
+    return "jha";
+}
+
+# Encode n as hyphen-joined consonant syllables, least-significant digit first.
+#must_use
+fn katapayadi_encode(n) {
+    if (n == 0) { return str_from("nya"); }
+    var sb = str_builder_new();
+    var remaining = n;
+    var first = 1;
+    while (remaining > 0) {
+        var digit = remaining % 10;
+        remaining = remaining / 10;
+        if (first == 0) { str_builder_add_cstr(sb, "-"); }
+        str_builder_add_cstr(sb, _katapayadi_consonant(digit));
+        first = 0;
+    }
+    return str_builder_build(sb);
+}
+
+# Digit 0-9 for a syllable cstr, or (0-1) if unrecognized.
+fn _katapayadi_digit_of(tok) {
+    if (streq(tok, "nya") == 1) { return 0; }
+    if (streq(tok, "ka") == 1) { return 1; }
+    if (streq(tok, "kha") == 1) { return 2; }
+    if (streq(tok, "ga") == 1) { return 3; }
+    if (streq(tok, "gha") == 1) { return 4; }
+    if (streq(tok, "nga") == 1) { return 5; }
+    if (streq(tok, "ca") == 1) { return 6; }
+    if (streq(tok, "cha") == 1) { return 7; }
+    if (streq(tok, "ja") == 1) { return 8; }
+    if (streq(tok, "jha") == 1) { return 9; }
+    return 0 - 1;
+}
+
+# Decode a hyphen-separated Katapayadi string back to a number. Returns
+# Ok(value) or Err (unrecognized syllable / overflow), with the Rust messages.
+#must_use
+fn katapayadi_decode(s) {
+    var slen = str_len(s);
+    var sd = str_data(s);
+    var result = 0;
+    var place = 1;
+    var tok_start = 0;
+    var done = 0;
+    var limit = 0x7FFFFFFFFFFFFFFF;
+    while (done == 0) {
+        # find next '-' (byte 45) or end
+        var j = tok_start;
+        while (j < slen) {
+            var c = load8(sd + j);
+            if (c == 45) { break; }
+            j = j + 1;
+        }
+        # copy token [tok_start, j) into a fresh NUL-terminated cstr
+        var toklen = j - tok_start;
+        var tok = alloc(toklen + 1);
+        var ci = 0;
+        while (ci < toklen) {
+            store8(tok + ci, load8(sd + tok_start + ci));
+            ci = ci + 1;
+        }
+        store8(tok + toklen, 0);
+
+        var digit = _katapayadi_digit_of(tok);
+        if (digit < 0) {
+            var em = str_builder_new();
+            str_builder_add_cstr(em, "unrecognized Katapayadi syllable: ");
+            str_builder_add_cstr(em, tok);
+            return sk_fail(SKE_COMPUTATION, str_builder_build(em));
+        }
+
+        # result += digit * place   (checked)
+        if (place != 0) {
+            if (digit > limit / place) { return sk_fail(SKE_OVERFLOW, str_from("Katapayadi decode overflow")); }
+        }
+        var dp = digit * place;
+        if (result > limit - dp) { return sk_fail(SKE_OVERFLOW, str_from("Katapayadi decode overflow")); }
+        result = result + dp;
+
+        # place *= 10   (checked)
+        if (place > limit / 10) { return sk_fail(SKE_OVERFLOW, str_from("Katapayadi decode overflow")); }
+        place = place * 10;
+
+        if (j >= slen) { done = 1; }
+        if (j < slen) { tok_start = j + 1; }
+    }
+    return Ok(result);
+}
+
+# ---------------------------------------------------------------------------
+# Meru Prastara (Pingala's triangle / Pascal's triangle)
+# ---------------------------------------------------------------------------
+
+# Build rows 0..rows of Pingala's triangle. Returns Ok(vec of vec<i64>) or an
+# Err on binomial-coefficient overflow. Mirrors the Rust tracing::debug! site.
+#must_use
+fn meru_prastara(rows) {
+    var meru_msg = "generating Meru Prastara (Pingala's triangle)";
+    var rows_str = str_from_int(rows);
+    sakshi_log_kv(SK_DEBUG, meru_msg, strlen(meru_msg), "rows", 4, str_data(rows_str), str_len(rows_str));
+
+    if (rows == 0) { return Ok(vec_new()); }
+
+    var triangle = vec_new();
+    var row0 = vec_new();
+    vec_push(row0, 1);
+    vec_push(triangle, row0);
+
+    var limit = 0x7FFFFFFFFFFFFFFF;
+    var i = 1;
+    while (i < rows) {
+        var prev = vec_get(triangle, i - 1);
+        var row = vec_new();
+        vec_push(row, 1);
+        var j = 1;
+        while (j < i) {
+            var pa = vec_get(prev, j - 1);
+            var pb = vec_get(prev, j);
+            if (pa > limit - pb) {
+                var em = str_builder_new();
+                str_builder_add_cstr(em, "Meru Prastara overflow at row ");
+                str_builder_add_int(em, i);
+                str_builder_add_cstr(em, ", position ");
+                str_builder_add_int(em, j);
+                return sk_fail(SKE_OVERFLOW, str_builder_build(em));
+            }
+            vec_push(row, pa + pb);
+            j = j + 1;
+        }
+        vec_push(row, 1);
+        vec_push(triangle, row);
+        i = i + 1;
+    }
+    return Ok(triangle);
+}
+
+# ---------------------------------------------------------------------------
+# Devanagari Katapayadi encoding + numerals (via varna — always-on parity)
+# ---------------------------------------------------------------------------
+
+# IAST syllable (with inherent 'a') for digit 0-9, matching varna's
+# Devanagari->IAST table (क->"ka", ख->"kha", ...; ञ->"ña", ङ->"ṅa").
+fn _iast_syllable(d) {
+    if (d == 0) { return "ña"; }
+    if (d == 1) { return "ka"; }
+    if (d == 2) { return "kha"; }
+    if (d == 3) { return "ga"; }
+    if (d == 4) { return "gha"; }
+    if (d == 5) { return "ṅa"; }
+    if (d == 6) { return "ca"; }
+    if (d == 7) { return "cha"; }
+    if (d == 8) { return "ja"; }
+    return "jha";
+}
+
+# Katapayadi encoding rendered in Devanagari consonants, space-separated,
+# least-significant digit first. Uses varna's IAST reverse map (IAST -> Deva).
+#must_use
+fn katapayadi_encode_devanagari(n) {
+    var tt = translit_devanagari_iast();
+    var rev = translit_reverse_map(tt);
+
+    if (n == 0) {
+        var g0 = map_get(rev, "ña");
+        if (g0 == 0) { g0 = "ञ"; }
+        return str_from(g0);
+    }
+
+    var sb = str_builder_new();
+    var remaining = n;
+    var first = 1;
+    while (remaining > 0) {
+        var digit = remaining % 10;
+        remaining = remaining / 10;
+        if (first == 0) { str_builder_add_cstr(sb, " "); }
+        var syl = _iast_syllable(digit);
+        var g = map_get(rev, syl);
+        if (g == 0) { g = "?"; }
+        str_builder_add_cstr(sb, g);
+        first = 0;
+    }
+    return str_builder_build(sb);
+}
+
+# Render n in Devanagari numeral glyphs (०-९) via varna's numeral system.
+#must_use
+fn to_devanagari_digits(n) {
+    var sys = numerals_devanagari_digits();
+    if (n == 0) {
+        var g0 = numerals_char_for(sys, 0);
+        if (g0 == 0) { g0 = "०"; }
+        return str_from(g0);
+    }
+
+    var digits = vec_new();
+    var remaining = n;
+    while (remaining > 0) {
+        var d = remaining % 10;
+        var g = numerals_char_for(sys, d);
+        if (g == 0) { g = "?"; }
+        vec_push(digits, g);
+        remaining = remaining / 10;
+    }
+
+    # digits were pushed LSD-first; emit reversed (MSD-first) and join.
+    var sb = str_builder_new();
+    var m = vec_len(digits);
+    var k = m - 1;
+    while (k >= 0) {
+        str_builder_add_cstr(sb, vec_get(digits, k));
+        k = k - 1;
+    }
+    return str_builder_build(sb);
+}

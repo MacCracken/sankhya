@@ -1,0 +1,74 @@
+# serial_aztec.tcyr — ports rust-old/src/aztec.rs serde round-trip tests
+# (serde_roundtrip_tonalpohualli / serde_roundtrip_xiuhpohualli) plus enum
+# variant-name-string parity checks. JSON emit must match serde_json exactly.
+# Run:
+#   cyrius build tests/tcyr/serial_aztec.tcyr build/_s_aztec && ./build/_s_aztec
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/aztec.cyr"
+include "src/serial_aztec.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# The correlation anchor jdn = 2275855.5 → 1 Coatl / day 1 Xocotl Huetzi.
+var ANCHOR = 0;
+
+fn main() {
+    alloc_init();
+    ANCHOR = f64_add(f64_from(2275855), F64_HALF);
+    println("=== sankhya serial_aztec test suite ===");
+
+    # ---- serde_roundtrip_tonalpohualli ----
+    var t = tonalpohualli_from_jdn(ANCHOR);
+    var tjs = tonalpohualli_to_json(t);
+    # serde: {"number":1,"sign":"Coatl"} — snake_case field names, enum as
+    # variant-name string, integer number, compact (no spaces).
+    ok(str_contains_cstr(tjs, "\"number\":1"), "tonal json number field");
+    ok(str_contains_cstr(tjs, "\"sign\":\"Coatl\""), "tonal json sign as variant name");
+    var t2 = tonalpohualli_from_json(sk_json_parse(tjs));
+    ok(tonalpohualli_eq(t, t2), "tonalpohualli serde round-trip");
+
+    # ---- serde_roundtrip_xiuhpohualli ----
+    var x = xiuhpohualli_from_jdn(ANCHOR);
+    var xjs = xiuhpohualli_to_json(x);
+    # serde: {"day":1,"month":"XocotlHuetzi"} — NOTE the serde identifier has NO
+    # space (Display would be "Xocotl Huetzi").
+    ok(str_contains_cstr(xjs, "\"day\":1"), "xiuh json day field");
+    ok(str_contains_cstr(xjs, "\"month\":\"XocotlHuetzi\""), "xiuh json month as variant name");
+    var x2 = xiuhpohualli_from_json(sk_json_parse(xjs));
+    ok(xiuhpohualli_eq(x, x2), "xiuhpohualli serde round-trip");
+
+    # ---- enum variant-name parity: spaces must NOT leak into serde ids ----
+    var hz = xiuhpohualli_new(4, XM_HUEYTOZOZTLI);
+    var hzjs = xiuhpohualli_to_json(hz);
+    ok(str_contains_cstr(hzjs, "\"month\":\"HueyTozoztli\""), "serde id 'HueyTozoztli' (no space)");
+    var hz2 = xiuhpohualli_from_json(sk_json_parse(hzjs));
+    ok(xiuhpohualli_eq(hz, hz2), "xiuh HueyTozoztli round-trip");
+
+    # ---- another sign round-trip: 13 Xochitl ----
+    var xo = tonalpohualli_new(13, TS_XOCHITL);
+    var xojs = tonalpohualli_to_json(xo);
+    ok(str_contains_cstr(xojs, "\"number\":13"), "tonal number=13");
+    ok(str_contains_cstr(xojs, "\"sign\":\"Xochitl\""), "tonal sign Xochitl");
+    var xo2 = tonalpohualli_from_json(sk_json_parse(xojs));
+    ok(tonalpohualli_eq(xo, xo2), "tonalpohualli Xochitl round-trip");
+
+    # ---- Nemontemi month (last discriminant) round-trip ----
+    var nm = xiuhpohualli_new(5, XM_NEMONTEMI);
+    var nmjs = xiuhpohualli_to_json(nm);
+    ok(str_contains_cstr(nmjs, "\"month\":\"Nemontemi\""), "serde id 'Nemontemi'");
+    var nm2 = xiuhpohualli_from_json(sk_json_parse(nmjs));
+    ok(xiuhpohualli_eq(nm, nm2), "xiuh Nemontemi round-trip");
+
+    # ---- from_name miss returns (0 - 1) ----
+    var miss = tonalpohualli_sign_from_name(str_from("NotASign"));
+    assert_eq(miss, 0 - 1, "unknown sign name -> -1");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

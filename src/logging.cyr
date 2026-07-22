@@ -1,0 +1,17 @@
+# logging.cyr — structured logging via sakshi (replaces Rust tracing /
+# tracing-subscriber). sakshi is a folded stdlib module, so the distlib bundle
+# resolves SK_INFO / sakshi_set_level from the consumer's [deps] stdlib.
+#
+# Per-call trace/debug sites in the calendar/astro modules use sakshi_trace /
+# sakshi_debug / sakshi_log_kv directly (see the module ports). This file only
+# provides the subscriber-init analog.
+
+fn sankhya_log_init() {
+    sakshi_set_level(SK_INFO);
+    return 0;
+}
+
+fn sankhya_log_init_level(level) {
+    sakshi_set_level(level);
+    return 0;
+}

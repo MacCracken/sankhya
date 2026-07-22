@@ -1,0 +1,239 @@
+# serial_mayan.cyr — JSON (de)serialization for the mayan module, matching
+# Rust serde_json EXACTLY (compact, no spaces; field order = Rust declaration
+# order; enum variants as their identifier strings).
+#
+# Serde types covered (7):
+#   MayanNumeral { dots, bars, shell }   struct — shell is a bool
+#   LongCount    { baktun, katun, tun, uinal, kin }  struct
+#   Tzolkin      { number, day_sign }    struct — day_sign is a DaySign enum
+#   Haab         { day, month }          struct — month is a HaabMonth enum
+#   DaySign      enum (20 variants)      → variant-name JSON string
+#   HaabMonth    enum (19 variants)      → variant-name JSON string
+#   VenusPhase   enum (4 variants)       → variant-name JSON string
+#
+# Emit uses the sk_json_* helpers from serial_util.cyr (str_builder based).
+# Parse uses the bayan value tree (sk_json_parse → bayan_json_v_*). Enum fields
+# serialize via <Enum>_name(value) and deserialize via <Enum>_from_name(Str).
+# No f64 fields exist in any mayan serde type, so every numeric field is an int.
+
+# ---------------------------------------------------------------------------
+# Enum <-> variant-name mapping (module supplies <Enum>_name; add from_name)
+# ---------------------------------------------------------------------------
+
+# DaySign: map a variant-name Str back to its discriminant; -1 if unmatched.
+#must_use
+fn daysign_from_name(name) {
+    var i = 0;
+    while (i < 20) {
+        if (str_eq(daysign_name(i), name) == 1) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return (0 - 1);
+}
+
+# HaabMonth: variant-name Str -> discriminant; -1 if unmatched.
+#must_use
+fn haabmonth_from_name(name) {
+    var j = 0;
+    while (j < 19) {
+        if (str_eq(haabmonth_name(j), name) == 1) {
+            return j;
+        }
+        j = j + 1;
+    }
+    return (0 - 1);
+}
+
+# VenusPhase: variant-name Str -> discriminant; -1 if unmatched.
+#must_use
+fn venusphase_from_name(name) {
+    var k = 0;
+    while (k < 4) {
+        if (str_eq(venusphase_name(k), name) == 1) {
+            return k;
+        }
+        k = k + 1;
+    }
+    return (0 - 1);
+}
+
+# ---------------------------------------------------------------------------
+# MayanNumeral { dots, bars, shell } — shell is a JSON bool.
+# ---------------------------------------------------------------------------
+#must_use
+fn mayan_numeral_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "dots", mayan_numeral_dots(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "bars", mayan_numeral_bars(p));
+    sk_json_sep(sb);
+    sk_json_bool(sb, "shell", mayan_numeral_shell(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn mayan_numeral_from_json(v) {
+    var dots = bayan_json_v_int(bayan_json_v_obj_get(v, "dots"));
+    var bars = bayan_json_v_int(bayan_json_v_obj_get(v, "bars"));
+    var shell = bayan_json_v_bool(bayan_json_v_obj_get(v, "shell"));
+    return mayan_numeral_make(dots, bars, shell);
+}
+#must_use
+fn mayan_numeral_eq(a, b) {
+    if (mayan_numeral_dots(a) != mayan_numeral_dots(b)) { return 0; }
+    if (mayan_numeral_bars(a) != mayan_numeral_bars(b)) { return 0; }
+    if (mayan_numeral_shell(a) != mayan_numeral_shell(b)) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# LongCount { baktun, katun, tun, uinal, kin } — all integers.
+# ---------------------------------------------------------------------------
+#must_use
+fn longcount_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "baktun", lc_baktun(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "katun", lc_katun(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "tun", lc_tun(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "uinal", lc_uinal(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "kin", lc_kin(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn longcount_from_json(v) {
+    var baktun = bayan_json_v_int(bayan_json_v_obj_get(v, "baktun"));
+    var katun = bayan_json_v_int(bayan_json_v_obj_get(v, "katun"));
+    var tun = bayan_json_v_int(bayan_json_v_obj_get(v, "tun"));
+    var uinal = bayan_json_v_int(bayan_json_v_obj_get(v, "uinal"));
+    var kin = bayan_json_v_int(bayan_json_v_obj_get(v, "kin"));
+    return longcount_make(baktun, katun, tun, uinal, kin);
+}
+#must_use
+fn longcount_eq(a, b) {
+    if (lc_baktun(a) != lc_baktun(b)) { return 0; }
+    if (lc_katun(a) != lc_katun(b)) { return 0; }
+    if (lc_tun(a) != lc_tun(b)) { return 0; }
+    if (lc_uinal(a) != lc_uinal(b)) { return 0; }
+    if (lc_kin(a) != lc_kin(b)) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# Tzolkin { number, day_sign } — day_sign is a DaySign enum (variant string).
+# ---------------------------------------------------------------------------
+#must_use
+fn tzolkin_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "number", tz_number(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "day_sign", daysign_name(tz_daysign(p)));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn tzolkin_from_json(v) {
+    var number = bayan_json_v_int(bayan_json_v_obj_get(v, "number"));
+    var signname = bayan_json_v_str(bayan_json_v_obj_get(v, "day_sign"));
+    var sign = daysign_from_name(signname);
+    return tzolkin_make(number, sign);
+}
+#must_use
+fn tzolkin_eq(a, b) {
+    if (tz_number(a) != tz_number(b)) { return 0; }
+    if (tz_daysign(a) != tz_daysign(b)) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# Haab { day, month } — month is a HaabMonth enum (variant string).
+# ---------------------------------------------------------------------------
+#must_use
+fn haab_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "day", hb_day(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", haabmonth_name(hb_month(p)));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn haab_from_json(v) {
+    var day = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var monthname = bayan_json_v_str(bayan_json_v_obj_get(v, "month"));
+    var month = haabmonth_from_name(monthname);
+    return haab_make(day, month);
+}
+#must_use
+fn haab_eq(a, b) {
+    if (hb_day(a) != hb_day(b)) { return 0; }
+    if (hb_month(a) != hb_month(b)) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# DaySign enum — serde emits the bare variant-name JSON string, e.g. "Ahau".
+# ---------------------------------------------------------------------------
+#must_use
+fn daysign_to_json(val) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, daysign_name(val));
+    return str_builder_build(sb);
+}
+#must_use
+fn daysign_from_json(v) {
+    return daysign_from_name(bayan_json_v_str(v));
+}
+#must_use
+fn daysign_eq(a, b) {
+    if (a != b) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# HaabMonth enum — bare variant-name JSON string, e.g. "Kumku".
+# ---------------------------------------------------------------------------
+#must_use
+fn haabmonth_to_json(val) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, haabmonth_name(val));
+    return str_builder_build(sb);
+}
+#must_use
+fn haabmonth_from_json(v) {
+    return haabmonth_from_name(bayan_json_v_str(v));
+}
+#must_use
+fn haabmonth_eq(a, b) {
+    if (a != b) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# VenusPhase enum — bare variant-name JSON string, e.g. "MorningStar".
+# ---------------------------------------------------------------------------
+#must_use
+fn venusphase_to_json(val) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, venusphase_name(val));
+    return str_builder_build(sb);
+}
+#must_use
+fn venusphase_from_json(v) {
+    return venusphase_from_name(bayan_json_v_str(v));
+}
+#must_use
+fn venusphase_eq(a, b) {
+    if (a != b) { return 0; }
+    return 1;
+}

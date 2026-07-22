@@ -1,0 +1,76 @@
+# serial_coptic.tcyr — serde round-trip parity tests for the coptic module.
+# Ports the serde_roundtrip #[cfg(test)] test from rust-old/src/coptic.rs and
+# adds explicit JSON-format assertions (field names, enum as variant-name string).
+# Run: cyrius build tests/tcyr/serial_coptic.tcyr build/_s_coptic && ./build/_s_coptic
+
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/coptic.cyr"
+include "src/serial_coptic.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+    coptic_init();
+
+    var epoch = coptic_epoch_jdn();
+
+    # ---- serde_roundtrip: jdn_to_coptic(COPTIC_EPOCH_JDN + 500.0) ----
+    # days_since_epoch = 500 -> year 2, month Tobi (idx 4), day 16.
+    var jsrc = f64_add(epoch, f64_from(500));
+    var date = jdn_to_coptic(jsrc);
+    assert_eq(coptic_date_year(date), 2, "constructed year=2");
+    assert_eq(coptic_date_month(date), CM_TOBI, "constructed month=Tobi");
+    assert_eq(coptic_date_day(date), 16, "constructed day=16");
+
+    var js = coptic_date_to_json(date);
+    # JSON format: {"year":2,"month":"Tobi","day":16}
+    ok(str_contains_cstr(js, "\"year\":2"), "json has year field");
+    ok(str_contains_cstr(js, "\"month\":\"Tobi\""), "json month is variant-name string");
+    ok(str_contains_cstr(js, "\"day\":16"), "json has day field");
+
+    var v = sk_json_parse(js);
+    ok(v, "json parses");
+    var parsed = coptic_date_from_json(v);
+    ok(coptic_date_eq(date, parsed), "CopticDate serde round-trip");
+
+    # ---- explicit enum-as-variant-name path (Nasie, month idx 12) ----
+    var dn = coptic_date_new(3, CM_NASIE, 6);
+    var jn = coptic_date_to_json(dn);
+    ok(str_contains_cstr(jn, "\"month\":\"Nasie\""), "Nasie serializes as \"Nasie\"");
+    ok(str_contains_cstr(jn, "\"year\":3"), "Nasie json year=3");
+    ok(str_contains_cstr(jn, "\"day\":6"), "Nasie json day=6");
+    var vn = sk_json_parse(jn);
+    var pn = coptic_date_from_json(vn);
+    ok(coptic_date_eq(dn, pn), "CopticDate(Nasie) round-trip");
+
+    # ---- pre-epoch date exercises negative year serialization ----
+    var jpre = f64_sub(epoch, f64_from(400));
+    var dpre = jdn_to_coptic(jpre);
+    var jpre_json = coptic_date_to_json(dpre);
+    var vpre = sk_json_parse(jpre_json);
+    var ppre = coptic_date_from_json(vpre);
+    ok(coptic_date_eq(dpre, ppre), "pre-epoch CopticDate round-trip");
+
+    # ---- CopticMonth enum serde: to_json is a bare quoted identifier ----
+    var jm = coptic_month_to_json(CM_THOUT);
+    ok(str_eq_cstr(jm, "\"Thout\""), "CopticMonth::Thout -> \"Thout\"");
+    var vm = sk_json_parse(jm);
+    var pm = coptic_month_from_json(vm);
+    ok(coptic_month_eq(pm, CM_THOUT), "CopticMonth serde round-trip");
+
+    # ---- from_name lookup: known and unknown ----
+    assert_eq(coptic_month_from_name("Mesori"), CM_MESORI, "from_name Mesori=11");
+    var missing = coptic_month_from_name("Nonesuch");
+    var missing_ok = missing == (0 - 1);
+    ok(missing_ok, "from_name unknown -> -1");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

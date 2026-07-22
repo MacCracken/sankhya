@@ -1,0 +1,15 @@
+# main.cyr — sankhya CLI smoke test.
+#
+# The library lives in src/*.cyr and ships as dist/sankhya.cyr (see [lib] in
+# cyrius.cyml). Test coverage lives in tests/tcyr/*.tcyr. This entry point stays
+# minimal on purpose — it does NOT include the library, only proves the toolchain
+# builds the package.
+
+fn main() {
+    alloc_init();
+    println("sankhya 3.0.0 (cyrius port)");
+    return 0;
+}
+
+var r = main();
+syscall(SYS_EXIT, r);

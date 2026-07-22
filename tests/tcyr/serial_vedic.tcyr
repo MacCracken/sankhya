@@ -1,0 +1,61 @@
+# serial_vedic.tcyr — serde round-trip parity for the vedic module.
+#
+# vedic.rs derives Serialize/Deserialize on NO type (no structs, no enums). Its
+# compound values are a 5-tuple (NikhilamSteps in the port) and a Vec<Vec<u64>>
+# (Meru Prastara). serde_json serializes both as JSON arrays, so the round-trip
+# asserts the exact array forms serde_json::to_string would produce.
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/vedic.cyr"
+include "src/serial_vedic.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+
+    # ---- NikhilamSteps: tuple -> JSON array round-trip ----
+    var r = vedic_multiply_nikhilam(97, 96);
+    ok(is_ok(r), "nikhilam(97,96) ok");
+    var steps = result_unwrap(r);
+
+    var js = nikhilam_to_json(steps);
+    # serde_json of (100,3,4,93,9312) is exactly "[100,3,4,93,9312]"
+    ok(str_contains_cstr(js, "[100,3,4,93,9312]"), "nikhilam json = [100,3,4,93,9312]");
+
+    var tree = sk_json_parse(js);
+    ok(tree, "nikhilam json parses");
+    var steps2 = nikhilam_from_json(tree);
+    ok(nikhilam_eq(steps, steps2), "nikhilam serde round-trip");
+
+    # ---- Meru Prastara: Vec<Vec<u64>> -> nested JSON array round-trip ----
+    var mr = meru_prastara(5);
+    ok(is_ok(mr), "meru_prastara(5) ok");
+    var tri = result_unwrap(mr);
+
+    var mjs = meru_to_json(tri);
+    # serde_json of the 5-row Pingala triangle, compact.
+    ok(str_contains_cstr(mjs, "[[1],[1,1],[1,2,1],[1,3,3,1],[1,4,6,4,1]]"), "meru json = nested arrays");
+
+    var mtree = sk_json_parse(mjs);
+    ok(mtree, "meru json parses");
+    var tri2 = meru_from_json(mtree);
+    ok(meru_eq(tri, tri2), "meru serde round-trip");
+
+    # empty Meru round-trips to "[]"
+    var mr0 = meru_prastara(0);
+    ok(is_ok(mr0), "meru_prastara(0) ok");
+    var tri0 = result_unwrap(mr0);
+    var mjs0 = meru_to_json(tri0);
+    ok(str_eq_cstr(mjs0, "[]"), "empty meru json = []");
+    var tri0b = meru_from_json(sk_json_parse(mjs0));
+    ok(meru_eq(tri0, tri0b), "empty meru round-trip");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

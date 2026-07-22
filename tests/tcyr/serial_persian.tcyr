@@ -1,0 +1,75 @@
+# serial_persian.tcyr — serde round-trip parity for the persian module.
+# Ports rust-old/src/persian.rs's #[test] fn serde_roundtrip:
+#   let date = jdn_to_persian(2_459_294.5);           # = {1400, Farvardin, 1}
+#   let json = serde_json::to_string(&date).unwrap();
+#   let back: PersianDate = serde_json::from_str(&json).unwrap();
+#   assert_eq!(date, back);
+# The date value is constructed directly (persian_date_new) to avoid pulling in
+# the gregorian module; the JDN conversion is not what the serde test verifies.
+# Additionally asserts the emitted JSON matches serde_json's exact byte shape
+# (correct field names + order, i64 year, variant-name month string, u8 day).
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/gregorian.cyr"
+include "src/persian.cyr"
+include "src/serial_persian.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+    println("=== sankhya serial_persian test suite ===");
+
+    # ---- serde_roundtrip: PersianDate{1400, Farvardin, 1} ----
+    var d = persian_date_new(1400, PM_FARVARDIN, 1);
+    var js = persian_date_to_json(d);
+
+    # serde_json compact shape: {"year":1400,"month":"Farvardin","day":1}
+    ok(str_contains_cstr(js, "\"year\":1400"), "json has year:1400");
+    ok(str_contains_cstr(js, "\"month\":\"Farvardin\""), "json has month:Farvardin variant-name string");
+    ok(str_contains_cstr(js, "\"day\":1"), "json has day:1");
+    ok(str_eq_cstr(js, "{\"year\":1400,\"month\":\"Farvardin\",\"day\":1}"), "json exact serde shape");
+
+    # parse back + field-by-field compare
+    var v = sk_json_parse(js);
+    ok(v, "parse ok");
+    var parsed = persian_date_from_json(v);
+    ok(persian_date_eq(d, parsed), "PersianDate serde round-trip");
+
+    # ---- a second value across a leap boundary: Esfand 30, 1399 ----
+    var d2 = persian_date_new(1399, PM_ESFAND, 30);
+    var js2 = persian_date_to_json(d2);
+    ok(str_eq_cstr(js2, "{\"year\":1399,\"month\":\"Esfand\",\"day\":30}"), "Esfand exact serde shape");
+    var v2 = sk_json_parse(js2);
+    var parsed2 = persian_date_from_json(v2);
+    ok(persian_date_eq(d2, parsed2), "PersianDate(Esfand) round-trip");
+
+    # ---- a month with index 6 (Mehr) to exercise mid-table mapping ----
+    var d3 = persian_date_new(1404, PM_MEHR, 15);
+    var js3 = persian_date_to_json(d3);
+    ok(str_eq_cstr(js3, "{\"year\":1404,\"month\":\"Mehr\",\"day\":15}"), "Mehr exact serde shape");
+    var v3 = sk_json_parse(js3);
+    var parsed3 = persian_date_from_json(v3);
+    ok(persian_date_eq(d3, parsed3), "PersianDate(Mehr) round-trip");
+
+    # ---- PersianMonth enum: bare variant-name string serde form ----
+    var mj = persian_month_to_json(PM_MEHR);
+    ok(str_eq_cstr(mj, "\"Mehr\""), "PersianMonth serde form is bare variant string");
+    var mv = sk_json_parse(mj);
+    ok(mv, "month parse ok");
+    var mparsed = persian_month_from_json(mv);
+    ok(persian_month_eq(PM_MEHR, mparsed), "PersianMonth serde round-trip");
+
+    # ---- from_name on an unknown variant returns (0 - 1) ----
+    var miss = persian_month_from_name(str_from("Nivose"));
+    var missneg = miss == (0 - 1);
+    ok(missneg, "unknown month name -> (0 - 1)");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

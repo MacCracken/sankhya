@@ -1,0 +1,53 @@
+# serial_greek.tcyr — round-trip serde parity tests for the greek module.
+# Ports the greek serde round-trip coverage: build an AntikytheraCycle, emit
+# JSON, assert it matches serde_json's format (field names, string vs int),
+# then parse it back and assert field-by-field equality.
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/greek.cyr"
+include "src/serial_greek.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+
+    # --- AntikytheraCycle: pure-ASCII record (Metonic) ---
+    var c = anti_new(str_from("Metonic"), str_from("19"), 235,
+        str_from("19 tropical years = 235 synodic months (Meton of Athens, 432 BCE)"));
+    var js = anti_to_json(c);
+
+    # serde_json format: compact, quoted string fields, bare integer field.
+    var h1 = str_contains_cstr(js, "\"name\":\"Metonic\"");
+    ok(h1, "name field is quoted string Metonic");
+    var h2 = str_contains_cstr(js, "\"period_years\":\"19\"");
+    ok(h2, "period_years is quoted string 19 (not bare number)");
+    var h3 = str_contains_cstr(js, "\"gear_teeth\":235");
+    ok(h3, "gear_teeth is bare integer 235");
+    var h4 = str_contains_cstr(js, "\"description\":\"19 tropical years");
+    ok(h4, "description field present as quoted string");
+
+    var parsed = anti_from_json(sk_json_parse(js));
+    ok(anti_eq(c, parsed), "AntikytheraCycle serde round-trip (Metonic)");
+
+    # --- AntikytheraCycle: UTF-8 em-dash in description (Saros) ---
+    var s = anti_new(str_from("Saros"), str_from("18.03"), 223,
+        str_from("223 synodic months — eclipse repeat cycle"));
+    var sjs = anti_to_json(s);
+    var hs1 = str_contains_cstr(sjs, "\"name\":\"Saros\"");
+    ok(hs1, "Saros name field");
+    var hs2 = str_contains_cstr(sjs, "\"period_years\":\"18.03\"");
+    ok(hs2, "Saros period_years quoted string 18.03");
+    var hs3 = str_contains_cstr(sjs, "\"gear_teeth\":223");
+    ok(hs3, "Saros gear_teeth integer 223");
+    var sparsed = anti_from_json(sk_json_parse(sjs));
+    ok(anti_eq(s, sparsed), "AntikytheraCycle serde round-trip (Saros, UTF-8)");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

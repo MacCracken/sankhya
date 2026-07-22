@@ -1,0 +1,60 @@
+# serial_gregorian.tcyr — serde ROUND-TRIP parity for the gregorian module.
+# Ports the Rust `serde_roundtrip` test (rust-old/src/gregorian.rs) plus extra
+# BCE + enum coverage. Asserts the emitted JSON matches serde_json's format
+# (correct field names, month as a variant-name string, negative year as -N),
+# then parses it back and compares field-by-field.
+#
+# Build+run:
+#   cyrius build tests/tcyr/serial_gregorian.tcyr build/_s_gregorian
+#   ./build/_s_gregorian
+
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/gregorian.cyr"
+include "src/serial_gregorian.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+
+    # ---- serde_roundtrip: jdn_to_gregorian(2451545.0) -> 2000-01-01 ----
+    var date = jdn_to_gregorian(f64_from(2451545));
+    var js = gregorian_date_to_json(date);
+    ok(str_contains_cstr(js, "\"year\":2000"), "json has year:2000");
+    ok(str_contains_cstr(js, "\"month\":\"January\""), "json month is variant-name January");
+    ok(str_contains_cstr(js, "\"day\":1"), "json has day:1");
+    var v = sk_json_parse(js);
+    ok(v, "json parses");
+    var back = gregorian_date_from_json(v);
+    ok(gregorian_date_eq(date, back), "GregorianDate serde round-trip");
+
+    # ---- BCE date (negative year): year -43, March, 15 ----
+    var dbce = gregorian_date_new(0 - 43, GM_MARCH, 15);
+    var jbce = gregorian_date_to_json(dbce);
+    ok(str_contains_cstr(jbce, "\"year\":-43"), "bce json has year:-43");
+    ok(str_contains_cstr(jbce, "\"month\":\"March\""), "bce json month is March");
+    ok(str_contains_cstr(jbce, "\"day\":15"), "bce json has day:15");
+    var vbce = sk_json_parse(jbce);
+    var backbce = gregorian_date_from_json(vbce);
+    ok(gregorian_date_eq(dbce, backbce), "BCE GregorianDate round-trip");
+
+    # ---- GregorianMonth enum standalone serde ----
+    var jm = gregorian_month_to_json(GM_DECEMBER);
+    ok(str_eq_cstr(jm, "\"December\""), "month to_json is quoted variant name");
+    var vm = sk_json_parse(jm);
+    var mback = gregorian_month_from_json(vm);
+    ok(gregorian_month_eq(GM_DECEMBER, mback), "GregorianMonth serde round-trip");
+
+    # ---- from_name mapping ----
+    assert_eq(gregorian_month_from_name(str_from("September")), GM_SEPTEMBER, "from_name September=8");
+    assert_eq(gregorian_month_from_name(str_from("Nonexistent")), 0 - 1, "from_name unmatched -> -1");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

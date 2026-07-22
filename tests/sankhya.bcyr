@@ -1,0 +1,256 @@
+# sankhya.bcyr — sankhya benchmarks (18 benchmarks, ported from Rust criterion).
+# Run: cyrius build tests/sankhya.bcyr build/sankhya_bench && ./build/sankhya_bench
+#
+# Ports rust-old/benches/benchmarks.rs (16 criterion bench_function groups) plus
+# two new benches (coptic/jdn_roundtrip, aztec/calendar_round) to close the
+# module-coverage gap. Mirrors itihas/tests/itihas.bcyr's harness pattern:
+# `_b_<name>()` wrappers dispatched via fncall0, timed by bench_run_batch, then
+# bench_report_all prints one row per benchmark.
+#
+# Each Rust bench wraps an internal 0..N loop; here each `_b_<name>` performs ONE
+# representative operation and the BATCH*ROUNDS harness supplies the repetition
+# (identical to itihas). `return` keeps the #must_use result from being elided.
+#
+# The only include is lib.cyr (foundation + 15 modules + serial + deps). Stdlib
+# and sibling deps (varna/itihas/avatara) resolve via cyrius.cyml.
+
+include "src/lib.cyr"
+
+# Light ops: 1,000,000 calls each. Heavy allocators (sieve builds a ~10 KB
+# buffer per call; correlate/convert build every calendar + itihas/avatara
+# scans) run fewer iterations so cumulative bump-heap use stays bounded.
+var BATCH = 10000;
+var ROUNDS = 100;
+var HBATCH = 1000;
+var HROUNDS = 5;
+
+# ----------------------------------------------------------------
+# Representative argument constants (f64 jdn values use builtins only, so they
+# are safe to evaluate at top level before alloc_init()).
+# ----------------------------------------------------------------
+var JDN_GREG = f64_add(f64_from(2451544), F64_HALF);   # 2451544.5
+var JDN_HEB = f64_add(f64_from(2460000), F64_HALF);    # 2460000.5
+var JDN_PERS = f64_add(f64_from(2459294), F64_HALF);   # 2459294.5
+var JDN_COPT = f64_add(f64_from(2451544), F64_HALF);   # 2451544.5
+var JDN_CORR = f64_from(584283);                       # Mayan epoch JDN
+var JDN_AZTEC = f64_from(2451545);                     # J2000.0
+var PREC_FROM = f64_from(2451545);                     # J2000.0
+var PREC_TO = f64_sub(f64_from(2451545), f64_from(182625));  # 500 Julian years back
+
+# Alloc-dependent constant: assigned after alloc_init()/astro_init().
+var SIRIUS_COORD = 0;
+
+# ----------------------------------------------------------------
+# Wrapper functions (one per benchmark)
+# ----------------------------------------------------------------
+
+# mayan: LongCount::from_days -> to_days roundtrip.
+fn _b_long_count_conversion() {
+    var r = long_count_from_days(1000000);
+    var lc = result_unwrap(r);
+    return long_count_to_days(lc);
+}
+
+# mayan: to_vigesimal -> from_vigesimal roundtrip.
+fn _b_vigesimal_roundtrip() {
+    var digits = to_vigesimal(1000);
+    return from_vigesimal(digits);
+}
+
+# greek: Sieve of Eratosthenes up to 10000.
+fn _b_sieve_10000() { return sieve(10000); }
+
+# greek: Archimedes' pi, 20 polygon-doubling iterations.
+fn _b_archimedes_pi_20() { return archimedes_pi(20); }
+
+# chinese: CRT over the classic Sun Tzu system {(2,3),(3,5),(2,7)}.
+fn _b_chinese_remainder() {
+    var pairs = vec_new();
+    vec_push(pairs, crt_pair(2, 3));
+    vec_push(pairs, crt_pair(3, 5));
+    vec_push(pairs, crt_pair(2, 7));
+    var out = alloc(8);
+    return chinese_remainder(pairs, out);
+}
+
+# egyptian: unit-fraction decomposition of 3/7.
+fn _b_decompose() { return decompose(3, 7); }
+
+# babylonian: Heron sqrt of 2, 20 iterations.
+fn _b_sqrt_convergence() { return babylonian_sqrt(f64_from(2), 20); }
+
+# vedic: Nikhilam multiplication (97 * 96, base 100).
+fn _b_nikhilam_multiply() { return vedic_multiply_nikhilam(97, 96); }
+
+# islamic: classify/solve Khayyam cubic  x^3 - 8 = 0.
+fn _b_cubic_newton() {
+    return classify_khayyam_cubic(f64_from(1), f64_from(0), f64_from(0), f64_neg(f64_from(8)));
+}
+
+# epoch: correlate a JDN to every calendar system (heavy).
+fn _b_epoch_correlate() { return correlate(JDN_CORR); }
+
+# roman: to_roman_str -> from_roman roundtrip of 3999 (MMMCMXCIX).
+fn _b_roman_roundtrip() {
+    var r = to_roman_str(3999);
+    var s = result_unwrap(r);
+    return from_roman(s);
+}
+
+# gregorian: jdn_to_gregorian -> gregorian_to_jdn roundtrip.
+fn _b_gregorian_roundtrip() {
+    var d = jdn_to_gregorian(JDN_GREG);
+    return gregorian_to_jdn(d);
+}
+
+# hebrew: jdn_to_hebrew -> hebrew_to_jdn roundtrip.
+fn _b_hebrew_roundtrip() {
+    var d = jdn_to_hebrew(JDN_HEB);
+    return hebrew_to_jdn(d);
+}
+
+# persian: jdn_to_persian -> persian_to_jdn roundtrip.
+fn _b_persian_roundtrip() {
+    var d = jdn_to_persian(JDN_PERS);
+    return persian_to_jdn(d);
+}
+
+# astro: precess Sirius' J2000 coordinates ~500 years.
+fn _b_precession() { return precess_coordinates(SIRIUS_COORD, PREC_FROM, PREC_TO); }
+
+# epoch: unified convert() of a Gregorian date to all calendars (heavy).
+fn _b_epoch_convert_all() {
+    var greg = gregorian_date_new(2025, GM_JANUARY, 1);
+    return convert(caldate_gregorian(greg));
+}
+
+# coptic (new): coptic_to_jdn -> jdn_to_coptic roundtrip.
+fn _b_coptic_roundtrip() {
+    var d = jdn_to_coptic(JDN_COPT);
+    return coptic_to_jdn(d);
+}
+
+# aztec (new): full Calendar Round (tonalpohualli + xiuhpohualli) from a JDN.
+fn _b_aztec_calendar_round() { return aztec_calendar_round(JDN_AZTEC); }
+
+# ----------------------------------------------------------------
+# Top-level execution
+# ----------------------------------------------------------------
+alloc_init();
+
+# Silence sakshi INFO/DEBUG/TRACE emission (convert() logs at INFO, correlate at
+# DEBUG, etc.) so the report is clean and logging I/O does not skew timings.
+sakshi_set_level(SK_ERROR);
+
+# Populate module globals (epoch_init sets YOUNGER_DRYAS_JDN etc. used by
+# correlate; the others build month-name / catalog caches).
+var warm = gregorian_init();
+warm = babylonian_init();
+warm = egyptian_init();
+warm = coptic_init();
+warm = persian_init();
+warm = hebrew_init();
+warm = astro_init();
+warm = epoch_init();
+
+# Precompute the Sirius J2000 coordinate reused by the precession bench.
+SIRIUS_COORD = star_j2000(SN_SIRIUS);
+
+# Warm the itihas/avatara lazy caches touched by correlate/convert so the
+# first timed call does not pay the one-time build cost.
+warm = correlate(JDN_CORR);
+warm = convert(caldate_gregorian(gregorian_date_new(2025, GM_JANUARY, 1)));
+
+var benches = vec_new();
+var b = 0;
+
+# mayan
+b = bench_new("mayan/long_count_conversion_1000");
+bench_run_batch(b, &_b_long_count_conversion, BATCH, ROUNDS);
+vec_push(benches, b);
+
+b = bench_new("mayan/vigesimal_roundtrip_1000");
+bench_run_batch(b, &_b_vigesimal_roundtrip, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# greek
+b = bench_new("greek/sieve_10000");
+bench_run_batch(b, &_b_sieve_10000, HBATCH, HROUNDS);
+vec_push(benches, b);
+
+b = bench_new("greek/archimedes_pi_20");
+bench_run_batch(b, &_b_archimedes_pi_20, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# chinese
+b = bench_new("chinese/chinese_remainder_100");
+bench_run_batch(b, &_b_chinese_remainder, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# egyptian
+b = bench_new("egyptian/decompose_1000");
+bench_run_batch(b, &_b_decompose, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# babylonian
+b = bench_new("babylonian/sqrt_convergence");
+bench_run_batch(b, &_b_sqrt_convergence, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# vedic
+b = bench_new("vedic/nikhilam_multiply_100");
+bench_run_batch(b, &_b_nikhilam_multiply, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# islamic
+b = bench_new("islamic/cubic_newton");
+bench_run_batch(b, &_b_cubic_newton, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# epoch (heavy)
+b = bench_new("epoch/correlate");
+bench_run_batch(b, &_b_epoch_correlate, HBATCH, HROUNDS);
+vec_push(benches, b);
+
+# roman
+b = bench_new("roman/roundtrip_3999");
+bench_run_batch(b, &_b_roman_roundtrip, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# gregorian
+b = bench_new("gregorian/jdn_roundtrip_1000");
+bench_run_batch(b, &_b_gregorian_roundtrip, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# hebrew
+b = bench_new("hebrew/jdn_roundtrip_100");
+bench_run_batch(b, &_b_hebrew_roundtrip, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# persian
+b = bench_new("persian/jdn_roundtrip_1000");
+bench_run_batch(b, &_b_persian_roundtrip, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# astro
+b = bench_new("astro/precession_1000");
+bench_run_batch(b, &_b_precession, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# epoch (heavy)
+b = bench_new("epoch/convert_all_calendars");
+bench_run_batch(b, &_b_epoch_convert_all, HBATCH, HROUNDS);
+vec_push(benches, b);
+
+# coptic (new)
+b = bench_new("coptic/jdn_roundtrip");
+bench_run_batch(b, &_b_coptic_roundtrip, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# aztec (new)
+b = bench_new("aztec/calendar_round");
+bench_run_batch(b, &_b_aztec_calendar_round, BATCH, ROUNDS);
+vec_push(benches, b);
+
+bench_report_all(benches);
+syscall(60, 0);

@@ -1,0 +1,159 @@
+# hebrew.tcyr — integration test suite for the hebrew module.
+# Ports every non-serde #[cfg(test)] test from rust-old/src/hebrew.rs.
+# Run: cyrius build tests/tcyr/hebrew.tcyr build/_v_hebrew && ./build/_v_hebrew
+
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/hebrew.cyr"
+
+fn check(val, expected, name) { return assert_eq(val, expected, name); }
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# HebrewDate structural equality (year, month, day).
+fn hebdate_eq(a, b) {
+    if (hebdate_year(a) != hebdate_year(b)) { return 0; }
+    if (hebdate_month(a) != hebdate_month(b)) { return 0; }
+    if (hebdate_day(a) != hebdate_day(b)) { return 0; }
+    return 1;
+}
+
+# --- year_lengths_valid: first 100 years all 353/354/355/383/384/385 ---
+fn test_year_lengths() {
+    var bad = 0;
+    for (var y = 1; y <= 100; y = y + 1) {
+        var days = hebrew_year_days(y);
+        var valid = 0;
+        if (days == 353) { valid = 1; }
+        if (days == 354) { valid = 1; }
+        if (days == 355) { valid = 1; }
+        if (days == 383) { valid = 1; }
+        if (days == 384) { valid = 1; }
+        if (days == 385) { valid = 1; }
+        if (valid == 0) { bad = bad + 1; }
+        if (hebrew_is_leap(y) == 1) {
+            if (days < 383) { bad = bad + 1; }
+        } else {
+            if (days > 355) { bad = bad + 1; }
+        }
+    }
+    return bad;
+}
+
+# --- roundtrip_sequential_days: 1500 consecutive days from 2460000.5 ---
+fn test_sequential(tol) {
+    var bad = 0;
+    var base = f64_add(f64_from(2460000), F64_HALF);
+    for (var i = 0; i < 1500; i = i + 1) {
+        var jdn = f64_add(base, f64_from(i));
+        var d = jdn_to_hebrew(jdn);
+        var r = hebrew_to_jdn(d);
+        if (is_ok(r) == 0) { bad = bad + 1; }
+        else {
+            var back = result_unwrap(r);
+            if (f64_approx_eq(back, jdn, tol) == 0) { bad = bad + 1; }
+        }
+    }
+    return bad;
+}
+
+# --- roundtrip_across_leap_boundary: RH of years 5780..=5790 -> (y, Tishrei, 1) ---
+fn test_leap_boundary(tol) {
+    var bad = 0;
+    for (var y = 5780; y <= 5790; y = y + 1) {
+        var rh = f64_sub(f64_from(rosh_hashana_jdn(y)), F64_HALF);
+        var d = jdn_to_hebrew(rh);
+        if (hebdate_year(d) != y) { bad = bad + 1; }
+        if (hebdate_month(d) != HM_TISHREI) { bad = bad + 1; }
+        if (hebdate_day(d) != 1) { bad = bad + 1; }
+        var r = hebrew_to_jdn(d);
+        if (is_ok(r) == 0) { bad = bad + 1; }
+        else {
+            var back = result_unwrap(r);
+            if (f64_approx_eq(back, rh, tol) == 0) { bad = bad + 1; }
+        }
+    }
+    return bad;
+}
+
+fn main() {
+    alloc_init();
+    hebrew_init();
+    sankhya_log_init();
+    println("=== sankhya hebrew test suite ===");
+
+    # Tolerance for f64 round-trips. JDN arithmetic here is exact (integers +/-
+    # 0.5, all exactly representable), so the difference is 0; a small positive
+    # tolerance mirrors the Rust `< f64::EPSILON` check.
+    var tol = f64_parse("0.0000001");
+
+    # ---- month_display ----
+    ok(str_eq_cstr(hebrewmonth_to_str(HM_TISHREI), "Tishrei"), "month Tishrei");
+    ok(str_eq_cstr(hebrewmonth_to_str(HM_ADAR_I), "Adar I"), "month Adar I");
+    ok(str_eq_cstr(hebrewmonth_to_str(HM_ADAR_II), "Adar II"), "month Adar II");
+    ok(str_eq_cstr(hebrewmonth_to_str(HM_ELUL), "Elul"), "month Elul");
+    # serde identifier names (no spaces) — separate from Display.
+    ok(str_eq_cstr(hebrewmonth_name(HM_ADAR_I), "AdarI"), "serde AdarI");
+    ok(str_eq_cstr(hebrewmonth_name(HM_ADAR_II), "AdarII"), "serde AdarII");
+
+    # ---- leap_year_metonic ----
+    check(hebrew_is_leap(3), 1, "leap 3");
+    check(hebrew_is_leap(6), 1, "leap 6");
+    check(hebrew_is_leap(8), 1, "leap 8");
+    check(hebrew_is_leap(11), 1, "leap 11");
+    check(hebrew_is_leap(14), 1, "leap 14");
+    check(hebrew_is_leap(17), 1, "leap 17");
+    check(hebrew_is_leap(19), 1, "leap 19");
+    check(hebrew_is_leap(1), 0, "not leap 1");
+    check(hebrew_is_leap(2), 0, "not leap 2");
+    check(hebrew_is_leap(4), 0, "not leap 4");
+    check(hebrew_is_leap(5), 0, "not leap 5");
+
+    # ---- epoch_roundtrip ----
+    var ed = jdn_to_hebrew(HEBREW_EPOCH_JDN);
+    check(hebdate_year(ed), 1, "epoch year=1");
+    check(hebdate_month(ed), HM_TISHREI, "epoch month=Tishrei");
+    check(hebdate_day(ed), 1, "epoch day=1");
+    var er = hebrew_to_jdn(ed);
+    ok(is_ok(er), "epoch to_jdn ok");
+    var ejdn = result_unwrap(er);
+    ok(f64_approx_eq(ejdn, HEBREW_EPOCH_JDN, tol), "epoch jdn round-trips");
+
+    # ---- known_date_passover_5785: 15 Nisan 5785 round-trips ----
+    var pd = hebrewdate_new(5785, HM_NISAN, 15);
+    var pr = hebrew_to_jdn(pd);
+    ok(is_ok(pr), "passover to_jdn ok");
+    var pjdn = result_unwrap(pr);
+    var pback = jdn_to_hebrew(pjdn);
+    ok(hebdate_eq(pback, pd), "15 Nisan 5785 round-trips");
+
+    # ---- display_format ----
+    ok(str_eq_cstr(hebrewdate_to_str(pd), "15 Nisan 5785 AM"), "display 15 Nisan 5785 AM");
+
+    # ---- year_lengths_valid ----
+    check(test_year_lengths(), 0, "year_lengths_valid 1..=100");
+
+    # ---- error paths ----
+    var ad = hebrewdate_new(5784, HM_ADAR, 1);   # 5784 is a leap year
+    ok(is_err_result(hebrew_to_jdn(ad)), "adar_in_leap_year_errors");
+    var a1 = hebrewdate_new(5785, HM_ADAR_I, 1);  # 5785 is a common year
+    ok(is_err_result(hebrew_to_jdn(a1)), "adar_i_in_common_year_errors");
+    var z0 = hebrewdate_new(5785, HM_TISHREI, 0);
+    ok(is_err_result(hebrew_to_jdn(z0)), "invalid_day_zero");
+    # error carries SKE_INVALID_DATE code
+    check(sk_result_code(hebrew_to_jdn(z0)), SKE_INVALID_DATE, "day-zero code=INVALID_DATE");
+
+    # ---- roundtrips (loop-heavy, isolated scopes) ----
+    check(test_sequential(tol), 0, "roundtrip_sequential_days 1500");
+    check(test_leap_boundary(tol), 0, "roundtrip_across_leap_boundary");
+
+    # ---- logging init doesn't crash ----
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

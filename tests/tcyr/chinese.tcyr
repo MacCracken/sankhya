@@ -1,0 +1,162 @@
+# chinese.tcyr — port of rust-old/src/chinese.rs #[cfg(test)] mod tests.
+# stdlib + varna are auto-resolved by the build tool.
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/gregorian.cyr"
+include "src/chinese.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+fn check(a, b, name) { return assert_eq(a, b, name); }
+
+# Sum the first n entries of a row-vec.
+fn row_sum(row, n) {
+    var s = 0;
+    var i = 0;
+    while (i < n) {
+        s = s + vec_get(row, i);
+        i = i + 1;
+    }
+    return s;
+}
+
+# Unwrap a to_unicode_rods Ok to its Str, or 0 on Err.
+fn rods_str(n) {
+    var r = to_unicode_rods(n);
+    if (is_ok(r) == 0) { return 0; }
+    return result_unwrap(r);
+}
+
+fn main() {
+    alloc_init();
+    println("=== chinese test suite ===");
+
+    # ---- rod_arithmetic ----
+    var ra = rod_numeral_new(42);
+    var rb = rod_numeral_new(17);
+    check(rod_value(rod_add(ra, rb)), 59, "42+17=59");
+    check(rod_value(rod_subtract(ra, rb)), 25, "42-17=25");
+    check(rod_value(rod_multiply(ra, rb)), 714, "42*17=714");
+
+    # ---- crt_sun_tzu_problem ----
+    var pairs = vec_new();
+    vec_push(pairs, crt_pair(2, 3));
+    vec_push(pairs, crt_pair(3, 5));
+    vec_push(pairs, crt_pair(2, 7));
+    var out = 0;
+    var st = chinese_remainder(pairs, &out);
+    check(st, 1, "crt sun tzu has solution");
+    check(out, 23, "crt sun tzu = 23");
+
+    # ---- crt_single ----
+    var p1 = vec_new();
+    vec_push(p1, crt_pair(3, 7));
+    var o1 = 0;
+    check(chinese_remainder(p1, &o1), 1, "crt single has solution");
+    check(o1, 3, "crt single = 3");
+
+    # ---- crt_empty ----
+    var pe = vec_new();
+    var oe = 0;
+    check(chinese_remainder(pe, &oe), 0, "crt empty is None");
+
+    # ---- lo_shu_magic_square ----
+    var sq3 = magic_square(3);
+    ok(sq3, "magic_square(3) is Some");
+    ok(is_magic_square(sq3), "lo shu is magic");
+    check(row_sum(vec_get(sq3, 0), 3), 15, "lo shu row0 sum 15");
+
+    # ---- magic_square_5x5 ----
+    var sq5 = magic_square(5);
+    ok(sq5, "magic_square(5) is Some");
+    ok(is_magic_square(sq5), "5x5 is magic");
+    check(row_sum(vec_get(sq5, 0), 5), 65, "5x5 row0 sum 65");
+
+    # ---- magic_square_even_returns_none ----
+    check(magic_square(4), 0, "magic_square(4) is None");
+
+    # ---- sexagenary_2024_wood_dragon ----
+    var s2024 = sexagenary_from_year(2024);
+    check(sex_stem(s2024), HS_JIA, "2024 stem Jia");
+    check(sex_branch(s2024), EB_CHEN, "2024 branch Chen (Dragon)");
+    check(sex_cycle_position(s2024), 41, "2024 cycle position 41");
+
+    # ---- sexagenary_2025_wood_snake ----
+    var s2025 = sexagenary_from_year(2025);
+    check(sex_stem(s2025), HS_YI, "2025 stem Yi");
+    check(sex_branch(s2025), EB_SI, "2025 branch Si (Snake)");
+
+    # ---- sexagenary_4_ce_jia_zi ----
+    var s4 = sexagenary_from_year(4);
+    check(sex_stem(s4), HS_JIA, "4 CE stem Jia");
+    check(sex_branch(s4), EB_ZI, "4 CE branch Zi");
+    check(sex_cycle_position(s4), 1, "4 CE cycle position 1");
+
+    # ---- sexagenary_60_year_cycle ----
+    var c1 = sexagenary_from_year(2024);
+    var c2 = sexagenary_from_year(2084);
+    check(sex_stem(c1), sex_stem(c2), "60yr same stem");
+    check(sex_branch(c1), sex_branch(c2), "60yr same branch");
+
+    # ---- sexagenary_all_60_unique ----
+    var marks = alloc(120 * 8);
+    var mi = 0;
+    while (mi < 120) {
+        store64(marks + mi * 8, 0);
+        mi = mi + 1;
+    }
+    var uniq = 0;
+    var yi = 0;
+    while (yi < 60) {
+        var sy = sexagenary_from_year(4 + yi);
+        var key = sex_stem(sy) * 12 + sex_branch(sy);
+        if (load64(marks + key * 8) == 0) {
+            store64(marks + key * 8, 1);
+            uniq = uniq + 1;
+        }
+        yi = yi + 1;
+    }
+    check(uniq, 60, "all 60 stem/branch pairs unique");
+
+    # ---- sexagenary_from_jdn_matches_year ----
+    var jdn = f64_parse("2460676.5");
+    var sj = sexagenary_from_jdn(jdn);
+    var sy = sexagenary_from_year(2025);
+    check(sex_stem(sj), sex_stem(sy), "jdn stem matches 2025");
+    check(sex_branch(sj), sex_branch(sy), "jdn branch matches 2025");
+    check(sex_cycle_position(sj), sex_cycle_position(sy), "jdn position matches 2025");
+
+    # ---- stem_display ----
+    ok(str_eq_cstr(heavenly_stem_to_str(HS_JIA), "Jiǎ (甲)"), "stem Jia display");
+    ok(str_eq_cstr(heavenly_stem_to_str(HS_GUI), "Guǐ (癸)"), "stem Gui display");
+
+    # ---- branch_display ----
+    var bd = earthly_branch_to_str(EB_CHEN);
+    ok(str_contains_cstr(bd, "Dragon"), "branch Chen contains Dragon");
+    ok(str_contains_cstr(bd, "辰"), "branch Chen contains 辰");
+
+    # ---- unicode_rods_single_digit ----
+    ok(str_eq_cstr(rods_str(1), "𝍠"), "rods 1 = 𝍠");
+    ok(str_eq_cstr(rods_str(9), "𝍨"), "rods 9 = 𝍨");
+
+    # ---- unicode_rods_multi_digit ----
+    ok(str_eq_cstr(rods_str(42), "𝍣𝍡"), "rods 42 = 𝍣𝍡");
+
+    # ---- unicode_rods_with_zero ----
+    ok(str_eq_cstr(rods_str(101), "𝍠 𝍠"), "rods 101 = 𝍠 𝍠");
+
+    # ---- unicode_rods_zero_errors ----
+    var rz = to_unicode_rods(0);
+    var iz = is_ok(rz);
+    check(iz, 0, "rods 0 is Err");
+
+    # ---- logging init doesn't crash ----
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

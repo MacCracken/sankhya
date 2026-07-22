@@ -1,0 +1,99 @@
+# serial_mayan.tcyr — serde round-trip parity for the mayan module.
+# For each serde type: construct a value, emit JSON, assert the emitted text
+# matches Rust serde_json (correct field names, enum as variant-name string,
+# bool as true/false), then parse + reconstruct + field-by-field compare.
+# Build+run:
+#   cyrius build tests/tcyr/serial_mayan.tcyr build/_s_mayan && ./build/_s_mayan
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/mayan.cyr"
+include "src/serial_mayan.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+    println("=== sankhya serial_mayan test suite ===");
+
+    # ---- MayanNumeral (value 13 => dots 3, bars 2, shell false) ----
+    var mn = mayan_numeral_make(3, 2, 0);
+    var mnj = mayan_numeral_to_json(mn);
+    ok(str_contains_cstr(mnj, "\"dots\":3"), "MayanNumeral dots field");
+    ok(str_contains_cstr(mnj, "\"bars\":2"), "MayanNumeral bars field");
+    ok(str_contains_cstr(mnj, "\"shell\":false"), "MayanNumeral shell false");
+    var mn2 = mayan_numeral_from_json(sk_json_parse(mnj));
+    ok(mayan_numeral_eq(mn, mn2), "MayanNumeral roundtrip");
+
+    # ---- MayanNumeral shell case (value 0 => shell true) ----
+    var mz = mayan_numeral_make(0, 0, 1);
+    var mzj = mayan_numeral_to_json(mz);
+    ok(str_contains_cstr(mzj, "\"shell\":true"), "MayanNumeral shell true");
+    var mz2 = mayan_numeral_from_json(sk_json_parse(mzj));
+    ok(mayan_numeral_eq(mz, mz2), "MayanNumeral shell roundtrip");
+
+    # ---- LongCount 13.0.0.0.0 ----
+    var lc = longcount_make(13, 0, 0, 0, 0);
+    var lcj = longcount_to_json(lc);
+    ok(str_contains_cstr(lcj, "\"baktun\":13"), "LongCount baktun field");
+    ok(str_contains_cstr(lcj, "\"katun\":0"), "LongCount katun field");
+    ok(str_contains_cstr(lcj, "\"tun\":0"), "LongCount tun field");
+    ok(str_contains_cstr(lcj, "\"uinal\":0"), "LongCount uinal field");
+    ok(str_contains_cstr(lcj, "\"kin\":0"), "LongCount kin field");
+    var lc2 = longcount_from_json(sk_json_parse(lcj));
+    ok(longcount_eq(lc, lc2), "LongCount roundtrip");
+
+    # ---- LongCount with all distinct fields ----
+    var lcb = longcount_make(9, 12, 11, 5, 18);
+    var lcbj = longcount_to_json(lcb);
+    ok(str_contains_cstr(lcbj, "\"baktun\":9"), "LongCount2 baktun");
+    ok(str_contains_cstr(lcbj, "\"uinal\":5"), "LongCount2 uinal");
+    ok(str_contains_cstr(lcbj, "\"kin\":18"), "LongCount2 kin");
+    var lcb2 = longcount_from_json(sk_json_parse(lcbj));
+    ok(longcount_eq(lcb, lcb2), "LongCount2 roundtrip");
+
+    # ---- Tzolkin (4 Ahau at creation) ----
+    var tz = tzolkin_from_days(0);
+    var tzj = tzolkin_to_json(tz);
+    ok(str_contains_cstr(tzj, "\"number\":4"), "Tzolkin number field");
+    ok(str_contains_cstr(tzj, "\"day_sign\":\"Ahau\""), "Tzolkin day_sign variant name");
+    var tz2 = tzolkin_from_json(sk_json_parse(tzj));
+    ok(tzolkin_eq(tz, tz2), "Tzolkin roundtrip");
+
+    # ---- Haab (8 Kumku at creation) ----
+    var hb = haab_from_days(0);
+    var hbj = haab_to_json(hb);
+    ok(str_contains_cstr(hbj, "\"day\":8"), "Haab day field");
+    ok(str_contains_cstr(hbj, "\"month\":\"Kumku\""), "Haab month variant name");
+    var hb2 = haab_from_json(sk_json_parse(hbj));
+    ok(haab_eq(hb, hb2), "Haab roundtrip");
+
+    # ---- DaySign standalone enum ----
+    var dsj = daysign_to_json(DS_AHAU);
+    ok(str_eq_cstr(dsj, "\"Ahau\""), "DaySign json is variant string");
+    var ds2 = daysign_from_json(sk_json_parse(dsj));
+    ok(daysign_eq(DS_AHAU, ds2), "DaySign roundtrip");
+    var dsi = daysign_to_json(DS_IMIX);
+    ok(str_eq_cstr(dsi, "\"Imix\""), "DaySign Imix json");
+    ok(daysign_eq(DS_IMIX, daysign_from_json(sk_json_parse(dsi))), "DaySign Imix roundtrip");
+
+    # ---- HaabMonth standalone enum ----
+    var hmj = haabmonth_to_json(HM_WAYEB);
+    ok(str_eq_cstr(hmj, "\"Wayeb\""), "HaabMonth json is variant string");
+    ok(haabmonth_eq(HM_WAYEB, haabmonth_from_json(sk_json_parse(hmj))), "HaabMonth roundtrip");
+
+    # ---- VenusPhase standalone enum ----
+    var vpj = venusphase_to_json(VP_MORNING_STAR);
+    ok(str_eq_cstr(vpj, "\"MorningStar\""), "VenusPhase json is variant string");
+    ok(venusphase_eq(VP_MORNING_STAR, venusphase_from_json(sk_json_parse(vpj))), "VenusPhase roundtrip");
+    var vpe = venusphase_to_json(VP_INFERIOR_CONJUNCTION);
+    ok(str_eq_cstr(vpe, "\"InferiorConjunction\""), "VenusPhase InferiorConjunction json");
+    ok(venusphase_eq(VP_INFERIOR_CONJUNCTION, venusphase_from_json(sk_json_parse(vpe))), "VenusPhase Inferior roundtrip");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

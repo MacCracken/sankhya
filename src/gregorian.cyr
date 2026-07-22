@@ -1,0 +1,296 @@
+# gregorian.cyr — proleptic Gregorian calendar (was src/gregorian.rs).
+#
+# Julian Day Number (JDN) conversions using the March-based computational
+# calendar algorithm from Dershowitz & Reingold, Calendrical Calculations
+# (4th ed., 2018) and Meeus, Astronomical Algorithms (2nd ed., 1998).
+#
+# Astronomical year numbering: year 0 = 1 BCE, year -1 = 2 BCE, etc.
+#
+# SELF-CONTAINED: no include lines (the distlib bundler strips them; stdlib +
+# error/util/f64_util/logging symbols resolve from the consumer's bundle).
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# JDN of the Gregorian epoch: January 1, 1 CE (proleptic), midnight-based (.5).
+# = 1721425.5. Set by gregorian_init() (an f64 bit pattern; not a literal).
+var GREGORIAN_EPOCH_JDN = 0;
+
+# Public accessor — init-independent (functions never depend on the global).
+#must_use
+fn gregorian_epoch_jdn() {
+    return f64_add(f64_from(1721425), f64_div(f64_from(1), f64_from(2)));
+}
+
+# Populate the exported GREGORIAN_EPOCH_JDN global. Tests call this after
+# alloc_init(); consumers that read the global should call it once at startup.
+fn gregorian_init() {
+    GREGORIAN_EPOCH_JDN = gregorian_epoch_jdn();
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# Month enum (January=0 .. December=11; the discriminant IS the month index)
+# ---------------------------------------------------------------------------
+
+enum GregorianMonth {
+    GM_JANUARY;
+    GM_FEBRUARY;
+    GM_MARCH;
+    GM_APRIL;
+    GM_MAY;
+    GM_JUNE;
+    GM_JULY;
+    GM_AUGUST;
+    GM_SEPTEMBER;
+    GM_OCTOBER;
+    GM_NOVEMBER;
+    GM_DECEMBER;
+}
+
+# Days in each month of a common (non-leap) Gregorian year, by 0-based index.
+# [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]. Built lazily (§8a idiom).
+var _greg_mdays = 0;
+var _greg_mdays_done = 0;
+fn _build_greg_mdays() {
+    var a = alloc(12 * 8);
+    store64(a + 0 * 8, 31);
+    store64(a + 1 * 8, 28);
+    store64(a + 2 * 8, 31);
+    store64(a + 3 * 8, 30);
+    store64(a + 4 * 8, 31);
+    store64(a + 5 * 8, 30);
+    store64(a + 6 * 8, 31);
+    store64(a + 7 * 8, 31);
+    store64(a + 8 * 8, 30);
+    store64(a + 9 * 8, 31);
+    store64(a + 10 * 8, 30);
+    store64(a + 11 * 8, 31);
+    return a;
+}
+#must_use
+fn greg_month_length(idx) {
+    if (_greg_mdays_done == 0) {
+        _greg_mdays = _build_greg_mdays();
+        _greg_mdays_done = 1;
+    }
+    return load64(_greg_mdays + idx * 8);
+}
+
+# Month name table (serde identifier == Display string for Gregorian months).
+var _greg_names = 0;
+var _greg_names_done = 0;
+fn _build_greg_names() {
+    var v = vec_new();
+    vec_push(v, str_from("January"));
+    vec_push(v, str_from("February"));
+    vec_push(v, str_from("March"));
+    vec_push(v, str_from("April"));
+    vec_push(v, str_from("May"));
+    vec_push(v, str_from("June"));
+    vec_push(v, str_from("July"));
+    vec_push(v, str_from("August"));
+    vec_push(v, str_from("September"));
+    vec_push(v, str_from("October"));
+    vec_push(v, str_from("November"));
+    vec_push(v, str_from("December"));
+    return v;
+}
+#must_use
+fn gregorian_month_names() {
+    if (_greg_names_done == 0) {
+        _greg_names = _build_greg_names();
+        _greg_names_done = 1;
+    }
+    return _greg_names;
+}
+
+# serde identifier for month index i (0..11). Used by the later serial wave.
+#must_use
+fn gregorian_month_name(i) {
+    return vec_get(gregorian_month_names(), i);
+}
+
+# Display string for a GregorianMonth discriminant (impl Display for month).
+# Identical to gregorian_month_name here (no spaces in month names).
+#must_use
+fn gregorian_month_to_str(m) {
+    return vec_get(gregorian_month_names(), m);
+}
+
+# ---------------------------------------------------------------------------
+# Date struct: { year: i64, month: GregorianMonth, day: i64 } — 24 bytes
+# ---------------------------------------------------------------------------
+
+enum GregDateOff { GD_YEAR = 0; GD_MONTH = 8; GD_DAY = 16; GD_SIZE = 24; }
+
+#must_use
+fn gregorian_date_new(year, month, day) {
+    var p = alloc(GD_SIZE);
+    store64(p + GD_YEAR, year);
+    store64(p + GD_MONTH, month);
+    store64(p + GD_DAY, day);
+    return p;
+}
+#must_use
+fn gd_year(p) { return load64(p + GD_YEAR); }
+#must_use
+fn gd_month(p) { return load64(p + GD_MONTH); }
+#must_use
+fn gd_day(p) { return load64(p + GD_DAY); }
+
+# Display impl for GregorianDate:
+#   year >= 1  -> "<day> <month> <year> CE"
+#   else       -> "<day> <month> <1 - year> BCE"
+#must_use
+fn gregorian_date_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, gd_day(p));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add(sb, gregorian_month_to_str(gd_month(p)));
+    str_builder_add_cstr(sb, " ");
+    var year = gd_year(p);
+    if (year >= 1) {
+        str_builder_add_int(sb, year);
+        str_builder_add_cstr(sb, " CE");
+    }
+    if (year < 1) {
+        str_builder_add_int(sb, 1 - year);
+        str_builder_add_cstr(sb, " BCE");
+    }
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# Leap year
+# ---------------------------------------------------------------------------
+
+# Leap iff (year%4==0) && (year%100!=0 || year%400==0). The rule is symmetric
+# about zero, so truncating % (== 0 tests only) matches Rust for negative years.
+#must_use
+fn gregorian_is_leap(year) {
+    if (year % 4 != 0) { return 0; }
+    if (year % 100 != 0) { return 1; }
+    if (year % 400 == 0) { return 1; }
+    return 0;
+}
+
+# Days in a Gregorian year (365 common, 366 leap).
+#must_use
+fn gregorian_year_days(year) {
+    if (gregorian_is_leap(year) == 1) { return 366; }
+    return 365;
+}
+
+# ---------------------------------------------------------------------------
+# JDN conversions
+# ---------------------------------------------------------------------------
+
+# Convert a Julian Day Number (f64) to a proleptic Gregorian date pointer.
+# March-based computational calendar; correct for deep proleptic (BCE) dates.
+#must_use
+fn jdn_to_gregorian(jdn) {
+    if (SK_TRACE <= sakshi_get_level()) {
+        var _js = str_from_int(f64_to(jdn));
+        sakshi_log_kv(SK_TRACE, "JDN to Gregorian", 16, "jdn", 3, str_data(_js), str_len(_js));
+    }
+
+    # Shift to midnight-based integer day count: (jdn + 0.5).floor() as i64.
+    # floor rounds toward -inf; f64_to on the resulting whole f64 is exact.
+    var half = f64_div(f64_from(1), f64_from(2));
+    var j = f64_to(f64_floor(f64_add(jdn, half)));
+
+    # Reference epoch: March 1, year 0 = JDN 1721120. days may be negative
+    # for pre-epoch dates, so the 400-year split uses Euclidean div/rem.
+    var days = j - 1721120;
+
+    var n400 = div_euclid(days, 146097);
+    var d400 = rem_euclid(days, 146097);
+
+    # d400 is now in [0, 146097); all remaining divisions are on non-negative
+    # values, so plain truncating / matches Rust exactly (do NOT Euclidize).
+    var n100 = d400 / 36524;
+    if (n100 > 3) { n100 = 3; }
+    var d100 = d400 - n100 * 36524;
+
+    var n4 = d100 / 1461;
+    var d4 = d100 - n4 * 1461;
+
+    var n1 = d4 / 365;
+    if (n1 > 3) { n1 = 3; }
+    var day_of_year = d4 - n1 * 365;
+
+    # March-based month (0 = March, 11 = February) and day-of-month.
+    var mp = (5 * day_of_year + 2) / 153;
+    var day = day_of_year - (153 * mp + 2) / 5 + 1;
+
+    # March-based month -> January-based index (0 = January).
+    var month_idx = mp + 2;
+    if (mp >= 10) { month_idx = mp - 10; }
+
+    var year = 400 * n400 + 100 * n100 + 4 * n4 + n1;
+    if (mp >= 10) { year = year + 1; }
+
+    return gregorian_date_new(year, month_idx, day);
+}
+
+# Convert a proleptic Gregorian date to a midnight JDN (.5). Exact inverse of
+# jdn_to_gregorian. Returns Ok(jdn_f64) or Err(InvalidDate) when day is out of
+# range for the month/year. (Pattern C: real tagged Result, message preserved.)
+#must_use
+fn gregorian_to_jdn(date) {
+    if (SK_TRACE <= sakshi_get_level()) {
+        var _ys = str_from_int(gd_year(date));
+        sakshi_log_kv(SK_TRACE, "Gregorian to JDN", 16, "year", 4, str_data(_ys), str_len(_ys));
+    }
+
+    # month enum discriminant IS the 0-based index (position() over the ordered
+    # GREGORIAN_MONTHS array == the discriminant); unwrap_or(0) never triggers.
+    var month_idx = gd_month(date);
+    var year = gd_year(date);
+    var day = gd_day(date);
+
+    var max_day = greg_month_length(month_idx);
+    if (month_idx == 1) {
+        if (gregorian_is_leap(year) == 1) { max_day = 29; }
+    }
+
+    var bad = 0;
+    if (day == 0) { bad = 1; }
+    if (day > max_day) { bad = 1; }
+    if (bad == 1) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "day ");
+        str_builder_add_int(sb, day);
+        str_builder_add_cstr(sb, " out of range for ");
+        str_builder_add(sb, gregorian_month_to_str(month_idx));
+        str_builder_add_cstr(sb, " ");
+        str_builder_add_int(sb, year);
+        str_builder_add_cstr(sb, " (max ");
+        str_builder_add_int(sb, max_day);
+        str_builder_add_cstr(sb, ")");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sb));
+    }
+
+    # March-based computational calendar. Convert Jan/Feb (idx 0/1) to months
+    # 10/11 of the previous year.
+    var y = year;
+    var mp = month_idx - 2;
+    if (month_idx < 2) {
+        y = year - 1;
+        mp = month_idx + 10;
+    }
+
+    # Reconstruct day count from March 1, year 0 = JDN 1721120. y may be
+    # negative, so the /4, /100, /400 terms use Euclidean (floor) division.
+    var days = 365 * y + div_euclid(y, 4) - div_euclid(y, 100)
+             + div_euclid(y, 400)
+             + (153 * mp + 2) / 5
+             + day
+             - 1;
+
+    var half = f64_div(f64_from(1), f64_from(2));
+    var jdn = f64_sub(f64_from(days + 1721120), half);
+    return Ok(jdn);
+}

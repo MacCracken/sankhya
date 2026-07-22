@@ -1,0 +1,202 @@
+# serial_epoch.tcyr — round-trip serde parity tests for the epoch module.
+#
+# Ports the Rust epoch serde round-trip tests (serde_roundtrip_age_position,
+# serde_roundtrip_sages_tradition, serde_roundtrip_multi_calendar_date,
+# calendar_date_serde_roundtrip): construct a value, emit JSON, assert the shape
+# matches serde_json (field names, enum-as-variant-name string, bools/ints/floats,
+# externally-tagged data enum), then parse it back and assert field-by-field eq.
+#
+# stdlib + the itihas/avatara/varna dist bundles are auto-resolved via cyrius.cyml
+# [deps]. lib.cyr pulls in the foundation + every calendar module + epoch;
+# serial_util.cyr + serial_epoch.cyr add the (de)serializers. (Duplicate-fn
+# warnings for str_lower/str_upper/vec_sort and undefined sockaddr_in /
+# _http_parse_response from the itihas bundle are expected & harmless.)
+include "src/lib.cyr"
+include "src/serial_util.cyr"
+include "src/serial_epoch.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# ---- AgePosition round-trip (serde_roundtrip_age_position) ----
+fn test_age_position() {
+    var pos = precessional_age(J2000_JDN);
+    var js = age_position_to_json(pos);
+
+    # J2000 falls in the Age of Pisces; f64 fields render as JSON numbers.
+    var h1 = str_contains_cstr(js, "\"age\":\"Pisces\"");
+    ok(h1, "AgePosition age is variant-name string Pisces");
+    var h2 = str_contains_cstr(js, "\"years_into_age\":");
+    ok(h2, "AgePosition years_into_age field present");
+    var h3 = str_contains_cstr(js, "\"fraction\":");
+    ok(h3, "AgePosition fraction field present");
+    var h4 = str_contains_cstr(js, "\"vernal_point_longitude\":");
+    ok(h4, "AgePosition vernal_point_longitude field present");
+
+    var back = age_position_from_json(sk_json_parse(js));
+    ok(age_position_eq(pos, back), "AgePosition serde round-trip");
+    return 0;
+}
+
+# ---- SagesTradition round-trip (serde_roundtrip_sages_tradition) ----
+fn test_sages_tradition() {
+    var ved = sages_tradition(ECIV_VEDIC);
+    var js = sages_tradition_to_json(ved);
+
+    var h1 = str_contains_cstr(js, "\"civilization\":\"Vedic\"");
+    ok(h1, "SagesTradition civilization variant-name Vedic");
+    var h2 = str_contains_cstr(js, "\"group_name\":\"Saptarishi\"");
+    ok(h2, "SagesTradition group_name Saptarishi");
+    var h3 = str_contains_cstr(js, "\"sage_names\":[\"Marichi\"");
+    ok(h3, "SagesTradition sage_names is a JSON string array");
+    var h4 = str_contains_cstr(js, "\"source_texts\":[\"Shatapatha Brahmana\"");
+    ok(h4, "SagesTradition source_texts is a JSON string array");
+    var h5 = str_contains_cstr(js, "\"associated_stars\":\"Ursa Major");
+    ok(h5, "SagesTradition associated_stars present");
+    var h6 = str_contains_cstr(js, "\"catastrophe_narrative\":\"Survived the pralaya");
+    ok(h6, "SagesTradition catastrophe_narrative present");
+
+    var back = sages_tradition_from_json(sk_json_parse(js));
+    ok(sages_tradition_eq(ved, back), "SagesTradition serde round-trip");
+    return 0;
+}
+
+# ---- MultiCalendarDate round-trip (serde_roundtrip_multi_calendar_date) ----
+fn test_multi_calendar_date() {
+    var cr = correlate(f64_from(EPOCH_JDN));
+    ok(is_ok(cr), "correlate at Mayan creation ok");
+    var date = result_unwrap(cr);
+    var js = multi_calendar_date_to_json(date);
+
+    # jdn is an integer-valued f64 (EPOCH_JDN 584283) -> "584283.0" (serde/Grisu2).
+    var h1 = str_contains_cstr(js, "\"jdn\":584283.0");
+    ok(h1, "MultiCalendarDate jdn is a JSON float 584283.0");
+    # Some(LongCount 0.0.0.0.0) at creation, not null.
+    var h2 = str_contains_cstr(js, "\"mayan_long_count\":{\"baktun\":0");
+    ok(h2, "mayan_long_count is Some object with baktun");
+    # Tzolkin 4 Ahau, Haab 8 Kumku at day 0 — enums as variant-name strings.
+    var h3 = str_contains_cstr(js, "\"tzolkin\":{\"number\":4,\"day_sign\":\"Ahau\"}");
+    ok(h3, "tzolkin object with day_sign variant-name Ahau");
+    var h4 = str_contains_cstr(js, "\"haab\":{\"day\":8,\"month\":\"Kumku\"}");
+    ok(h4, "haab object with month variant-name Kumku");
+    var h5 = str_contains_cstr(js, "\"sothic_position\":[");
+    ok(h5, "sothic_position is a JSON array tuple");
+    var h6 = str_contains_cstr(js, "\"precessional_age\":{\"age\":\"Taurus\"");
+    ok(h6, "precessional_age nested object, age Taurus at creation");
+    var h7 = str_contains_cstr(js, "\"gregorian\":{\"year\":");
+    ok(h7, "gregorian nested object present");
+    var h8 = str_contains_cstr(js, "\"eras\":[");
+    ok(h8, "eras array present");
+    var h9 = str_contains_cstr(js, "\"civilizations\":[");
+    ok(h9, "civilizations array present");
+    var h10 = str_contains_cstr(js, "\"events\":[");
+    ok(h10, "events array present");
+    var h11 = str_contains_cstr(js, "\"saptarishi_profiles\":[{\"name\":");
+    ok(h11, "saptarishi_profiles array of name objects present");
+
+    var back = multi_calendar_date_from_json(sk_json_parse(js));
+    ok(multi_calendar_date_eq(date, back), "MultiCalendarDate serde round-trip");
+    return 0;
+}
+
+# ---- CalendarDate round-trip (calendar_date_serde_roundtrip) ----
+fn test_calendar_date() {
+    var greg = gregorian_date_new(2025, GM_APRIL, 1);
+    var cd = caldate_gregorian(greg);
+    var js = calendar_date_to_json(cd);
+
+    # Externally tagged: {"Gregorian":{"year":2025,"month":"April","day":1}}.
+    var h1 = str_contains_cstr(js, "\"Gregorian\":{");
+    ok(h1, "CalendarDate externally tagged variant key Gregorian");
+    var h2 = str_contains_cstr(js, "\"year\":2025");
+    ok(h2, "CalendarDate Gregorian year 2025");
+    var h3 = str_contains_cstr(js, "\"month\":\"April\"");
+    ok(h3, "CalendarDate Gregorian month variant-name April");
+    var h4 = str_contains_cstr(js, "\"day\":1");
+    ok(h4, "CalendarDate Gregorian day 1");
+
+    var back = calendar_date_from_json(sk_json_parse(js));
+    ok(calendar_date_eq(cd, back), "CalendarDate serde round-trip (Gregorian)");
+
+    # Also exercise the Jdn f64 variant and MayanLongCount variant.
+    var jd = f64_add(f64_from(2451544), F64_HALF);
+    var cdj = caldate_jdn(jd);
+    var jjs = calendar_date_to_json(cdj);
+    var hj = str_contains_cstr(jjs, "\"Jdn\":2451544.5");
+    ok(hj, "CalendarDate Jdn variant is a JSON float 2451544.5");
+    var backj = calendar_date_from_json(sk_json_parse(jjs));
+    ok(calendar_date_eq(cdj, backj), "CalendarDate serde round-trip (Jdn f64)");
+
+    var lcr = long_count_from_days(1872000);
+    ok(is_ok(lcr), "long_count_from_days ok");
+    var lc = result_unwrap(lcr);
+    var cdm = caldate_mayan_long_count(lc);
+    var mjs = calendar_date_to_json(cdm);
+    var hm = str_contains_cstr(mjs, "\"MayanLongCount\":{\"baktun\":13");
+    ok(hm, "CalendarDate MayanLongCount variant object with baktun 13");
+    var backm = calendar_date_from_json(sk_json_parse(mjs));
+    ok(calendar_date_eq(cdm, backm), "CalendarDate serde round-trip (MayanLongCount)");
+    return 0;
+}
+
+# ---- unit enum serializers ----
+fn test_enums() {
+    var aj = precessionalage_to_json(PA_LEO);
+    ok(str_eq_cstr(aj, "\"Leo\""), "PrecessionalAge Leo -> bare string");
+    ok(precessionalage_eq(PA_LEO, precessionalage_from_json(sk_json_parse(aj))), "PrecessionalAge round-trip");
+
+    var cj = civilization_to_json(ECIV_MAYAN);
+    ok(str_eq_cstr(cj, "\"Mayan\""), "Civilization Mayan -> bare string");
+    ok(civilization_eq(ECIV_MAYAN, civilization_from_json(sk_json_parse(cj))), "Civilization round-trip");
+
+    var nj = cyclename_to_json(CN_VENUS_SYNODIC);
+    ok(str_eq_cstr(nj, "\"VenusSynodic\""), "CycleName VenusSynodic -> bare string");
+    ok(cyclename_eq(CN_VENUS_SYNODIC, cyclename_from_json(sk_json_parse(nj))), "CycleName round-trip");
+    return 0;
+}
+
+# ---- CycleAlignment serializer ----
+fn test_cycle_alignment() {
+    var cyc = vec_new();
+    vec_push(cyc, CN_METONIC);
+    vec_push(cyc, CN_SAROS);
+    var jdn = f64_add(f64_from(2451544), F64_HALF);
+    var maxres = f64_from(0);
+    var ca = calgn_new(jdn, cyc, maxres);
+    var js = cycle_alignment_to_json(ca);
+
+    var h1 = str_contains_cstr(js, "\"jdn\":2451544.5");
+    ok(h1, "CycleAlignment jdn float");
+    var h2 = str_contains_cstr(js, "\"cycles\":[\"Metonic\",\"Saros\"]");
+    ok(h2, "CycleAlignment cycles array of variant-name strings");
+    var h3 = str_contains_cstr(js, "\"max_residual_days\":");
+    ok(h3, "CycleAlignment max_residual_days present");
+
+    var back = cycle_alignment_from_json(sk_json_parse(js));
+    ok(cycle_alignment_eq(ca, back), "CycleAlignment serde round-trip");
+    return 0;
+}
+
+fn main() {
+    alloc_init();
+    gregorian_init();
+    babylonian_init();
+    coptic_init();
+    persian_init();
+    hebrew_init();
+    egyptian_init();
+    epoch_init();
+
+    println("=== serial_epoch test suite ===");
+
+    test_age_position();
+    test_sages_tradition();
+    test_multi_calendar_date();
+    test_calendar_date();
+    test_enums();
+    test_cycle_alignment();
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

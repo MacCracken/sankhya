@@ -1,0 +1,812 @@
+# astro.cyr — archaeoastronomy computations (ported from rust-old/src/astro.rs).
+#
+# Coordinate systems (equatorial / ecliptic / horizontal) with pairwise
+# conversions; mean obliquity of the ecliptic (IAU / Lieske 1977); approximate
+# solar longitude / declination (Meeus ch.25); sidereal-time helpers; a 20-star
+# catalog of archaeologically significant bright stars at J2000.0 (Hipparcos);
+# IAU precession of equatorial coordinates (Lieske 1977, Meeus ch.21); heliacal
+# rising search via the arcus-visionis model (Schaefer 1987); monument-alignment
+# analysis against solstice/equinox sunrise-sunset and star-rising azimuths.
+#
+# SELF-CONTAINED: no include lines (the distlib bundler strips them; stdlib +
+# ganita + sakshi are resolved from the consumer's [deps]). J2000_JDN and
+# JULIAN_YEAR_DAYS live in f64_util (in Rust astro imported them from epoch).
+#
+# f64 note: every non-integer constant is parsed ONCE (f64_parse) into a global
+# by astro_init(), which every public entry point calls (guarded, idempotent).
+# Whole-number constants use f64_from directly. Angle wrapping uses f64_fmod
+# (floor-based), which reproduces Rust's `((x % turn) + turn) % turn` result.
+
+# ---------------------------------------------------------------------------
+# Enums
+# ---------------------------------------------------------------------------
+
+# StarName — discriminant order IS the STAR_CATALOG index (0=Sirius..19=Dubhe).
+enum StarName {
+    SN_SIRIUS = 0;
+    SN_CANOPUS = 1;
+    SN_VEGA = 2;
+    SN_ARCTURUS = 3;
+    SN_RIGEL = 4;
+    SN_PROCYON = 5;
+    SN_BETELGEUSE = 6;
+    SN_ALDEBARAN = 7;
+    SN_ANTARES = 8;
+    SN_SPICA = 9;
+    SN_POLLUX = 10;
+    SN_FOMALHAUT = 11;
+    SN_DENEB = 12;
+    SN_REGULUS = 13;
+    SN_POLARIS = 14;
+    SN_THUBAN = 15;
+    SN_KOCHAB = 16;
+    SN_PLEIADES = 17;
+    SN_ALCYONE = 18;
+    SN_DUBHE = 19;
+}
+
+enum HeliacalEventType {
+    HET_RISING = 0;
+    HET_SETTING = 1;
+}
+
+# AlignmentTarget — the 6 fieldless variants plus StarRising(StarName). The
+# data-carrying StarRising is represented by AT_STAR_RISING plus the star code
+# stored alongside in AlignmentResult (AR_STAR).
+enum AlignmentTarget {
+    AT_SUMMER_SOLSTICE_SUNRISE = 0;
+    AT_SUMMER_SOLSTICE_SUNSET = 1;
+    AT_WINTER_SOLSTICE_SUNRISE = 2;
+    AT_WINTER_SOLSTICE_SUNSET = 3;
+    AT_EQUINOX_SUNRISE = 4;
+    AT_EQUINOX_SUNSET = 5;
+    AT_STAR_RISING = 6;
+}
+
+# ---------------------------------------------------------------------------
+# Struct offsets + constructors + getters
+# ---------------------------------------------------------------------------
+
+# CelestialCoord { ra_hours: f64, dec_degrees: f64 }
+enum CcOff { CC_RA = 0; CC_DEC = 8; CC_SIZE = 16; }
+#must_use
+fn celestial_new(ra_hours, dec_degrees) {
+    var p = alloc(CC_SIZE);
+    store64(p + CC_RA, ra_hours);
+    store64(p + CC_DEC, dec_degrees);
+    return p;
+}
+#must_use
+fn cc_ra_hours(p) { return load64(p + CC_RA); }
+#must_use
+fn cc_dec_degrees(p) { return load64(p + CC_DEC); }
+
+# EclipticCoord { longitude: f64, latitude: f64 }
+enum EcOff { EC_LON = 0; EC_LAT = 8; EC_SIZE = 16; }
+#must_use
+fn ecliptic_new(longitude, latitude) {
+    var p = alloc(EC_SIZE);
+    store64(p + EC_LON, longitude);
+    store64(p + EC_LAT, latitude);
+    return p;
+}
+#must_use
+fn ec_longitude(p) { return load64(p + EC_LON); }
+#must_use
+fn ec_latitude(p) { return load64(p + EC_LAT); }
+
+# HorizontalCoord { azimuth: f64, altitude: f64 }
+enum HcOff { HC_AZ = 0; HC_ALT = 8; HC_SIZE = 16; }
+#must_use
+fn horizontal_new(azimuth, altitude) {
+    var p = alloc(HC_SIZE);
+    store64(p + HC_AZ, azimuth);
+    store64(p + HC_ALT, altitude);
+    return p;
+}
+#must_use
+fn hc_azimuth(p) { return load64(p + HC_AZ); }
+#must_use
+fn hc_altitude(p) { return load64(p + HC_ALT); }
+
+# Star { name: Str, bayer: Str, constellation: Str, ra_j2000: f64,
+#        dec_j2000: f64, visual_magnitude: f64 }
+enum StOff { ST_NAME = 0; ST_BAYER = 8; ST_CONST = 16; ST_RA = 24; ST_DEC = 32; ST_MAG = 40; ST_SIZE = 48; }
+#must_use
+fn star_rec_new(name, bayer, constellation, ra_j2000, dec_j2000, visual_magnitude) {
+    var p = alloc(ST_SIZE);
+    store64(p + ST_NAME, name);
+    store64(p + ST_BAYER, bayer);
+    store64(p + ST_CONST, constellation);
+    store64(p + ST_RA, ra_j2000);
+    store64(p + ST_DEC, dec_j2000);
+    store64(p + ST_MAG, visual_magnitude);
+    return p;
+}
+#must_use
+fn star_name(p) { return load64(p + ST_NAME); }
+#must_use
+fn star_bayer(p) { return load64(p + ST_BAYER); }
+#must_use
+fn star_constellation(p) { return load64(p + ST_CONST); }
+#must_use
+fn star_ra_j2000(p) { return load64(p + ST_RA); }
+#must_use
+fn star_dec_j2000(p) { return load64(p + ST_DEC); }
+#must_use
+fn star_visual_magnitude(p) { return load64(p + ST_MAG); }
+
+# HeliacalEvent { jdn: f64, star: StarName, event_type: HeliacalEventType }
+enum HeOff { HE_JDN = 0; HE_STAR = 8; HE_TYPE = 16; HE_SIZE = 24; }
+#must_use
+fn heliacal_event_new(jdn, star, event_type) {
+    var p = alloc(HE_SIZE);
+    store64(p + HE_JDN, jdn);
+    store64(p + HE_STAR, star);
+    store64(p + HE_TYPE, event_type);
+    return p;
+}
+#must_use
+fn he_jdn(p) { return load64(p + HE_JDN); }
+#must_use
+fn he_star(p) { return load64(p + HE_STAR); }
+#must_use
+fn he_event_type(p) { return load64(p + HE_TYPE); }
+
+# AlignmentResult { target: AlignmentTarget, star: StarName (or -1), azimuth: f64,
+#                   deviation: f64 }
+enum ArOff { AR_TARGET = 0; AR_STAR = 8; AR_AZ = 16; AR_DEV = 24; AR_SIZE = 32; }
+#must_use
+fn alignment_result_new(target, star, azimuth, deviation) {
+    var p = alloc(AR_SIZE);
+    store64(p + AR_TARGET, target);
+    store64(p + AR_STAR, star);
+    store64(p + AR_AZ, azimuth);
+    store64(p + AR_DEV, deviation);
+    return p;
+}
+#must_use
+fn ar_target(p) { return load64(p + AR_TARGET); }
+#must_use
+fn ar_star(p) { return load64(p + AR_STAR); }
+#must_use
+fn ar_azimuth(p) { return load64(p + AR_AZ); }
+#must_use
+fn ar_deviation(p) { return load64(p + AR_DEV); }
+
+# ---------------------------------------------------------------------------
+# Parsed constant globals (all set once by astro_init; 0 = not yet built)
+# ---------------------------------------------------------------------------
+
+var astro_init_done = 0;
+var astro_star_vec = 0;
+var astro_align_stars = 0;
+var astro_starname_names = 0;
+var astro_heltype_names = 0;
+var astro_target_names = 0;
+
+# Obliquity IAU/Lieske 1977 cubic (degrees)
+var OBL_A = 0;   # 23.4392911
+var OBL_B = 0;   # 0.0130042
+var OBL_C = 0;   # 1.64e-7
+var OBL_D = 0;   # 5.04e-7
+
+# Solar position (Meeus ch.25)
+var SL_L0A = 0;  # 280.46646
+var SL_L0B = 0;  # 36000.76983
+var SL_MA = 0;   # 357.52811
+var SL_MB = 0;   # 35999.05029
+var SL_C1 = 0;   # 1.914602
+var SL_C2 = 0;   # 0.019993
+
+# Greenwich Mean Sidereal Time (Meeus ch.12)
+var GMST_A = 0;  # 280.46061837
+var GMST_B = 0;  # 360.98564736629
+var GMST_C = 0;  # 0.000387933
+
+# Precession Lieske 1977 (degrees/century coefficients)
+var PR_A = 0;    # 0.6406161
+var PR_B = 0;    # 0.0000839
+var PR_C = 0;    # 0.0000050
+var PR_D = 0;    # 0.0000830
+var PR_E = 0;    # 0.0003041
+var PR_F = 0;    # 0.0000051
+var PR_G = 0;    # 0.0000073
+var PR_H = 0;    # 0.5567530
+var PR_I = 0;    # 0.0001185
+var PR_J = 0;    # 0.0000116
+var PR_K = 0;    # 0.0001162
+
+var AV_K = 0;       # arcus visionis slope 1.7
+var SOL_DEC = 0;    # solstice declination 23.44
+var HORIZ_TOL = 0;  # 1e-10 azimuth-branch guard
+
+fn build_star_catalog() {
+    var v = vec_new();
+    vec_push(v, star_rec_new(str_from("Sirius"),     str_from("α CMa"), str_from("Canis Major"),      f64_parse("6.752"),  f64_parse("-16.716"), f64_parse("-1.46")));
+    vec_push(v, star_rec_new(str_from("Canopus"),    str_from("α Car"), str_from("Carina"),           f64_parse("6.399"),  f64_parse("-52.696"), f64_parse("-0.74")));
+    vec_push(v, star_rec_new(str_from("Vega"),       str_from("α Lyr"), str_from("Lyra"),             f64_parse("18.616"), f64_parse("38.784"),  f64_parse("0.03")));
+    vec_push(v, star_rec_new(str_from("Arcturus"),   str_from("α Boo"), str_from("Boötes"),           f64_parse("14.261"), f64_parse("19.182"),  f64_parse("-0.05")));
+    vec_push(v, star_rec_new(str_from("Rigel"),      str_from("β Ori"), str_from("Orion"),            f64_parse("5.242"),  f64_parse("-8.202"),  f64_parse("0.13")));
+    vec_push(v, star_rec_new(str_from("Procyon"),    str_from("α CMi"), str_from("Canis Minor"),      f64_parse("7.655"),  f64_parse("5.225"),   f64_parse("0.34")));
+    vec_push(v, star_rec_new(str_from("Betelgeuse"), str_from("α Ori"), str_from("Orion"),            f64_parse("5.919"),  f64_parse("7.407"),   f64_parse("0.42")));
+    vec_push(v, star_rec_new(str_from("Aldebaran"),  str_from("α Tau"), str_from("Taurus"),           f64_parse("4.599"),  f64_parse("16.509"),  f64_parse("0.86")));
+    vec_push(v, star_rec_new(str_from("Antares"),    str_from("α Sco"), str_from("Scorpius"),         f64_parse("16.490"), f64_parse("-26.432"), f64_parse("0.96")));
+    vec_push(v, star_rec_new(str_from("Spica"),      str_from("α Vir"), str_from("Virgo"),            f64_parse("13.420"), f64_parse("-11.161"), f64_parse("0.97")));
+    vec_push(v, star_rec_new(str_from("Pollux"),     str_from("β Gem"), str_from("Gemini"),           f64_parse("7.755"),  f64_parse("28.026"),  f64_parse("1.14")));
+    vec_push(v, star_rec_new(str_from("Fomalhaut"),  str_from("α PsA"), str_from("Piscis Austrinus"), f64_parse("22.961"), f64_parse("-29.622"), f64_parse("1.16")));
+    vec_push(v, star_rec_new(str_from("Deneb"),      str_from("α Cyg"), str_from("Cygnus"),           f64_parse("20.690"), f64_parse("45.280"),  f64_parse("1.25")));
+    vec_push(v, star_rec_new(str_from("Regulus"),    str_from("α Leo"), str_from("Leo"),              f64_parse("10.139"), f64_parse("11.967"),  f64_parse("1.40")));
+    vec_push(v, star_rec_new(str_from("Polaris"),    str_from("α UMi"), str_from("Ursa Minor"),       f64_parse("2.530"),  f64_parse("89.264"),  f64_parse("1.98")));
+    vec_push(v, star_rec_new(str_from("Thuban"),     str_from("α Dra"), str_from("Draco"),            f64_parse("14.073"), f64_parse("64.376"),  f64_parse("3.65")));
+    vec_push(v, star_rec_new(str_from("Kochab"),     str_from("β UMi"), str_from("Ursa Minor"),       f64_parse("14.845"), f64_parse("74.156"),  f64_parse("2.08")));
+    vec_push(v, star_rec_new(str_from("Pleiades"),   str_from("M45"),   str_from("Taurus"),           f64_parse("3.787"),  f64_parse("24.105"),  f64_parse("1.60")));
+    vec_push(v, star_rec_new(str_from("Alcyone"),    str_from("η Tau"), str_from("Taurus"),           f64_parse("3.791"),  f64_parse("24.105"),  f64_parse("2.87")));
+    vec_push(v, star_rec_new(str_from("Dubhe"),      str_from("α UMa"), str_from("Ursa Major"),       f64_parse("11.062"), f64_parse("61.751"),  f64_parse("1.79")));
+    return v;
+}
+
+fn build_align_stars() {
+    var v = vec_new();
+    vec_push(v, SN_SIRIUS);
+    vec_push(v, SN_VEGA);
+    vec_push(v, SN_ALDEBARAN);
+    vec_push(v, SN_ANTARES);
+    vec_push(v, SN_REGULUS);
+    vec_push(v, SN_SPICA);
+    vec_push(v, SN_PLEIADES);
+    vec_push(v, SN_THUBAN);
+    vec_push(v, SN_POLARIS);
+    return v;
+}
+
+fn build_starname_names() {
+    var v = vec_new();
+    vec_push(v, str_from("Sirius"));    vec_push(v, str_from("Canopus"));
+    vec_push(v, str_from("Vega"));      vec_push(v, str_from("Arcturus"));
+    vec_push(v, str_from("Rigel"));     vec_push(v, str_from("Procyon"));
+    vec_push(v, str_from("Betelgeuse"));vec_push(v, str_from("Aldebaran"));
+    vec_push(v, str_from("Antares"));   vec_push(v, str_from("Spica"));
+    vec_push(v, str_from("Pollux"));    vec_push(v, str_from("Fomalhaut"));
+    vec_push(v, str_from("Deneb"));     vec_push(v, str_from("Regulus"));
+    vec_push(v, str_from("Polaris"));   vec_push(v, str_from("Thuban"));
+    vec_push(v, str_from("Kochab"));    vec_push(v, str_from("Pleiades"));
+    vec_push(v, str_from("Alcyone"));   vec_push(v, str_from("Dubhe"));
+    return v;
+}
+
+fn build_heltype_names() {
+    var v = vec_new();
+    vec_push(v, str_from("Rising"));
+    vec_push(v, str_from("Setting"));
+    return v;
+}
+
+fn build_target_names() {
+    var v = vec_new();
+    vec_push(v, str_from("SummerSolsticeSunrise"));
+    vec_push(v, str_from("SummerSolsticeSunset"));
+    vec_push(v, str_from("WinterSolsticeSunrise"));
+    vec_push(v, str_from("WinterSolsticeSunset"));
+    vec_push(v, str_from("EquinoxSunrise"));
+    vec_push(v, str_from("EquinoxSunset"));
+    vec_push(v, str_from("StarRising"));
+    return v;
+}
+
+# Idempotent lazy init: parse all constants and build all tables. Called at the
+# top of every public entry point that reads a parsed constant or the catalog.
+fn astro_init() {
+    if (astro_init_done == 1) { return 0; }
+    OBL_A = f64_parse("23.4392911");
+    OBL_B = f64_parse("0.0130042");
+    OBL_C = f64_parse("0.000000164");
+    OBL_D = f64_parse("0.000000504");
+
+    SL_L0A = f64_parse("280.46646");
+    SL_L0B = f64_parse("36000.76983");
+    SL_MA = f64_parse("357.52811");
+    SL_MB = f64_parse("35999.05029");
+    SL_C1 = f64_parse("1.914602");
+    SL_C2 = f64_parse("0.019993");
+
+    GMST_A = f64_parse("280.46061837");
+    GMST_B = f64_parse("360.98564736629");
+    GMST_C = f64_parse("0.000387933");
+
+    PR_A = f64_parse("0.6406161");
+    PR_B = f64_parse("0.0000839");
+    PR_C = f64_parse("0.0000050");
+    PR_D = f64_parse("0.0000830");
+    PR_E = f64_parse("0.0003041");
+    PR_F = f64_parse("0.0000051");
+    PR_G = f64_parse("0.0000073");
+    PR_H = f64_parse("0.5567530");
+    PR_I = f64_parse("0.0001185");
+    PR_J = f64_parse("0.0000116");
+    PR_K = f64_parse("0.0001162");
+
+    AV_K = f64_parse("1.7");
+    SOL_DEC = f64_parse("23.44");
+    HORIZ_TOL = f64_parse("0.0000000001");
+
+    astro_star_vec = build_star_catalog();
+    astro_align_stars = build_align_stars();
+    astro_starname_names = build_starname_names();
+    astro_heltype_names = build_heltype_names();
+    astro_target_names = build_target_names();
+    astro_init_done = 1;
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# Angle conversion helpers
+# ---------------------------------------------------------------------------
+
+#must_use
+fn degrees_to_radians(deg) {
+    return f64_div(f64_mul(deg, F64_PI), f64_from(180));
+}
+#must_use
+fn radians_to_degrees(rad) {
+    return f64_div(f64_mul(rad, f64_from(180)), F64_PI);
+}
+#must_use
+fn hours_to_degrees(hours) {
+    return f64_mul(hours, f64_from(15));
+}
+#must_use
+fn degrees_to_hours(deg) {
+    return f64_div(deg, f64_from(15));
+}
+
+# ---------------------------------------------------------------------------
+# Obliquity of the ecliptic
+# ---------------------------------------------------------------------------
+
+#must_use
+fn obliquity_of_ecliptic(jdn) {
+    astro_init();
+    var t = f64_div(f64_sub(jdn, J2000_JDN), f64_from(36525));
+    var tt = f64_mul(t, t);
+    var ttt = f64_mul(tt, t);
+    var r = f64_sub(OBL_A, f64_mul(OBL_B, t));
+    r = f64_sub(r, f64_mul(OBL_C, tt));
+    r = f64_add(r, f64_mul(OBL_D, ttt));
+    return r;
+}
+
+# ---------------------------------------------------------------------------
+# Coordinate conversions
+# ---------------------------------------------------------------------------
+
+#must_use
+fn equatorial_to_ecliptic(coord, jdn) {
+    astro_init();
+    var eps = degrees_to_radians(obliquity_of_ecliptic(jdn));
+    var ra = degrees_to_radians(hours_to_degrees(load64(coord + CC_RA)));
+    var dec = degrees_to_radians(load64(coord + CC_DEC));
+
+    var sin_lon = f64_add(f64_mul(f64_sin(ra), f64_cos(eps)), f64_mul(f64_tan(dec), f64_sin(eps)));
+    var cos_lon = f64_cos(ra);
+    var lon = radians_to_degrees(f64_atan2(sin_lon, cos_lon));
+    if (f64_lt(lon, f64_from(0)) == 1) { lon = f64_add(lon, f64_from(360)); }
+
+    var sin_lat = f64_sub(f64_mul(f64_sin(dec), f64_cos(eps)), f64_mul(f64_mul(f64_cos(dec), f64_sin(eps)), f64_sin(ra)));
+    var lat = radians_to_degrees(f64_asin(sin_lat));
+    return ecliptic_new(lon, lat);
+}
+
+#must_use
+fn ecliptic_to_equatorial(coord, jdn) {
+    astro_init();
+    var eps = degrees_to_radians(obliquity_of_ecliptic(jdn));
+    var lon = degrees_to_radians(load64(coord + EC_LON));
+    var lat = degrees_to_radians(load64(coord + EC_LAT));
+
+    var sin_ra = f64_sub(f64_mul(f64_sin(lon), f64_cos(eps)), f64_mul(f64_tan(lat), f64_sin(eps)));
+    var cos_ra = f64_cos(lon);
+    var ra_deg = radians_to_degrees(f64_atan2(sin_ra, cos_ra));
+    if (f64_lt(ra_deg, f64_from(0)) == 1) { ra_deg = f64_add(ra_deg, f64_from(360)); }
+
+    var sin_dec = f64_add(f64_mul(f64_sin(lat), f64_cos(eps)), f64_mul(f64_mul(f64_cos(lat), f64_sin(eps)), f64_sin(lon)));
+    var dec = radians_to_degrees(f64_asin(sin_dec));
+    return celestial_new(degrees_to_hours(ra_deg), dec);
+}
+
+#must_use
+fn equatorial_to_horizontal(coord, jdn, observer_lat, observer_lon) {
+    astro_init();
+    var lat = degrees_to_radians(observer_lat);
+    var dec = degrees_to_radians(load64(coord + CC_DEC));
+
+    var lst = local_sidereal_time(jdn, observer_lon);
+    var ha = degrees_to_radians(f64_sub(f64_mul(lst, f64_from(15)), hours_to_degrees(load64(coord + CC_RA))));
+
+    var sin_alt = f64_add(f64_mul(f64_sin(dec), f64_sin(lat)), f64_mul(f64_mul(f64_cos(dec), f64_cos(lat)), f64_cos(ha)));
+    var alt = radians_to_degrees(f64_asin(sin_alt));
+
+    var cos_az_num = f64_sub(f64_sin(dec), f64_mul(sin_alt, f64_sin(lat)));
+    var cos_az_den = f64_mul(f64_sin(f64_acos(sin_alt)), f64_cos(lat));
+    var neg_num = f64_neg(f64_mul(f64_cos(dec), f64_sin(ha)));
+    var az = radians_to_degrees(f64_atan2(neg_num, cos_az_num));
+    var den_abs = f64_abs(cos_az_den);
+    if (f64_gt(den_abs, HORIZ_TOL) == 1) {
+        az = radians_to_degrees(f64_atan2(neg_num, f64_div(cos_az_num, den_abs)));
+    }
+    if (f64_lt(az, f64_from(0)) == 1) { az = f64_add(az, f64_from(360)); }
+    return horizontal_new(az, alt);
+}
+
+# Approximate Greenwich Mean Sidereal Time in hours (Meeus ch.12).
+#must_use
+fn greenwich_sidereal_time(jdn) {
+    astro_init();
+    var d = f64_sub(jdn, J2000_JDN);
+    var t = f64_div(d, f64_from(36525));
+    var tt = f64_mul(t, t);
+    var ttt = f64_mul(tt, t);
+    var gmst = f64_add(GMST_A, f64_mul(GMST_B, d));
+    gmst = f64_add(gmst, f64_mul(GMST_C, tt));
+    gmst = f64_sub(gmst, f64_div(ttt, f64_from(38710000)));
+    var m1 = f64_fmod(gmst, f64_from(360));
+    var m2 = f64_fmod(f64_add(m1, f64_from(360)), f64_from(360));
+    return f64_div(m2, f64_from(15));
+}
+
+# Local Sidereal Time in hours.
+#must_use
+fn local_sidereal_time(jdn, observer_lon) {
+    var gmst = greenwich_sidereal_time(jdn);
+    var lst = f64_add(gmst, f64_div(observer_lon, f64_from(15)));
+    var m1 = f64_fmod(lst, f64_from(24));
+    return f64_fmod(f64_add(m1, f64_from(24)), f64_from(24));
+}
+
+# ---------------------------------------------------------------------------
+# Approximate solar position
+# ---------------------------------------------------------------------------
+
+#must_use
+fn solar_longitude(jdn) {
+    astro_init();
+    var t = f64_div(f64_sub(jdn, J2000_JDN), f64_from(36525));
+    var l0 = f64_add(SL_L0A, f64_mul(SL_L0B, t));
+    var m = degrees_to_radians(f64_add(SL_MA, f64_mul(SL_MB, t)));
+    var c = f64_add(f64_mul(SL_C1, f64_sin(m)), f64_mul(SL_C2, f64_sin(f64_mul(f64_from(2), m))));
+    var lon = f64_add(l0, c);
+    var m1 = f64_fmod(lon, f64_from(360));
+    return f64_fmod(f64_add(m1, f64_from(360)), f64_from(360));
+}
+
+#must_use
+fn solar_declination(jdn) {
+    astro_init();
+    var lon = degrees_to_radians(solar_longitude(jdn));
+    var eps = degrees_to_radians(obliquity_of_ecliptic(jdn));
+    return radians_to_degrees(f64_asin(f64_mul(f64_sin(eps), f64_sin(lon))));
+}
+
+# ---------------------------------------------------------------------------
+# Star catalog
+# ---------------------------------------------------------------------------
+
+#must_use
+fn star_catalog() {
+    astro_init();
+    return astro_star_vec;
+}
+#must_use
+fn star_catalog_len() {
+    return vec_len(star_catalog());
+}
+#must_use
+fn star(name) {
+    astro_init();
+    return vec_get(astro_star_vec, name);
+}
+#must_use
+fn star_j2000(name) {
+    var s = star(name);
+    return celestial_new(load64(s + ST_RA), load64(s + ST_DEC));
+}
+
+# ---------------------------------------------------------------------------
+# Precession
+# ---------------------------------------------------------------------------
+
+#must_use
+fn precess_coordinates(coord, from_jdn, to_jdn) {
+    astro_init();
+    sakshi_debug("precessing coordinates", strlen("precessing coordinates"));
+    var t = f64_div(f64_sub(from_jdn, J2000_JDN), f64_from(36525));
+    var dt = f64_div(f64_sub(to_jdn, from_jdn), f64_from(36525));
+    var tt = f64_mul(t, t);
+    var dtdt = f64_mul(dt, dt);
+    var dtdtdt = f64_mul(dtdt, dt);
+
+    # zeta_a and z_a share the first bracket b1.
+    var b1 = f64_add(f64_add(PR_A, f64_mul(PR_B, t)), f64_mul(PR_C, tt));
+    var zeta_a = f64_add(f64_add(f64_mul(b1, dt), f64_mul(f64_add(PR_D, f64_mul(PR_C, t)), dtdt)), f64_mul(PR_C, dtdtdt));
+    var z_a = f64_add(f64_add(f64_mul(b1, dt), f64_mul(f64_add(PR_E, f64_mul(PR_F, t)), dtdt)), f64_mul(PR_G, dtdtdt));
+    var tb1 = f64_sub(f64_sub(PR_H, f64_mul(PR_I, t)), f64_mul(PR_J, tt));
+    var theta_a = f64_sub(f64_sub(f64_mul(tb1, dt), f64_mul(f64_add(PR_K, f64_mul(PR_J, t)), dtdt)), f64_mul(PR_J, dtdtdt));
+
+    var zeta = degrees_to_radians(zeta_a);
+    var z = degrees_to_radians(z_a);
+    var theta = degrees_to_radians(theta_a);
+
+    var ra0 = degrees_to_radians(hours_to_degrees(load64(coord + CC_RA)));
+    var dec0 = degrees_to_radians(load64(coord + CC_DEC));
+    var ra0z = f64_add(ra0, zeta);
+
+    var ra_a = f64_mul(f64_cos(dec0), f64_sin(ra0z));
+    var ra_b = f64_sub(f64_mul(f64_mul(f64_cos(theta), f64_cos(dec0)), f64_cos(ra0z)), f64_mul(f64_sin(theta), f64_sin(dec0)));
+    var ra_c = f64_add(f64_mul(f64_mul(f64_sin(theta), f64_cos(dec0)), f64_cos(ra0z)), f64_mul(f64_cos(theta), f64_sin(dec0)));
+
+    var ra_new = f64_add(f64_atan2(ra_a, ra_b), z);
+    var dec_new = f64_asin(ra_c);
+
+    ra_new = radians_to_degrees(ra_new);
+    if (f64_lt(ra_new, f64_from(0)) == 1) { ra_new = f64_add(ra_new, f64_from(360)); }
+    ra_new = f64_fmod(ra_new, f64_from(360));
+
+    return celestial_new(degrees_to_hours(ra_new), radians_to_degrees(dec_new));
+}
+
+#must_use
+fn star_position_at(name, jdn) {
+    var j2000 = star_j2000(name);
+    return precess_coordinates(j2000, J2000_JDN, jdn);
+}
+
+# ---------------------------------------------------------------------------
+# Heliacal rising
+# ---------------------------------------------------------------------------
+
+# Arcus visionis (minimum solar depression angle), degrees. Schoch/Purrington.
+#must_use
+fn arcus_visionis(visual_magnitude) {
+    astro_init();
+    return f64_add(f64_from(11), f64_mul(AV_K, visual_magnitude));
+}
+
+# Find the next heliacal rising after jdn_start. Returns Result:
+#   Ok(HeliacalEvent) or Err(SkErr{SKE_COMPUTATION, msg}).
+fn heliacal_rising(name, jdn_start, observer_lat, _observer_lon) {
+    astro_init();
+    var s = star(name);
+    sakshi_debug("computing heliacal rising", strlen("computing heliacal rising"));
+    var min_depression = arcus_visionis(load64(s + ST_MAG));
+
+    var day_offset = 0;
+    while (day_offset < 400) {
+        var jdn = f64_add(jdn_start, f64_from(day_offset));
+        var star_coord = star_position_at(name, jdn);
+
+        var max_dec = f64_neg(f64_sub(f64_from(90), f64_abs(observer_lat)));
+        var lat_ge0 = f64_ge(observer_lat, f64_from(0));
+        var dec_lt = f64_lt(load64(star_coord + CC_DEC), max_dec);
+        if (lat_ge0 == 1 && dec_lt == 1) {
+            # Star never rises at this latitude on this date — skip.
+            day_offset = day_offset + 1;
+        } else {
+            var sun_lon = solar_longitude(jdn);
+            var star_ecl = equatorial_to_ecliptic(star_coord, jdn);
+
+            var sep = f64_sub(load64(star_ecl + EC_LON), sun_lon);
+            if (f64_lt(sep, f64_from(0)) == 1) { sep = f64_add(sep, f64_from(360)); }
+            if (f64_gt(sep, f64_from(180)) == 1) { sep = f64_sub(f64_from(360), sep); }
+
+            var cond1 = f64_gt(sep, min_depression);
+            var cond2 = f64_lt(sep, f64_add(min_depression, f64_from(20)));
+            if (cond1 == 1 && cond2 == 1) {
+                var star_minus_sun = f64_sub(load64(star_ecl + EC_LON), sun_lon);
+                var nm1 = f64_fmod(star_minus_sun, f64_from(360));
+                var normalized = f64_fmod(f64_add(nm1, f64_from(360)), f64_from(360));
+                if (f64_lt(normalized, f64_from(180)) == 1) {
+                    return Ok(heliacal_event_new(jdn, name, HET_RISING));
+                }
+            }
+            day_offset = day_offset + 1;
+        }
+    }
+
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "no heliacal rising found for ");
+    str_builder_add(sb, star_name(s));
+    str_builder_add_cstr(sb, " within 400 days of JDN ");
+    str_builder_add_int(sb, f64_to(jdn_start));
+    return sk_fail(SKE_COMPUTATION, str_builder_build(sb));
+}
+
+# ---------------------------------------------------------------------------
+# Monument alignment
+# ---------------------------------------------------------------------------
+
+# Azimuth (degrees from north) of solstice sunrise for a latitude. summer: 1/0.
+#must_use
+fn solstice_sunrise_azimuth(observer_lat, summer) {
+    astro_init();
+    var lat = degrees_to_radians(observer_lat);
+    var decv = degrees_to_radians(SOL_DEC);
+    if (summer == 0) { decv = degrees_to_radians(f64_neg(SOL_DEC)); }
+    var cos_az = f64_div(f64_sin(decv), f64_cos(lat));
+    return radians_to_degrees(f64_acos(cos_az));
+}
+
+# Azimuth where a star rises. Returns Result: Ok(f64 azimuth) or Err.
+fn star_rise_azimuth(name, observer_lat, jdn) {
+    astro_init();
+    var coord = star_position_at(name, jdn);
+    var lat = degrees_to_radians(observer_lat);
+    var dec = degrees_to_radians(load64(coord + CC_DEC));
+
+    var cos_az = f64_div(f64_sin(dec), f64_cos(lat));
+    var cos_abs = f64_abs(cos_az);
+    if (f64_gt(cos_abs, f64_from(1)) == 1) {
+        var sb = str_builder_new();
+        str_builder_add(sb, star_name(star(name)));
+        str_builder_add_cstr(sb, " does not rise at latitude ");
+        sb_add_f64(sb, observer_lat, 1);
+        str_builder_add_cstr(sb, "°");
+        return sk_fail(SKE_COMPUTATION, str_builder_build(sb));
+    }
+    return Ok(radians_to_degrees(f64_acos(cos_az)));
+}
+
+# Internal: check one solstice/equinox target and push if within tolerance.
+fn _ma_check(results, azimuth, target, star, target_az, tolerance) {
+    var dev = angle_deviation(azimuth, target_az);
+    if (f64_le(dev, tolerance) == 1) {
+        vec_push(results, alignment_result_new(target, star, target_az, dev));
+    }
+    return 0;
+}
+
+# Analyze which celestial targets align with a monument's bearing.
+#must_use
+fn monument_alignment(observer_lat, azimuth, jdn, tolerance_degrees) {
+    astro_init();
+    sakshi_info("analyzing monument alignment", strlen("analyzing monument alignment"));
+    var results = vec_new();
+    var no_star = 0 - 1;
+
+    var summer_az = solstice_sunrise_azimuth(observer_lat, 1);
+    var winter_az = solstice_sunrise_azimuth(observer_lat, 0);
+
+    _ma_check(results, azimuth, AT_SUMMER_SOLSTICE_SUNRISE, no_star, summer_az, tolerance_degrees);
+    _ma_check(results, azimuth, AT_SUMMER_SOLSTICE_SUNSET, no_star, f64_sub(f64_from(360), summer_az), tolerance_degrees);
+    _ma_check(results, azimuth, AT_WINTER_SOLSTICE_SUNRISE, no_star, winter_az, tolerance_degrees);
+    _ma_check(results, azimuth, AT_WINTER_SOLSTICE_SUNSET, no_star, f64_sub(f64_from(360), winter_az), tolerance_degrees);
+    _ma_check(results, azimuth, AT_EQUINOX_SUNRISE, no_star, f64_from(90), tolerance_degrees);
+    _ma_check(results, azimuth, AT_EQUINOX_SUNSET, no_star, f64_from(270), tolerance_degrees);
+
+    var n = vec_len(astro_align_stars);
+    var si = 0;
+    while (si < n) {
+        var sn = vec_get(astro_align_stars, si);
+        var r = star_rise_azimuth(sn, observer_lat, jdn);
+        if (is_ok(r) == 1) {
+            var star_az = result_unwrap(r);
+            var dev = angle_deviation(azimuth, star_az);
+            if (f64_le(dev, tolerance_degrees) == 1) {
+                vec_push(results, alignment_result_new(AT_STAR_RISING, sn, star_az, dev));
+            }
+        }
+        si = si + 1;
+    }
+    return results;
+}
+
+# Angular deviation between two azimuths, accounting for wrap-around.
+#must_use
+fn angle_deviation(a, b) {
+    var diff = f64_fmod(f64_abs(f64_sub(a, b)), f64_from(360));
+    if (f64_gt(diff, f64_from(180)) == 1) { return f64_sub(f64_from(360), diff); }
+    return diff;
+}
+
+# ---------------------------------------------------------------------------
+# Display impls (Rust core::fmt::Display) as *_to_str returning a Str.
+# ---------------------------------------------------------------------------
+
+# Append an f64 to a str_builder with `decimals` fixed decimal places.
+fn sb_add_f64(sb, val, decimals) {
+    var buf[64];
+    var base = &buf;
+    var n = fmt_float_buf(val, base, decimals);
+    var i = 0;
+    while (i < n) {
+        str_builder_add_byte(sb, load8(base + i));
+        i = i + 1;
+    }
+    return 0;
+}
+
+# Append an integer zero-padded to 2 digits (Rust {:02}) for small non-negatives.
+fn sb_add_02(sb, n) {
+    if (n >= 0 && n < 10) { str_builder_add_byte(sb, 48); }
+    str_builder_add_int(sb, n);
+    return 0;
+}
+
+#must_use
+fn celestial_coord_to_str(p) {
+    var ra = load64(p + CC_RA);
+    var dec = load64(p + CC_DEC);
+    var ra_h_f = f64_floor(ra);
+    var ra_h = f64_to(ra_h_f);
+    var ra_m_f = f64_floor(f64_mul(f64_sub(ra, ra_h_f), f64_from(60)));
+    var ra_m = f64_to(ra_m_f);
+    var ra_s = f64_abs(f64_sub(f64_mul(f64_sub(ra, ra_h_f), f64_from(3600)), f64_mul(ra_m_f, f64_from(60))));
+    var dec_neg = f64_lt(dec, f64_from(0));
+    var dec_abs = f64_abs(dec);
+    var dec_d_f = f64_floor(dec_abs);
+    var dec_d = f64_to(dec_d_f);
+    var dec_m = f64_to(f64_floor(f64_mul(f64_sub(dec_abs, dec_d_f), f64_from(60))));
+
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "RA ");
+    sb_add_02(sb, ra_h);
+    str_builder_add_cstr(sb, "h ");
+    sb_add_02(sb, ra_m);
+    str_builder_add_cstr(sb, "m ");
+    sb_add_f64(sb, ra_s, 1);
+    str_builder_add_cstr(sb, "s, Dec ");
+    if (dec_neg == 1) { str_builder_add_cstr(sb, "-"); } else { str_builder_add_cstr(sb, "+"); }
+    sb_add_02(sb, dec_d);
+    str_builder_add_cstr(sb, "d ");
+    sb_add_02(sb, dec_m);
+    str_builder_add_cstr(sb, "'");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn ecliptic_coord_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "lon ");
+    sb_add_f64(sb, load64(p + EC_LON), 4);
+    str_builder_add_cstr(sb, "°, lat ");
+    sb_add_f64(sb, load64(p + EC_LAT), 4);
+    str_builder_add_cstr(sb, "°");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn horizontal_coord_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "az ");
+    sb_add_f64(sb, load64(p + HC_AZ), 2);
+    str_builder_add_cstr(sb, "°, alt ");
+    sb_add_f64(sb, load64(p + HC_ALT), 2);
+    str_builder_add_cstr(sb, "°");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn heliacal_event_type_to_str(t) {
+    if (t == HET_SETTING) { return str_from("heliacal setting"); }
+    return str_from("heliacal rising");
+}
+
+# ---------------------------------------------------------------------------
+# Enum name tables (serde identifiers). Display strings differ for
+# HeliacalEventType (see heliacal_event_type_to_str).
+# ---------------------------------------------------------------------------
+
+#must_use
+fn starname_name(i) {
+    astro_init();
+    return vec_get(astro_starname_names, i);
+}
+#must_use
+fn heltype_name(i) {
+    astro_init();
+    return vec_get(astro_heltype_names, i);
+}
+#must_use
+fn alignmenttarget_name(i) {
+    astro_init();
+    return vec_get(astro_target_names, i);
+}

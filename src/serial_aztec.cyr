@@ -1,0 +1,113 @@
+# serial_aztec.cyr — JSON (de)serialization for the aztec module, matching
+# Rust serde_json EXACTLY for full round-trip parity.
+#
+# Types (from rust-old/src/aztec.rs, all #[derive(Serialize, Deserialize)]):
+#   TonalpohualliSign  — unit enum → serde emits the variant-name string.
+#   Tonalpohualli      — { number: u8, sign: TonalpohualliSign }.
+#   XiuhpohuallMonth   — unit enum → serde emits the variant-name string.
+#   Xiuhpohualli       — { day: u8, month: XiuhpohuallMonth }.
+#
+# serde format details:
+#   * Unit enum variants serialize as a bare string of the variant identifier
+#     (e.g. TonalpohualliSign::Coatl → "Coatl"). We use the module's
+#     <Enum>_name(i) accessor (the serde identifier, NO spaces — distinct from
+#     the Display string which inserts spaces in HueyTozoztli / HueyTecuilhuitl /
+#     XocotlHuetzi). NOT <Enum>_display, NOT the integer discriminant.
+#   * Struct fields serialize in declaration order with snake_case Rust names:
+#     Tonalpohualli → {"number":N,"sign":"NAME"};
+#     Xiuhpohualli  → {"day":D,"month":"NAME"}.
+#   * serde_json compact output has no spaces after ':' or ',' — the sk_json_*
+#     helpers already emit that shape.
+#   * No f64 fields in this module — both structs are pure integer + enum, so
+#     sk_json_int suffices and no bayan value-tree float path is needed.
+#
+# Self-contained: no include lines. Uses the shared sk_json_* helpers from
+# serial_util.cyr and the bayan_json_v_* value-tree API (folded stdlib).
+
+# ---------------------------------------------------------------------------
+# Enum <-> name mapping (parse side). Scans the module's *_name(i) accessor.
+# ---------------------------------------------------------------------------
+
+# TonalpohualliSign discriminant for a serde identifier Str, or (0 - 1) if none.
+#must_use
+fn tonalpohualli_sign_from_name(name) {
+    var i = 0;
+    while (i < 20) {
+        if (str_eq(tonalpohualli_sign_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# XiuhpohuallMonth discriminant for a serde identifier Str, or (0 - 1) if none.
+#must_use
+fn xiuh_month_from_name(name) {
+    var mi = 0;
+    while (mi < 19) {
+        if (str_eq(xiuh_month_name(mi), name) == 1) { return mi; }
+        mi = mi + 1;
+    }
+    return 0 - 1;
+}
+
+# ---------------------------------------------------------------------------
+# Tonalpohualli — {"number":N,"sign":"NAME"}
+# ---------------------------------------------------------------------------
+
+#must_use
+fn tonalpohualli_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "number", ton_number(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "sign", tonalpohualli_sign_name(ton_sign(p)));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# v is a bayan value tree node (from sk_json_parse). Reconstruct via *_new.
+#must_use
+fn tonalpohualli_from_json(v) {
+    var number = bayan_json_v_int(bayan_json_v_obj_get(v, "number"));
+    var sign_name = bayan_json_v_str(bayan_json_v_obj_get(v, "sign"));
+    var sign = tonalpohualli_sign_from_name(sign_name);
+    return tonalpohualli_new(number, sign);
+}
+
+# Field-by-field equality (Rust derives PartialEq).
+#must_use
+fn tonalpohualli_eq(a, b) {
+    if (ton_number(a) != ton_number(b)) { return 0; }
+    if (ton_sign(a) != ton_sign(b)) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# Xiuhpohualli — {"day":D,"month":"NAME"}
+# ---------------------------------------------------------------------------
+
+#must_use
+fn xiuhpohualli_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "day", xiu_day(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", xiuh_month_name(xiu_month(p)));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn xiuhpohualli_from_json(v) {
+    var day = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var month_name = bayan_json_v_str(bayan_json_v_obj_get(v, "month"));
+    var month = xiuh_month_from_name(month_name);
+    return xiuhpohualli_new(day, month);
+}
+
+#must_use
+fn xiuhpohualli_eq(a, b) {
+    if (xiu_day(a) != xiu_day(b)) { return 0; }
+    if (xiu_month(a) != xiu_month(b)) { return 0; }
+    return 1;
+}

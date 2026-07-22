@@ -1,0 +1,154 @@
+# serial_chinese.cyr — JSON (de)serialization for the chinese module.
+#
+# Full serde round-trip parity with the Rust derived Serialize + Deserialize on
+# chinese.rs. Output matches serde_json::to_string EXACTLY (no spaces, Rust
+# field names, unit enums as their variant-identifier string).
+#
+# serde types in chinese.rs:
+#   RodNumeral      { value: i64 }
+#   HeavenlyStem    (unit enum, 10 variants)   → JSON string "Jia" .. "Gui"
+#   EarthlyBranch   (unit enum, 12 variants)   → JSON string "Zi"  .. "Hai"
+#   SexagenaryYear  { stem, branch, cycle_position: u8 }
+#
+# The module exposes the serde variant identifiers via heavenly_stem_debug(i) /
+# earthly_branch_debug(i) (the Rust {:?} identifier == the serde external tag for
+# unit variants), so those are the "name" accessors used here. There is no f64
+# field in this module — every numeric field is integer-valued, so sk_json_int is
+# faithful and no bayan value-tree float path is needed.
+#
+# SELF-CONTAINED: no include lines. Relies on serial_util.cyr (sk_json_*),
+# chinese.cyr (constructors/getters/name accessors), bayan (folded stdlib parse
+# tree), and str/vec stdlib — all resolved from the consumer's bundle.
+
+# ---------------------------------------------------------------------------
+# Enum name → discriminant reverse maps (module lacks *_from_name).
+# The parsed name arrives as a Str (bayan_json_v_str), so compare with str_eq.
+# Returns (0 - 1) when no variant matches.
+# ---------------------------------------------------------------------------
+
+#must_use
+fn heavenly_stem_from_name(name) {
+    var i = 0;
+    while (i < 10) {
+        if (str_eq(heavenly_stem_debug(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+#must_use
+fn earthly_branch_from_name(name) {
+    var i = 0;
+    while (i < 12) {
+        if (str_eq(earthly_branch_debug(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# ---------------------------------------------------------------------------
+# RodNumeral { value: i64 }  →  {"value":N}
+# ---------------------------------------------------------------------------
+
+#must_use
+fn rod_numeral_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "value", rod_value(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn rod_numeral_from_json(v) {
+    var val = bayan_json_v_int(bayan_json_v_obj_get(v, "value"));
+    return rod_numeral_new(val);
+}
+
+#must_use
+fn rod_numeral_eq(a, b) {
+    if (rod_value(a) != rod_value(b)) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# HeavenlyStem (unit enum)  →  JSON string "Jia" .. "Gui"
+# A standalone serde unit enum serializes to a bare JSON string.
+# ---------------------------------------------------------------------------
+
+#must_use
+fn heavenly_stem_to_json(stem) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, heavenly_stem_debug(stem));
+    return str_builder_build(sb);
+}
+
+#must_use
+fn heavenly_stem_from_json(v) {
+    return heavenly_stem_from_name(bayan_json_v_str(v));
+}
+
+#must_use
+fn heavenly_stem_eq(a, b) {
+    if (a != b) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# EarthlyBranch (unit enum)  →  JSON string "Zi" .. "Hai"
+# ---------------------------------------------------------------------------
+
+#must_use
+fn earthly_branch_to_json(branch) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, earthly_branch_debug(branch));
+    return str_builder_build(sb);
+}
+
+#must_use
+fn earthly_branch_from_json(v) {
+    return earthly_branch_from_name(bayan_json_v_str(v));
+}
+
+#must_use
+fn earthly_branch_eq(a, b) {
+    if (a != b) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# SexagenaryYear { stem, branch, cycle_position }
+#   →  {"stem":"Jia","branch":"Chen","cycle_position":41}
+# Field order matches the Rust struct declaration (serde preserves it).
+# ---------------------------------------------------------------------------
+
+#must_use
+fn sexagenary_year_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_str(sb, "stem", heavenly_stem_debug(sex_stem(p)));
+    sk_json_sep(sb);
+    sk_json_str(sb, "branch", earthly_branch_debug(sex_branch(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "cycle_position", sex_cycle_position(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn sexagenary_year_from_json(v) {
+    var stem_name = bayan_json_v_str(bayan_json_v_obj_get(v, "stem"));
+    var stem = heavenly_stem_from_name(stem_name);
+    var branch_name = bayan_json_v_str(bayan_json_v_obj_get(v, "branch"));
+    var branch = earthly_branch_from_name(branch_name);
+    var pos = bayan_json_v_int(bayan_json_v_obj_get(v, "cycle_position"));
+    return sexagenary_year_new(stem, branch, pos);
+}
+
+#must_use
+fn sexagenary_year_eq(a, b) {
+    if (sex_stem(a) != sex_stem(b)) { return 0; }
+    if (sex_branch(a) != sex_branch(b)) { return 0; }
+    if (sex_cycle_position(a) != sex_cycle_position(b)) { return 0; }
+    return 1;
+}

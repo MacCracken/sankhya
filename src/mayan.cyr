@@ -1,0 +1,570 @@
+# mayan.cyr — Mayan mathematics and calendar systems (ported from src/mayan.rs).
+#
+# Vigesimal (base-20) numbers, dot/bar/shell numeral glyphs (0-19), the
+# five-position Long Count calendar (kin/uinal/tun/katun/baktun) with JDN
+# correlation via the GMT constant 584283, the Tzolkin 260-day sacred cycle,
+# the Haab 365-day solar calendar, the combined Calendar Round (18,980-day
+# cycle) with forward-search matchers, and Dresden-Codex Venus phase.
+#
+# Pure integer arithmetic over day counts; all Rust operands are non-negative
+# u64 so plain `%` and `/` (truncated) match Rust exactly (no rem_euclid needed).
+#
+# Parity: Rust returns Result<T, SankhyaError> with an interpolated format!
+# message on each error variant. We preserve BOTH the code AND the message
+# text via sk_fail(code, str) — see src/error.cyr. Display impls become
+# <type>_to_str(p) returning a Str. JSON (de)serialization lives in serial.cyr.
+
+# --- Integer constants (enum members: no global-init cost) ---
+# EPOCH_JDN: GMT correlation JDN of the Mayan creation date (Aug 11, 3114 BCE).
+# CALENDAR_ROUND_DAYS: lcm(260,365), Calendar Round cycle length (~52 years).
+enum MayanConst {
+    EPOCH_JDN = 584283;
+    CALENDAR_ROUND_DAYS = 18980;
+}
+
+# ---------------------------------------------------------------------------
+# Vigesimal (base-20) number system
+# ---------------------------------------------------------------------------
+
+# Convert a decimal number to vigesimal (base-20) digits, most significant
+# first. Returns a vec containing [0] for zero (the Maya had an explicit zero
+# glyph — the shell).
+#must_use
+fn to_vigesimal(n) {
+    var v = vec_new();
+    if (n == 0) {
+        vec_push(v, 0);
+        return v;
+    }
+    var m = n;
+    while (m > 0) {
+        vec_push(v, m % 20);
+        m = m / 20;
+    }
+    # digits were pushed least-significant first; reverse in place.
+    var len = vec_len(v);
+    var half = len / 2;
+    var i = 0;
+    while (i < half) {
+        var a = vec_get(v, i);
+        var b = vec_get(v, len - 1 - i);
+        vec_set(v, i, b);
+        vec_set(v, len - 1 - i, a);
+        i = i + 1;
+    }
+    return v;
+}
+
+# Convert vigesimal (base-20) digits (a vec, most-significant first) back to a
+# decimal number. Errors InvalidBase if any digit >= 20; OverflowError on
+# overflow (result*20 + digit exceeds i64 max). Returns Result<u64>.
+#must_use
+fn from_vigesimal(digits) {
+    var result = 0;
+    var n = vec_len(digits);
+    var limit = 0x7FFFFFFFFFFFFFFF;
+    var i = 0;
+    while (i < n) {
+        var d = vec_get(digits, i);
+        if (d >= 20) {
+            var sbd = str_builder_new();
+            str_builder_add_cstr(sbd, "vigesimal digit ");
+            str_builder_add_int(sbd, d);
+            str_builder_add_cstr(sbd, " out of range 0..20");
+            return sk_fail(SKE_INVALID_BASE, str_builder_build(sbd));
+        }
+        if (result > limit / 20) {
+            return sk_fail(SKE_OVERFLOW, str_from("vigesimal conversion overflow"));
+        }
+        result = result * 20;
+        if (result > limit - d) {
+            return sk_fail(SKE_OVERFLOW, str_from("vigesimal conversion overflow"));
+        }
+        result = result + d;
+        i = i + 1;
+    }
+    return Ok(result);
+}
+
+# ---------------------------------------------------------------------------
+# Mayan numeral glyphs — MayanNumeral { dots, bars, shell }
+# ---------------------------------------------------------------------------
+# Offsets: dots(0) bars(8) shell(16) = 24 bytes. shell is a bool (0/1).
+enum MayanNumeralOff { MN_DOTS = 0; MN_BARS = 8; MN_SHELL = 16; MN_SIZE = 24; }
+
+#must_use
+fn mayan_numeral_make(dots, bars, shell) {
+    var p = alloc(MN_SIZE);
+    store64(p + MN_DOTS, dots);
+    store64(p + MN_BARS, bars);
+    store64(p + MN_SHELL, shell);
+    return p;
+}
+#must_use
+fn mayan_numeral_dots(p) { return load64(p + MN_DOTS); }
+#must_use
+fn mayan_numeral_bars(p) { return load64(p + MN_BARS); }
+#must_use
+fn mayan_numeral_shell(p) { return load64(p + MN_SHELL); }
+
+# Create a Mayan numeral from a value 0-19. InvalidBase if value > 19.
+# value 0 => shell=true; else dots=value%5, bars=value/5. Returns Result.
+#must_use
+fn mayan_numeral_from_value(value) {
+    if (value > 19) {
+        var sbm = str_builder_new();
+        str_builder_add_cstr(sbm, "Mayan numeral value ");
+        str_builder_add_int(sbm, value);
+        str_builder_add_cstr(sbm, " out of range 0..19");
+        return sk_fail(SKE_INVALID_BASE, str_builder_build(sbm));
+    }
+    if (value == 0) {
+        return Ok(mayan_numeral_make(0, 0, 1));
+    }
+    return Ok(mayan_numeral_make(value % 5, value / 5, 0));
+}
+
+# The decimal value of this numeral (0-19). shell => 0 else bars*5 + dots.
+#must_use
+fn mayan_numeral_value(p) {
+    if (mayan_numeral_shell(p) == 1) {
+        return 0;
+    }
+    return mayan_numeral_bars(p) * 5 + mayan_numeral_dots(p);
+}
+
+# ---------------------------------------------------------------------------
+# Long Count calendar — LongCount { baktun, katun, tun, uinal, kin }
+# ---------------------------------------------------------------------------
+# Offsets: baktun(0) katun(8) tun(16) uinal(24) kin(32) = 40 bytes.
+enum LongCountOff { LC_BAKTUN = 0; LC_KATUN = 8; LC_TUN = 16; LC_UINAL = 24; LC_KIN = 32; LC_SIZE = 40; }
+
+#must_use
+fn longcount_make(baktun, katun, tun, uinal, kin) {
+    var p = alloc(LC_SIZE);
+    store64(p + LC_BAKTUN, baktun);
+    store64(p + LC_KATUN, katun);
+    store64(p + LC_TUN, tun);
+    store64(p + LC_UINAL, uinal);
+    store64(p + LC_KIN, kin);
+    return p;
+}
+#must_use
+fn lc_baktun(p) { return load64(p + LC_BAKTUN); }
+#must_use
+fn lc_katun(p) { return load64(p + LC_KATUN); }
+#must_use
+fn lc_tun(p) { return load64(p + LC_TUN); }
+#must_use
+fn lc_uinal(p) { return load64(p + LC_UINAL); }
+#must_use
+fn lc_kin(p) { return load64(p + LC_KIN); }
+
+# Validated constructor. InvalidDate if katun>=20, tun>=20, uinal>=18, or
+# kin>=20 (baktun unbounded). Returns Result.
+#must_use
+fn long_count_new(baktun, katun, tun, uinal, kin) {
+    if (katun >= 20) {
+        var sbk = str_builder_new();
+        str_builder_add_cstr(sbk, "katun ");
+        str_builder_add_int(sbk, katun);
+        str_builder_add_cstr(sbk, " out of range 0..20");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbk));
+    }
+    if (tun >= 20) {
+        var sbt = str_builder_new();
+        str_builder_add_cstr(sbt, "tun ");
+        str_builder_add_int(sbt, tun);
+        str_builder_add_cstr(sbt, " out of range 0..20");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbt));
+    }
+    if (uinal >= 18) {
+        var sbu = str_builder_new();
+        str_builder_add_cstr(sbu, "uinal ");
+        str_builder_add_int(sbu, uinal);
+        str_builder_add_cstr(sbu, " out of range 0..18");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbu));
+    }
+    if (kin >= 20) {
+        var sbn = str_builder_new();
+        str_builder_add_cstr(sbn, "kin ");
+        str_builder_add_int(sbn, kin);
+        str_builder_add_cstr(sbn, " out of range 0..20");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbn));
+    }
+    return Ok(longcount_make(baktun, katun, tun, uinal, kin));
+}
+
+# Convert a day count (days since creation) to Long Count via successive
+# div/mod by 144000/7200/360/20. OverflowError if baktun exceeds u32::MAX.
+# Returns Result.
+#must_use
+fn long_count_from_days(days) {
+    var d = days;
+    var baktun = d / 144000;
+    d = d % 144000;
+    var katun = d / 7200;
+    d = d % 7200;
+    var tun = d / 360;
+    d = d % 360;
+    var uinal = d / 20;
+    var kin = d % 20;
+    if (baktun > 0xFFFFFFFF) {
+        # Faithful port of a Rust quirk: `days` was reduced to the mod-360
+        # remainder before this format!, so the message interpolates `d`.
+        var sbo = str_builder_new();
+        str_builder_add_cstr(sbo, "day count ");
+        str_builder_add_int(sbo, d);
+        str_builder_add_cstr(sbo, " exceeds maximum representable baktun");
+        return sk_fail(SKE_OVERFLOW, str_builder_build(sbo));
+    }
+    return Ok(longcount_make(baktun, katun, tun, uinal, kin));
+}
+
+# Long Count -> day count.
+#must_use
+fn long_count_to_days(p) {
+    return lc_baktun(p) * 144000 + lc_katun(p) * 7200 + lc_tun(p) * 360 + lc_uinal(p) * 20 + lc_kin(p);
+}
+
+# JDN -> Long Count. InvalidDate if jdn < EPOCH_JDN. Returns Result.
+#must_use
+fn long_count_from_julian_day(jdn) {
+    if (jdn < EPOCH_JDN) {
+        var sbj = str_builder_new();
+        str_builder_add_cstr(sbj, "JDN ");
+        str_builder_add_int(sbj, jdn);
+        str_builder_add_cstr(sbj, " is before the Mayan epoch (JDN ");
+        str_builder_add_int(sbj, EPOCH_JDN);
+        str_builder_add_cstr(sbj, ")");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbj));
+    }
+    return long_count_from_days(jdn - EPOCH_JDN);
+}
+
+# Long Count -> JDN: to_days() + EPOCH_JDN.
+#must_use
+fn long_count_to_julian_day(p) {
+    return long_count_to_days(p) + EPOCH_JDN;
+}
+
+# Display: "{baktun}.{katun}.{tun}.{uinal}.{kin}".
+#must_use
+fn longcount_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, lc_baktun(p));
+    str_builder_add_cstr(sb, ".");
+    str_builder_add_int(sb, lc_katun(p));
+    str_builder_add_cstr(sb, ".");
+    str_builder_add_int(sb, lc_tun(p));
+    str_builder_add_cstr(sb, ".");
+    str_builder_add_int(sb, lc_uinal(p));
+    str_builder_add_cstr(sb, ".");
+    str_builder_add_int(sb, lc_kin(p));
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# Tzolkin (sacred 260-day cycle)
+# ---------------------------------------------------------------------------
+# The 20 day signs. Enum value IS the index into the ordered DAY_SIGNS table.
+enum DaySign {
+    DS_IMIX; DS_IK; DS_AKBAL; DS_KAN; DS_CHICCHAN; DS_CIMI; DS_MANIK;
+    DS_LAMAT; DS_MULUC; DS_OC; DS_CHUEN; DS_EB; DS_BEN; DS_IX; DS_MEN;
+    DS_CIB; DS_CABAN; DS_ETZNAB; DS_CAUAC; DS_AHAU;
+}
+
+# Lazy-singleton name table (serde identifier == Display via {:?}).
+var daysign_names_vec = 0;
+var daysign_names_done = 0;
+fn build_daysign_names() {
+    var v = vec_new();
+    vec_push(v, str_from("Imix"));
+    vec_push(v, str_from("Ik"));
+    vec_push(v, str_from("Akbal"));
+    vec_push(v, str_from("Kan"));
+    vec_push(v, str_from("Chicchan"));
+    vec_push(v, str_from("Cimi"));
+    vec_push(v, str_from("Manik"));
+    vec_push(v, str_from("Lamat"));
+    vec_push(v, str_from("Muluc"));
+    vec_push(v, str_from("Oc"));
+    vec_push(v, str_from("Chuen"));
+    vec_push(v, str_from("Eb"));
+    vec_push(v, str_from("Ben"));
+    vec_push(v, str_from("Ix"));
+    vec_push(v, str_from("Men"));
+    vec_push(v, str_from("Cib"));
+    vec_push(v, str_from("Caban"));
+    vec_push(v, str_from("Etznab"));
+    vec_push(v, str_from("Cauac"));
+    vec_push(v, str_from("Ahau"));
+    return v;
+}
+#must_use
+fn all_daysign_names() {
+    if (daysign_names_done == 0) {
+        daysign_names_vec = build_daysign_names();
+        daysign_names_done = 1;
+    }
+    return daysign_names_vec;
+}
+#must_use
+fn daysign_name(i) { return vec_get(all_daysign_names(), i); }
+
+# Tzolkin { number, day_sign }. Offsets: number(0) day_sign(8) = 16 bytes.
+enum TzolkinOff { TZ_NUMBER = 0; TZ_DAYSIGN = 8; TZ_SIZE = 16; }
+
+#must_use
+fn tzolkin_make(number, day_sign) {
+    var p = alloc(TZ_SIZE);
+    store64(p + TZ_NUMBER, number);
+    store64(p + TZ_DAYSIGN, day_sign);
+    return p;
+}
+#must_use
+fn tz_number(p) { return load64(p + TZ_NUMBER); }
+#must_use
+fn tz_daysign(p) { return load64(p + TZ_DAYSIGN); }
+
+# Compute the Tzolkin date for a day count from the Mayan epoch.
+# Base at day 0 = 4 Ahau: number = (days+3)%13 + 1; sign = (days+19)%20.
+#must_use
+fn tzolkin_from_days(days) {
+    var number = (days + 3) % 13 + 1;
+    var sign_index = (days + 19) % 20;
+    return tzolkin_make(number, sign_index);
+}
+
+# Display: "{number} {DaySign}" (day sign via its variant identifier).
+#must_use
+fn tzolkin_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, tz_number(p));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add(sb, daysign_name(tz_daysign(p)));
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# Haab (solar 365-day calendar)
+# ---------------------------------------------------------------------------
+# The 19 months (18 regular + Wayeb). Enum value IS the index into HAAB_MONTHS.
+enum HaabMonth {
+    HM_POP; HM_WO; HM_SIP; HM_SOTZ; HM_SEK; HM_XUL; HM_YAXKIN; HM_MOL;
+    HM_CHEN; HM_YAX; HM_SAK; HM_KEH; HM_MAK; HM_KANKIN; HM_MUAN; HM_PAX;
+    HM_KAYAB; HM_KUMKU; HM_WAYEB;
+}
+
+var haabmonth_names_vec = 0;
+var haabmonth_names_done = 0;
+fn build_haabmonth_names() {
+    var v = vec_new();
+    vec_push(v, str_from("Pop"));
+    vec_push(v, str_from("Wo"));
+    vec_push(v, str_from("Sip"));
+    vec_push(v, str_from("Sotz"));
+    vec_push(v, str_from("Sek"));
+    vec_push(v, str_from("Xul"));
+    vec_push(v, str_from("Yaxkin"));
+    vec_push(v, str_from("Mol"));
+    vec_push(v, str_from("Chen"));
+    vec_push(v, str_from("Yax"));
+    vec_push(v, str_from("Sak"));
+    vec_push(v, str_from("Keh"));
+    vec_push(v, str_from("Mak"));
+    vec_push(v, str_from("Kankin"));
+    vec_push(v, str_from("Muan"));
+    vec_push(v, str_from("Pax"));
+    vec_push(v, str_from("Kayab"));
+    vec_push(v, str_from("Kumku"));
+    vec_push(v, str_from("Wayeb"));
+    return v;
+}
+#must_use
+fn all_haabmonth_names() {
+    if (haabmonth_names_done == 0) {
+        haabmonth_names_vec = build_haabmonth_names();
+        haabmonth_names_done = 1;
+    }
+    return haabmonth_names_vec;
+}
+#must_use
+fn haabmonth_name(i) { return vec_get(all_haabmonth_names(), i); }
+
+# Haab { day, month }. Offsets: day(0) month(8) = 16 bytes.
+enum HaabOff { HB_DAY = 0; HB_MONTH = 8; HB_SIZE = 16; }
+
+#must_use
+fn haab_make(day, month) {
+    var p = alloc(HB_SIZE);
+    store64(p + HB_DAY, day);
+    store64(p + HB_MONTH, month);
+    return p;
+}
+#must_use
+fn hb_day(p) { return load64(p + HB_DAY); }
+#must_use
+fn hb_month(p) { return load64(p + HB_MONTH); }
+
+# Compute the Haab date for a day count from the Mayan epoch.
+# Base at day 0 = 8 Kumku: haab_day = (days+348)%365; month = haab_day/20;
+# day = haab_day%20.
+#must_use
+fn haab_from_days(days) {
+    var haab_day = (days + 348) % 365;
+    var month_index = haab_day / 20;
+    var day = haab_day % 20;
+    return haab_make(day, month_index);
+}
+
+# Display: "{day} {HaabMonth}" (month via its variant identifier).
+#must_use
+fn haab_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, hb_day(p));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add(sb, haabmonth_name(hb_month(p)));
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# Calendar Round
+# ---------------------------------------------------------------------------
+# calendar_round returns a (Tzolkin, Haab) pair record. Offsets: tz(0) hb(8).
+enum CalRoundOff { CR_TZOLKIN = 0; CR_HAAB = 8; CR_SIZE = 16; }
+
+#must_use
+fn calendar_round(days) {
+    var p = alloc(CR_SIZE);
+    store64(p + CR_TZOLKIN, tzolkin_from_days(days));
+    store64(p + CR_HAAB, haab_from_days(days));
+    return p;
+}
+#must_use
+fn cr_tzolkin(p) { return load64(p + CR_TZOLKIN); }
+#must_use
+fn cr_haab(p) { return load64(p + CR_HAAB); }
+
+# Find the next occurrence of a Calendar Round date on or after start_day.
+# InvalidDate if number not 1-13 or haab_day > (4 for Wayeb else 19);
+# ComputationError if no match within one cycle. Returns Result<u64>.
+#must_use
+fn find_calendar_round(tzolkin_number, tzolkin_sign, haab_day, haab_month, start_day) {
+    if (tzolkin_number < 1 || tzolkin_number > 13) {
+        var sbc = str_builder_new();
+        str_builder_add_cstr(sbc, "Tzolkin number ");
+        str_builder_add_int(sbc, tzolkin_number);
+        str_builder_add_cstr(sbc, " out of range 1..13");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbc));
+    }
+    var haab_max = 19;
+    if (haab_month == HM_WAYEB) {
+        haab_max = 4;
+    }
+    if (haab_day > haab_max) {
+        var sbh = str_builder_new();
+        str_builder_add_cstr(sbh, "Haab day ");
+        str_builder_add_int(sbh, haab_day);
+        str_builder_add_cstr(sbh, " out of range for ");
+        str_builder_add(sbh, haabmonth_name(haab_month));
+        str_builder_add_cstr(sbh, " (max ");
+        str_builder_add_int(sbh, haab_max);
+        str_builder_add_cstr(sbh, ")");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbh));
+    }
+    var offset = 0;
+    while (offset < CALENDAR_ROUND_DAYS) {
+        var day = start_day + offset;
+        var tz = tzolkin_from_days(day);
+        var hb = haab_from_days(day);
+        if (tz_number(tz) == tzolkin_number && tz_daysign(tz) == tzolkin_sign && hb_day(hb) == haab_day && hb_month(hb) == haab_month) {
+            return Ok(day);
+        }
+        offset = offset + 1;
+    }
+    return sk_fail(SKE_COMPUTATION, str_from("no matching Calendar Round date found within one cycle"));
+}
+
+# Find the next occurrence of a Tzolkin date on or after start_day.
+# InvalidDate if number not 1-13; ComputationError if no match. Returns Result.
+#must_use
+fn find_tzolkin(tzolkin_number, tzolkin_sign, start_day) {
+    if (tzolkin_number < 1 || tzolkin_number > 13) {
+        var sbf = str_builder_new();
+        str_builder_add_cstr(sbf, "Tzolkin number ");
+        str_builder_add_int(sbf, tzolkin_number);
+        str_builder_add_cstr(sbf, " out of range 1..13");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbf));
+    }
+    var offset = 0;
+    while (offset < 260) {
+        var day = start_day + offset;
+        var tz = tzolkin_from_days(day);
+        if (tz_number(tz) == tzolkin_number && tz_daysign(tz) == tzolkin_sign) {
+            return Ok(day);
+        }
+        offset = offset + 1;
+    }
+    return sk_fail(SKE_COMPUTATION, str_from("no matching Tzolkin date found within one cycle"));
+}
+
+# ---------------------------------------------------------------------------
+# Venus table
+# ---------------------------------------------------------------------------
+# The 4 Venus phases tracked in the Dresden Codex.
+enum VenusPhase {
+    VP_MORNING_STAR; VP_SUPERIOR_CONJUNCTION; VP_EVENING_STAR; VP_INFERIOR_CONJUNCTION;
+}
+
+var venusphase_names_vec = 0;
+var venusphase_names_done = 0;
+fn build_venusphase_names() {
+    var v = vec_new();
+    vec_push(v, str_from("MorningStar"));
+    vec_push(v, str_from("SuperiorConjunction"));
+    vec_push(v, str_from("EveningStar"));
+    vec_push(v, str_from("InferiorConjunction"));
+    return v;
+}
+#must_use
+fn all_venusphase_names() {
+    if (venusphase_names_done == 0) {
+        venusphase_names_vec = build_venusphase_names();
+        venusphase_names_done = 1;
+    }
+    return venusphase_names_vec;
+}
+#must_use
+fn venusphase_name(i) { return vec_get(all_venusphase_names(), i); }
+
+# VENUS_SYNODIC_PERIOD = 583.92 (f64). Documentation-only: never used in any
+# computation (venus_phase uses the integer 584). Lazy-parsed once.
+var venus_synodic_period_val = 0;
+var venus_synodic_period_done = 0;
+#must_use
+fn venus_synodic_period() {
+    if (venus_synodic_period_done == 0) {
+        venus_synodic_period_val = f64_parse("583.92");
+        venus_synodic_period_done = 1;
+    }
+    return venus_synodic_period_val;
+}
+
+# Determine the phase of Venus given days from the Mayan epoch.
+# Mayan model (Dresden Codex): Morning 236 / Superior 90 / Evening 250 /
+# Inferior 8, summing to the 584-day cycle.
+#must_use
+fn venus_phase(days_from_epoch) {
+    var phase_day = days_from_epoch % 584;
+    if (phase_day < 236) {
+        return VP_MORNING_STAR;
+    }
+    if (phase_day < 326) {
+        return VP_SUPERIOR_CONJUNCTION;
+    }
+    if (phase_day < 576) {
+        return VP_EVENING_STAR;
+    }
+    return VP_INFERIOR_CONJUNCTION;
+}

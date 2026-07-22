@@ -1,0 +1,92 @@
+# serial_gregorian.cyr — JSON (de)serialization for the gregorian module.
+#
+# Full serde ROUND-TRIP parity with the Rust derived Serialize + Deserialize on
+# GregorianMonth and GregorianDate (rust-old/src/gregorian.rs). Emit format
+# matches serde_json EXACTLY (compact, no spaces):
+#   GregorianMonth (unit enum) -> the variant-name JSON string, e.g. "January".
+#   GregorianDate  -> {"year":<i64>,"month":"<variant>","day":<u8>}
+#
+# SELF-CONTAINED: no include lines. Uses the sk_json_* helpers from
+# src/serial_util.cyr, the bayan_json_v_* value tree, and the gregorian module's
+# constructors/getters/name accessors (all resolved from the consumer bundle).
+
+# ---------------------------------------------------------------------------
+# GregorianMonth enum <-> variant-name string
+# ---------------------------------------------------------------------------
+
+# Map a serde variant-name string (a Str) back to a GregorianMonth discriminant
+# (0..11). Returns (0 - 1) if no month name matches. The module already exposes
+# gregorian_month_name(i); this is the inverse it lacked.
+#must_use
+fn gregorian_month_from_name(name) {
+    var i = 0;
+    while (i < 12) {
+        if (str_eq(gregorian_month_name(i), name) != 0) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# Serialize a GregorianMonth discriminant as a bare JSON string (serde emits a
+# unit enum variant as its quoted name), e.g. GM_JANUARY -> "January".
+#must_use
+fn gregorian_month_to_json(m) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, gregorian_month_name(m));
+    return str_builder_build(sb);
+}
+
+# Deserialize a GregorianMonth from a bayan value node holding a JSON string.
+# Returns the discriminant, or (0 - 1) if the name is unknown.
+#must_use
+fn gregorian_month_from_json(v) {
+    return gregorian_month_from_name(bayan_json_v_str(v));
+}
+
+# Field-by-field equality for a GregorianMonth (a plain integer discriminant).
+#must_use
+fn gregorian_month_eq(a, b) {
+    if (a == b) { return 1; }
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# GregorianDate struct <-> JSON object
+# ---------------------------------------------------------------------------
+
+# Serialize a GregorianDate pointer to {"year":..,"month":"..","day":..}.
+# Field order matches the Rust struct declaration order (year, month, day).
+# month is emitted as the variant-name string (NOT the integer).
+#must_use
+fn gregorian_date_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", gd_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", gregorian_month_name(gd_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", gd_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Deserialize a GregorianDate from a bayan value tree node (an object).
+# Reads year/day as integers and month via the variant-name -> discriminant map,
+# then reconstructs through the module's constructor.
+#must_use
+fn gregorian_date_from_json(v) {
+    var year = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var mstr = bayan_json_v_str(bayan_json_v_obj_get(v, "month"));
+    var month = gregorian_month_from_name(mstr);
+    var day = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return gregorian_date_new(year, month, day);
+}
+
+# Field-by-field equality of two GregorianDate pointers (for the round-trip test).
+#must_use
+fn gregorian_date_eq(a, b) {
+    if (gd_year(a) != gd_year(b)) { return 0; }
+    if (gd_month(a) != gd_month(b)) { return 0; }
+    if (gd_day(a) != gd_day(b)) { return 0; }
+    return 1;
+}

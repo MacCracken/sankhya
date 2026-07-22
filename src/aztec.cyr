@@ -1,0 +1,285 @@
+# aztec.cyr — Aztec (Mexica) calendar systems.
+#
+# Ports rust-old/src/aztec.rs: the Tonalpohualli (260-day sacred cycle) and
+# Xiuhpohualli (365-day solar cycle), plus the Calendar Round that meshes them.
+# Uses the Caso correlation (fall of Tenochtitlan, Aug 13 1521 CE, JDN 2275856
+# = 1 Coatl / day 1 Xocotl Huetzi). Self-contained (no include lines); resolves
+# stdlib (str/vec/math f64) from the consumer's [deps].
+#
+# Parity notes:
+#   - rem_euclid (util) is MANDATORY: `days` is negative for pre-correlation
+#     JDNs, so bare % would corrupt the number/sign/day-of-year.
+#   - The serde variant identifiers (no spaces) are kept separate from the
+#     Display strings (spaces in Huey Tozoztli / Huey Tecuilhuitl / Xocotl
+#     Huetzi). *_name(i) yields the serde identifier; *_display(i) the Display
+#     string. A later serial.cyr wave needs the serde identifier.
+#   - The Rust source has no tracing sites, so none are ported.
+
+# ---------------------------------------------------------------------------
+# Constants (Rust private consts + public AZTEC_CALENDAR_ROUND_DAYS)
+# ---------------------------------------------------------------------------
+# Enum members are integer constants (no global-init cost, no forward-ref risk).
+enum AztecConst {
+    AZTEC_CORRELATION_JDN = 2275856;
+    CORRELATION_TONAL_NUMBER = 1;
+    CORRELATION_TONAL_SIGN = 4;
+    CORRELATION_XIUH_DOY = 180;
+    AZTEC_CALENDAR_ROUND_DAYS = 18980;
+}
+
+# ---------------------------------------------------------------------------
+# TonalpohualliSign — the 20 day signs (discriminant order = cyclic index)
+# ---------------------------------------------------------------------------
+enum TonalpohualliSign {
+    TS_CIPACTLI; TS_EHECATL; TS_CALLI; TS_CUETZPALIN; TS_COATL;
+    TS_MIQUIZTLI; TS_MAZATL; TS_TOCHTLI; TS_ATL; TS_ITZCUINTLI;
+    TS_OZOMATLI; TS_MALINALLI; TS_ACATL; TS_OCELOTL; TS_CUAUHTLI;
+    TS_COZCACUAUHTLI; TS_OLLIN; TS_TECPATL; TS_QUIAHUITL; TS_XOCHITL;
+}
+
+# Lazy-singleton name table. For signs the serde identifier == the Display
+# string (no spaces), so *_name and *_display share one table.
+var tonal_sign_vec = 0;
+var tonal_sign_init = 0;
+
+fn build_tonal_signs() {
+    var v = vec_new();
+    vec_push(v, str_from("Cipactli"));
+    vec_push(v, str_from("Ehecatl"));
+    vec_push(v, str_from("Calli"));
+    vec_push(v, str_from("Cuetzpalin"));
+    vec_push(v, str_from("Coatl"));
+    vec_push(v, str_from("Miquiztli"));
+    vec_push(v, str_from("Mazatl"));
+    vec_push(v, str_from("Tochtli"));
+    vec_push(v, str_from("Atl"));
+    vec_push(v, str_from("Itzcuintli"));
+    vec_push(v, str_from("Ozomatli"));
+    vec_push(v, str_from("Malinalli"));
+    vec_push(v, str_from("Acatl"));
+    vec_push(v, str_from("Ocelotl"));
+    vec_push(v, str_from("Cuauhtli"));
+    vec_push(v, str_from("Cozcacuauhtli"));
+    vec_push(v, str_from("Ollin"));
+    vec_push(v, str_from("Tecpatl"));
+    vec_push(v, str_from("Quiahuitl"));
+    vec_push(v, str_from("Xochitl"));
+    return v;
+}
+
+#must_use
+fn all_tonal_signs() {
+    if (tonal_sign_init == 0) {
+        tonal_sign_vec = build_tonal_signs();
+        tonal_sign_init = 1;
+    }
+    return tonal_sign_vec;
+}
+
+# serde identifier (no spaces) for sign index i in [0,20).
+#must_use
+fn tonalpohualli_sign_name(i) { return vec_get(all_tonal_signs(), i); }
+
+# Display string for sign index i (identical to the serde identifier here).
+#must_use
+fn tonalpohualli_sign_display(i) { return vec_get(all_tonal_signs(), i); }
+
+# Display impl for TonalpohualliSign (the value is the enum discriminant).
+#must_use
+fn tonalpohualli_sign_to_str(sign) { return tonalpohualli_sign_display(sign); }
+
+# ---------------------------------------------------------------------------
+# Tonalpohualli — { number: 1..13, sign: TonalpohualliSign }
+# ---------------------------------------------------------------------------
+enum TonOff { TON_NUMBER = 0; TON_SIGN = 8; TON_SIZE = 16; }
+
+#must_use
+fn tonalpohualli_new(number, sign) {
+    var p = alloc(TON_SIZE);
+    store64(p + TON_NUMBER, number);
+    store64(p + TON_SIGN, sign);
+    return p;
+}
+
+#must_use
+fn ton_number(p) { return load64(p + TON_NUMBER); }
+
+#must_use
+fn ton_sign(p) { return load64(p + TON_SIGN); }
+
+# Display: "{number} {sign}".
+#must_use
+fn tonalpohualli_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, ton_number(p));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add(sb, tonalpohualli_sign_display(ton_sign(p)));
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# XiuhpohuallMonth — 18 named months + Nemontemi (discriminant order = index)
+# ---------------------------------------------------------------------------
+enum XiuhpohuallMonth {
+    XM_ATLCAHUALO; XM_TLACAXIPEHUALIZTLI; XM_TOZOZTONTLI; XM_HUEYTOZOZTLI;
+    XM_TOXCATL; XM_ETZALCUALIZTLI; XM_TECUILHUITONTLI; XM_HUEYTECUILHUITL;
+    XM_TLAXOCHIMACO; XM_XOCOTLHUETZI; XM_OCHPANIZTLI; XM_TEOTLECO;
+    XM_TEPEILHUITL; XM_QUECHOLLI; XM_PANQUETZALIZTLI; XM_ATEMOZTLI;
+    XM_TITITL; XM_IZCALLI; XM_NEMONTEMI;
+}
+
+# Two lazy-singleton tables: serde identifiers (no spaces) and Display strings
+# (three entries insert a space). serial.cyr later needs the identifier form.
+var xiuh_name_vec = 0;
+var xiuh_name_init = 0;
+var xiuh_disp_vec = 0;
+var xiuh_disp_init = 0;
+
+fn build_xiuh_names() {
+    var v = vec_new();
+    vec_push(v, str_from("Atlcahualo"));
+    vec_push(v, str_from("Tlacaxipehualiztli"));
+    vec_push(v, str_from("Tozoztontli"));
+    vec_push(v, str_from("HueyTozoztli"));
+    vec_push(v, str_from("Toxcatl"));
+    vec_push(v, str_from("Etzalcualiztli"));
+    vec_push(v, str_from("Tecuilhuitontli"));
+    vec_push(v, str_from("HueyTecuilhuitl"));
+    vec_push(v, str_from("Tlaxochimaco"));
+    vec_push(v, str_from("XocotlHuetzi"));
+    vec_push(v, str_from("Ochpaniztli"));
+    vec_push(v, str_from("Teotleco"));
+    vec_push(v, str_from("Tepeilhuitl"));
+    vec_push(v, str_from("Quecholli"));
+    vec_push(v, str_from("Panquetzaliztli"));
+    vec_push(v, str_from("Atemoztli"));
+    vec_push(v, str_from("Tititl"));
+    vec_push(v, str_from("Izcalli"));
+    vec_push(v, str_from("Nemontemi"));
+    return v;
+}
+
+fn build_xiuh_displays() {
+    var v = vec_new();
+    vec_push(v, str_from("Atlcahualo"));
+    vec_push(v, str_from("Tlacaxipehualiztli"));
+    vec_push(v, str_from("Tozoztontli"));
+    vec_push(v, str_from("Huey Tozoztli"));
+    vec_push(v, str_from("Toxcatl"));
+    vec_push(v, str_from("Etzalcualiztli"));
+    vec_push(v, str_from("Tecuilhuitontli"));
+    vec_push(v, str_from("Huey Tecuilhuitl"));
+    vec_push(v, str_from("Tlaxochimaco"));
+    vec_push(v, str_from("Xocotl Huetzi"));
+    vec_push(v, str_from("Ochpaniztli"));
+    vec_push(v, str_from("Teotleco"));
+    vec_push(v, str_from("Tepeilhuitl"));
+    vec_push(v, str_from("Quecholli"));
+    vec_push(v, str_from("Panquetzaliztli"));
+    vec_push(v, str_from("Atemoztli"));
+    vec_push(v, str_from("Tititl"));
+    vec_push(v, str_from("Izcalli"));
+    vec_push(v, str_from("Nemontemi"));
+    return v;
+}
+
+#must_use
+fn all_xiuh_names() {
+    if (xiuh_name_init == 0) {
+        xiuh_name_vec = build_xiuh_names();
+        xiuh_name_init = 1;
+    }
+    return xiuh_name_vec;
+}
+
+#must_use
+fn all_xiuh_displays() {
+    if (xiuh_disp_init == 0) {
+        xiuh_disp_vec = build_xiuh_displays();
+        xiuh_disp_init = 1;
+    }
+    return xiuh_disp_vec;
+}
+
+# serde identifier (no spaces) for month index i in [0,19).
+#must_use
+fn xiuh_month_name(i) { return vec_get(all_xiuh_names(), i); }
+
+# Display string (spaces where the Rust Display inserts them).
+#must_use
+fn xiuh_month_display(i) { return vec_get(all_xiuh_displays(), i); }
+
+# Display impl for XiuhpohuallMonth (the value is the enum discriminant).
+#must_use
+fn xiuhpohuall_month_to_str(month) { return xiuh_month_display(month); }
+
+# ---------------------------------------------------------------------------
+# Xiuhpohualli — { day: 1..20 (or 1..5 Nemontemi), month: XiuhpohuallMonth }
+# ---------------------------------------------------------------------------
+enum XiuOff { XIU_DAY = 0; XIU_MONTH = 8; XIU_SIZE = 16; }
+
+#must_use
+fn xiuhpohualli_new(day, month) {
+    var p = alloc(XIU_SIZE);
+    store64(p + XIU_DAY, day);
+    store64(p + XIU_MONTH, month);
+    return p;
+}
+
+#must_use
+fn xiu_day(p) { return load64(p + XIU_DAY); }
+
+#must_use
+fn xiu_month(p) { return load64(p + XIU_MONTH); }
+
+# Display: "{day} {month}".
+#must_use
+fn xiuhpohualli_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, xiu_day(p));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add(sb, xiuh_month_display(xiu_month(p)));
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# Conversion functions
+# ---------------------------------------------------------------------------
+# Shared: days elapsed since the Caso correlation date.
+# Rust: let jdn_int = (jdn + 0.5).floor() as i64; jdn_int - AZTEC_CORRELATION_JDN
+#must_use
+fn aztec_days_since_correlation(jdn) {
+    var jdn_int = f64_to(f64_floor(f64_add(jdn, F64_HALF)));
+    return jdn_int - AZTEC_CORRELATION_JDN;
+}
+
+# Tonalpohualli (260-day sacred cycle) for a Julian Day Number (f64).
+#must_use
+fn tonalpohualli_from_jdn(jdn) {
+    var days = aztec_days_since_correlation(jdn);
+    # number cycles 1..13: ((days + 1 - 1).rem_euclid(13)) + 1
+    var number = rem_euclid(days + CORRELATION_TONAL_NUMBER - 1, 13) + 1;
+    # sign cycles through 20: (days + 4).rem_euclid(20)
+    var sign_idx = rem_euclid(days + CORRELATION_TONAL_SIGN, 20);
+    return tonalpohualli_new(number, sign_idx);
+}
+
+# Xiuhpohualli (365-day solar cycle) for a Julian Day Number (f64).
+#must_use
+fn xiuhpohualli_from_jdn(jdn) {
+    var days = aztec_days_since_correlation(jdn);
+    # day-of-year: (days + 180).rem_euclid(365) -> always in [0, 365)
+    var doy = rem_euclid(days + CORRELATION_XIUH_DOY, 365);
+    # month_idx = (doy / 20).min(18); doy >= 0 so plain / matches Rust.
+    var month_idx = doy / 20;
+    if (month_idx > 18) { month_idx = 18; }
+    var day = doy - month_idx * 20 + 1;
+    return xiuhpohualli_new(day, month_idx);
+}
+
+# Aztec Calendar Round: (Tonalpohualli, Xiuhpohualli) for a JDN. Repeats every
+# lcm(260, 365) = 18,980 days (~52 years).
+#must_use
+fn aztec_calendar_round(jdn) {
+    return (tonalpohualli_from_jdn(jdn), xiuhpohualli_from_jdn(jdn));
+}

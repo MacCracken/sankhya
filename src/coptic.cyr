@@ -1,0 +1,252 @@
+# coptic.cyr — Coptic (Alexandrian) calendar (ported from rust-old/src/coptic.rs).
+#
+# 13-month structure: months 1..12 have 30 days each, month 13 (Nasie /
+# Pi Kogi Enavot) has 5 epagomenal days (6 in leap years). Era = Anno Martyrum;
+# epoch = 1 Thout, Year 1 AM = August 29, 284 CE Julian = JDN 1825029.5.
+# Leap rule: year mod 4 == 3 (Euclidean). Bidirectional JDN conversion per
+# Dershowitz & Reingold, Calendrical Calculations (4th ed.), ch. 4.
+#
+# Self-contained: no include lines (distlib bundler resolves stdlib + foundation).
+
+# ---------------------------------------------------------------------------
+# Epoch constant: COPTIC_EPOCH_JDN = 1_825_029.5 (a non-integer f64).
+# Held lazily so no external init ordering is required — first use parses it.
+# ---------------------------------------------------------------------------
+var _coptic_epoch = 0;
+var _coptic_epoch_done = 0;
+
+#must_use
+fn coptic_epoch_jdn() {
+    if (_coptic_epoch_done == 0) {
+        _coptic_epoch = f64_parse("1825029.5");
+        _coptic_epoch_done = 1;
+    }
+    return _coptic_epoch;
+}
+
+# ---------------------------------------------------------------------------
+# CopticMonth enum — discriminant IS the 0-based month index.
+# Months 1..12 (CM_THOUT..CM_MESORI) have 30 days; CM_NASIE (12) has 5 or 6.
+# ---------------------------------------------------------------------------
+enum CopticMonth {
+    CM_THOUT;    CM_PAOPI;   CM_HATHOR;  CM_KOIAK;
+    CM_TOBI;     CM_MESHIR;  CM_PAREMHAT; CM_PARMOUTI;
+    CM_PASHONS;  CM_PAONI;   CM_EPIP;    CM_MESORI;
+    CM_NASIE;
+}
+
+# COPTIC_MONTH_DAYS: [30 x12, 5] — common-year days per month (index 0..12).
+var _coptic_month_days = 0;
+var _coptic_month_days_done = 0;
+
+fn _build_coptic_month_days() {
+    var a = alloc(13 * 8);
+    var i = 0;
+    while (i < 12) {
+        store64(a + i * 8, 30);
+        i = i + 1;
+    }
+    store64(a + 12 * 8, 5);
+    return a;
+}
+
+#must_use
+fn coptic_month_days(idx) {
+    if (_coptic_month_days_done == 0) {
+        _coptic_month_days = _build_coptic_month_days();
+        _coptic_month_days_done = 1;
+    }
+    return load64(_coptic_month_days + idx * 8);
+}
+
+# Month name table (serde identifier == Display string for every Coptic month,
+# so a single accessor serves both). Lazy singleton vec of Str.
+var _coptic_month_names = 0;
+var _coptic_month_names_done = 0;
+
+fn _build_coptic_month_names() {
+    var v = vec_new();
+    vec_push(v, str_from("Thout"));
+    vec_push(v, str_from("Paopi"));
+    vec_push(v, str_from("Hathor"));
+    vec_push(v, str_from("Koiak"));
+    vec_push(v, str_from("Tobi"));
+    vec_push(v, str_from("Meshir"));
+    vec_push(v, str_from("Paremhat"));
+    vec_push(v, str_from("Parmouti"));
+    vec_push(v, str_from("Pashons"));
+    vec_push(v, str_from("Paoni"));
+    vec_push(v, str_from("Epip"));
+    vec_push(v, str_from("Mesori"));
+    vec_push(v, str_from("Nasie"));
+    return v;
+}
+
+#must_use
+fn coptic_month_name(idx) {
+    if (_coptic_month_names_done == 0) {
+        _coptic_month_names = _build_coptic_month_names();
+        _coptic_month_names_done = 1;
+    }
+    return vec_get(_coptic_month_names, idx);
+}
+
+# Display impl for CopticMonth: `write!(f, "{name}")`.
+#must_use
+fn coptic_month_to_str(m) {
+    return coptic_month_name(m);
+}
+
+# ---------------------------------------------------------------------------
+# CopticDate struct: { year: i64, month: CopticMonth, day: i64 }
+# Offsets: year(0) month(8) day(16) = 24 bytes.
+# ---------------------------------------------------------------------------
+enum CopticDateOff { CD_YEAR = 0; CD_MONTH = 8; CD_DAY = 16; CD_SIZE = 24; }
+
+#must_use
+fn coptic_date_new(year, month, day) {
+    var p = alloc(CD_SIZE);
+    store64(p + CD_YEAR, year);
+    store64(p + CD_MONTH, month);
+    store64(p + CD_DAY, day);
+    return p;
+}
+
+#must_use
+fn coptic_date_year(p) { return load64(p + CD_YEAR); }
+#must_use
+fn coptic_date_month(p) { return load64(p + CD_MONTH); }
+#must_use
+fn coptic_date_day(p) { return load64(p + CD_DAY); }
+
+# Display impl for CopticDate: `write!(f, "{} {} {} AM", day, month, year)`.
+#must_use
+fn coptic_date_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, load64(p + CD_DAY));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add(sb, coptic_month_name(load64(p + CD_MONTH)));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add_int(sb, load64(p + CD_YEAR));
+    str_builder_add_cstr(sb, " AM");
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# Leap year & year length
+# ---------------------------------------------------------------------------
+
+# Leap iff year.rem_euclid(4) == 3. rem_euclid load-bearing for negative years.
+#must_use
+fn coptic_is_leap(year) {
+    if (rem_euclid(year, 4) == 3) { return 1; }
+    return 0;
+}
+
+# Days in a Coptic year (365 common, 366 leap).
+#must_use
+fn coptic_year_days(year) {
+    if (coptic_is_leap(year) == 1) { return 366; }
+    return 365;
+}
+
+# ---------------------------------------------------------------------------
+# JDN conversions
+# ---------------------------------------------------------------------------
+
+# Days from epoch to the start of a given 1-based year (the Rust `year_start`
+# closure): 365*(year-1) + year.div_euclid(4).
+#must_use
+fn _coptic_year_start(year) {
+    var y0 = year - 1;
+    return 365 * y0 + div_euclid(year, 4);
+}
+
+# Convert a Julian Day Number (f64 bit pattern) to a CopticDate pointer.
+#must_use
+fn jdn_to_coptic(jdn) {
+    # tracing::trace!(jdn, "JDN to Coptic")
+    if (sakshi_get_level() >= SK_TRACE) {
+        var jval = str_from_int(f64_to(jdn));
+        sakshi_log_kv(SK_TRACE, "JDN to Coptic", 13, "jdn", 3, str_data(jval), str_len(jval));
+    }
+
+    var delta = f64_sub(jdn, coptic_epoch_jdn());
+    var days_since_epoch = f64_to(f64_floor(delta));
+
+    # Estimate year (366 divisor avoids overestimating), then correct.
+    var year = div_euclid(days_since_epoch, 366) + 1;
+
+    # Correct upward while next year's start is still <= our day count.
+    var next_start = _coptic_year_start(year + 1);
+    while (next_start <= days_since_epoch) {
+        year = year + 1;
+        next_start = _coptic_year_start(year + 1);
+    }
+    # Correct downward if we overshot.
+    var this_start = _coptic_year_start(year);
+    while (this_start > days_since_epoch) {
+        year = year - 1;
+        this_start = _coptic_year_start(year);
+    }
+
+    var day_of_year = days_since_epoch - this_start;
+
+    # Month: each of the first 12 months has 30 days; clamp to 12 (Nasie).
+    var month_idx = day_of_year / 30;
+    if (month_idx > 12) { month_idx = 12; }
+    var day = day_of_year - month_idx * 30 + 1;
+
+    return coptic_date_new(year, month_idx, day);
+}
+
+# Convert a CopticDate pointer to a Julian Day Number.
+# Returns Ok(jdn f64) or Err(SkErr{SKE_INVALID_DATE, msg}) on out-of-range day.
+#must_use
+fn coptic_to_jdn(date) {
+    var year = coptic_date_year(date);
+    var month_idx = coptic_date_month(date);
+    var day = coptic_date_day(date);
+
+    # tracing::trace!(year, ?month, day, "Coptic to JDN")
+    if (sakshi_get_level() >= SK_TRACE) {
+        var yval = str_from_int(year);
+        sakshi_log_kv(SK_TRACE, "Coptic to JDN", 13, "year", 4, str_data(yval), str_len(yval));
+    }
+
+    # max_day = 6 only for Nasie (idx 12) in a leap year; else the table value.
+    var max_day = coptic_month_days(month_idx);
+    if (month_idx == 12) {
+        if (coptic_is_leap(year) == 1) { max_day = 6; }
+    }
+
+    var too_big = day > max_day;
+    if (day == 0) { too_big = 1; }
+    if (too_big == 1) {
+        # format!: "day {} out of range for {} in year {} AM (max {max_day})"
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "day ");
+        str_builder_add_int(sb, day);
+        str_builder_add_cstr(sb, " out of range for ");
+        str_builder_add(sb, coptic_month_name(month_idx));
+        str_builder_add_cstr(sb, " in year ");
+        str_builder_add_int(sb, year);
+        str_builder_add_cstr(sb, " AM (max ");
+        str_builder_add_int(sb, max_day);
+        str_builder_add_cstr(sb, ")");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sb));
+    }
+
+    var y = year - 1;
+    var days = 365 * y + div_euclid(year, 4) + 30 * month_idx + day - 1;
+    return Ok(f64_add(coptic_epoch_jdn(), f64_from(days)));
+}
+
+# Warm the lazy singletons (epoch, tables, names). Optional — every accessor
+# self-initializes — but a test/consumer may call it to front-load the work.
+fn coptic_init() {
+    var e = coptic_epoch_jdn();
+    var d = coptic_month_days(0);
+    var n = coptic_month_name(0);
+    return 0;
+}

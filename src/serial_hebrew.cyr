@@ -1,0 +1,108 @@
+# serial_hebrew.cyr — JSON (de)serialization for the hebrew module, for full
+# serde round-trip parity with Rust's derived Serialize + Deserialize.
+#
+# Rust serde emits (see rust-old/src/hebrew.rs):
+#   HebrewMonth  → the bare variant-name string, e.g. "Nisan" (unit variants,
+#                  external tagging). NOTE the serde identifier has NO spaces:
+#                  Adar I / Adar II Display as "Adar I"/"Adar II" but serialize
+#                  as "AdarI"/"AdarII" (hebrewmonth_name, not hebrewmonth_display).
+#   HebrewDate   → {"year":<i64>,"month":"<Variant>","day":<u8>}  (declaration order)
+#
+# SELF-CONTAINED: no include lines. Uses the shared sk_json_* helpers from
+# serial_util.cyr, the hebrew module accessors (hebrewmonth_name, hebdate_year/
+# month/day, hebrewdate_new), and bayan's value-tree API (folded stdlib).
+#
+# There are no f64, bool, nested, array, or option fields in this module — the
+# only non-integer field is the month enum (emitted as its variant-name string)
+# and the two integer fields (year, day). serde_json output is compact (no
+# spaces), which the sk_json_* helpers reproduce exactly.
+
+# ---------------------------------------------------------------------------
+# HebrewMonth enum <-> serde variant-name string
+# ---------------------------------------------------------------------------
+
+# Map a variant-name Str back to the HebrewMonth discriminant (0..13). Scans
+# hebrewmonth_name(i) for a match. Returns (0 - 1) if none matches.
+#must_use
+fn hebrewmonth_from_name(name) {
+    var i = 0;
+    while (i < 14) {
+        if (str_eq(hebrewmonth_name(i), name) == 1) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# Serialize a HebrewMonth discriminant to a bare JSON string ("Nisan").
+#must_use
+fn hebrewmonth_to_json(m) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, hebrewmonth_name(m));
+    return str_builder_build(sb);
+}
+
+# Deserialize a bayan value node (a JSON string) to a HebrewMonth discriminant.
+#must_use
+fn hebrewmonth_from_json(v) {
+    var name = bayan_json_v_str(v);
+    return hebrewmonth_from_name(name);
+}
+
+# Equality of two HebrewMonth discriminants (0/1).
+#must_use
+fn hebrewmonth_eq(a, b) {
+    if (a == b) {
+        return 1;
+    }
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# HebrewDate struct <-> {"year":i64,"month":"<Variant>","day":u8}
+# ---------------------------------------------------------------------------
+
+# Serialize a HebrewDate pointer to serde-compact JSON. Field order matches the
+# Rust struct declaration: year, month, day. The month enum is emitted as its
+# serde variant-name string via hebrewmonth_name.
+#must_use
+fn hebrewdate_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", hebdate_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", hebrewmonth_name(hebdate_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", hebdate_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Deserialize a bayan value node (a JSON object) to a HebrewDate pointer. The
+# month field is read as its variant-name string and mapped back to the
+# discriminant via hebrewmonth_from_name.
+#must_use
+fn hebrewdate_from_json(v) {
+    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var mv = bayan_json_v_obj_get(v, "month");
+    var mname = bayan_json_v_str(mv);
+    var m = hebrewmonth_from_name(mname);
+    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return hebrewdate_new(y, m, d);
+}
+
+# Field-by-field equality of two HebrewDate pointers (0/1).
+#must_use
+fn hebrewdate_eq(a, b) {
+    if (hebdate_year(a) != hebdate_year(b)) {
+        return 0;
+    }
+    if (hebdate_month(a) != hebdate_month(b)) {
+        return 0;
+    }
+    if (hebdate_day(a) != hebdate_day(b)) {
+        return 0;
+    }
+    return 1;
+}

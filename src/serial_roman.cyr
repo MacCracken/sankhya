@@ -1,0 +1,44 @@
+# serial_roman.cyr — JSON (de)serialization for the roman module.
+#
+# Full serde round-trip parity with Rust's derived Serialize + Deserialize on
+#   pub struct RomanNumeral { value: u32, text: String }
+# serde_json emits fields in declaration order (value, then text), compact:
+#   {"value":1776,"text":"MDCCLXXVI"}
+#
+# Self-contained (NO include lines). Relies on:
+#   * serial_util.cyr — sk_json_int / sk_json_str / sk_json_sep / sk_json_parse
+#   * roman.cyr       — romannum_new / romannum_value / romannum_text (RN_* offsets)
+#   * bayan (folded stdlib) — bayan_json_v_obj_get / _int / _str value-tree accessors
+#
+# There are NO enums, floats, bools, nested structs, arrays, or Options among
+# roman's serde types, so this is a plain {int, string} record.
+
+# --- RomanNumeral ------------------------------------------------------------
+
+# RomanNumeral → {"value":N,"text":"STR"}  (Rust field order: value, then text).
+#must_use
+fn romannum_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "value", romannum_value(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "text", romannum_text(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Reconstruct a RomanNumeral from a parsed bayan value-tree node `v`.
+#must_use
+fn romannum_from_json(v) {
+    var value = bayan_json_v_int(bayan_json_v_obj_get(v, "value"));
+    var text = bayan_json_v_str(bayan_json_v_obj_get(v, "text"));
+    return romannum_new(value, text);
+}
+
+# Field-by-field equality for the round-trip test.
+#must_use
+fn romannum_eq(a, b) {
+    if (romannum_value(a) != romannum_value(b)) { return 0; }
+    if (str_eq(romannum_text(a), romannum_text(b)) == 0) { return 0; }
+    return 1;
+}

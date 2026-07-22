@@ -1,0 +1,55 @@
+# serial_util.cyr — shared JSON (de)serialization helpers for the per-module
+# serial_<module>.cyr files. Output matches Rust serde_json exactly.
+#
+# bayan (folded stdlib) provides str_builder_add_json_str (emit: adds surrounding
+# quotes + RFC-8259 escaping) and bayan_json_v_* (parse into a tagged value tree).
+# Helpers are sk_json_*-prefixed to avoid colliding with itihas's bundled serial.cyr
+# (_json_str/_json_int/_json_sep).
+
+# writes  "key":
+fn sk_json_key(sb, key) {
+    str_builder_add_cstr(sb, "\"");
+    str_builder_add_cstr(sb, key);
+    str_builder_add_cstr(sb, "\":");
+    return 0;
+}
+
+# String field  "key":"escaped"  — val is a Str.
+fn sk_json_str(sb, key, val) {
+    sk_json_key(sb, key);
+    str_builder_add_json_str(sb, val);
+    return 0;
+}
+
+# String field from a C-string literal.
+fn sk_json_cstr(sb, key, cstr) {
+    sk_json_key(sb, key);
+    str_builder_add_json_str(sb, str_from(cstr));
+    return 0;
+}
+
+# Integer field  "key":123
+fn sk_json_int(sb, key, n) {
+    sk_json_key(sb, key);
+    str_builder_add_int(sb, n);
+    return 0;
+}
+
+# Bool field  "key":true / "key":false  (JSON booleans, matching serde).
+fn sk_json_bool(sb, key, b) {
+    sk_json_key(sb, key);
+    if (b != 0) { str_builder_add_cstr(sb, "true"); }
+    else { str_builder_add_cstr(sb, "false"); }
+    return 0;
+}
+
+# Field separator.
+fn sk_json_sep(sb) { str_builder_add_cstr(sb, ","); return 0; }
+
+# Parse a JSON Str into a bayan value tree (0 on error). Wrapper over bayan.
+# NOTE: bayan_json_v_parse takes a Str (it does str_data/str_len internally) —
+# pass the Str directly, NOT str_data(js).
+#must_use
+fn sk_json_parse(js) {
+    return bayan_json_v_parse(js);
+}

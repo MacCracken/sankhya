@@ -1,0 +1,141 @@
+# serial_babylonian.cyr — JSON (de)serialization for the babylonian module,
+# matching Rust serde_json EXACTLY for full round-trip parity.
+#
+# Serde types (from rust-old/src/babylonian.rs, all #[derive(Serialize, Deserialize)]):
+#   BabylonianNumeral — struct { tens: u8, units: u8 }.
+#   BabylonianMonth   — unit enum (12 variants) → serde emits the variant-name string.
+#   BabylonianDate    — struct { year: i64, month: BabylonianMonth, day: u8 }.
+#
+# serde format details:
+#   * Unit enum variants serialize as a bare string of the variant identifier
+#     (e.g. BabylonianMonth::Abu → "Abu"). We use the module's babmonth_name(i)
+#     accessor (the serde identifier — for Babylonian months it equals the
+#     Display string, all ASCII, no spaces). NOT the integer discriminant.
+#   * Struct fields serialize in declaration order with the snake_case Rust
+#     field names, compact (no spaces after ':' or ','):
+#       BabylonianNumeral → {"tens":T,"units":U}
+#       BabylonianDate    → {"year":Y,"month":"NAME","day":D}
+#   * No f64 fields among these types — every field is an integer or the enum,
+#     so sk_json_int + sk_json_str suffice (no bayan value-tree float path).
+#
+# Self-contained: no include lines. Uses the shared sk_json_* helpers from
+# src/serial_util.cyr, the babylonian module's *_new / *_* accessors, and the
+# bayan_json_v_* value-tree API (folded stdlib).
+
+# ---------------------------------------------------------------------------
+# Enum <-> name mapping (parse side). Scans the module's babmonth_name(i)
+# accessor over the 12 variants; returns the discriminant, or (0 - 1) if none.
+# ---------------------------------------------------------------------------
+
+# BabylonianMonth discriminant for a serde identifier Str, or (0 - 1) if none.
+#must_use
+fn babmonth_from_name(name) {
+    var i = 0;
+    while (i < 12) {
+        if (str_eq(babmonth_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# ---------------------------------------------------------------------------
+# BabylonianMonth (standalone enum) — serde emits the bare variant-name string.
+# ---------------------------------------------------------------------------
+
+# BabylonianMonth i → "NAME" (a JSON string), matching serde external tagging
+# of a unit variant.
+#must_use
+fn babmonth_to_json(i) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, babmonth_name(i));
+    return str_builder_build(sb);
+}
+
+# Reconstruct a BabylonianMonth discriminant from a parsed bayan value-tree
+# node `v` (a JTAG_STR). Returns (0 - 1) if the string is not a known variant.
+#must_use
+fn babmonth_from_json(v) {
+    var name = bayan_json_v_str(v);
+    return babmonth_from_name(name);
+}
+
+# Enum equality (Rust derives PartialEq / Eq on the discriminant).
+#must_use
+fn babmonth_eq(a, b) {
+    if (a != b) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# BabylonianNumeral — {"tens":T,"units":U}
+# ---------------------------------------------------------------------------
+
+# Serialize a BabylonianNumeral to a JSON object string (Rust field order:
+# tens, then units), byte-for-byte matching serde_json (compact).
+#must_use
+fn babnum_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "tens", babnum_tens(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "units", babnum_units(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Reconstruct a BabylonianNumeral from a parsed bayan value-tree node `v`.
+#must_use
+fn babnum_from_json(v) {
+    var tens = bayan_json_v_int(bayan_json_v_obj_get(v, "tens"));
+    var units = bayan_json_v_int(bayan_json_v_obj_get(v, "units"));
+    return babnum_new(tens, units);
+}
+
+# Field-by-field equality (Rust derives PartialEq / Eq).
+#must_use
+fn babnum_eq(a, b) {
+    if (babnum_tens(a) != babnum_tens(b)) { return 0; }
+    if (babnum_units(a) != babnum_units(b)) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# BabylonianDate — {"year":Y,"month":"NAME","day":D}
+# ---------------------------------------------------------------------------
+
+# Serialize a BabylonianDate to a JSON object string (Rust field order:
+# year, month, day). The month is emitted as its variant-name string via
+# babmonth_name; year and day as integers.
+#must_use
+fn babdate_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", babdate_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", babmonth_name(babdate_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", babdate_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Reconstruct a BabylonianDate from a parsed bayan value-tree node `v`.
+# The month field is read as its variant-name string, then mapped back to the
+# discriminant via babmonth_from_name.
+#must_use
+fn babdate_from_json(v) {
+    var year = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var mname = bayan_json_v_str(bayan_json_v_obj_get(v, "month"));
+    var month = babmonth_from_name(mname);
+    var day = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return babdate_new(year, month, day);
+}
+
+# Field-by-field equality (Rust derives PartialEq / Eq).
+#must_use
+fn babdate_eq(a, b) {
+    if (babdate_year(a) != babdate_year(b)) { return 0; }
+    if (babdate_month(a) != babdate_month(b)) { return 0; }
+    if (babdate_day(a) != babdate_day(b)) { return 0; }
+    return 1;
+}

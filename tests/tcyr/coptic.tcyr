@@ -1,0 +1,129 @@
+# coptic.tcyr — integration tests for the Coptic calendar module.
+# Ports every non-serde #[cfg(test)] test from rust-old/src/coptic.rs.
+# Run: cyrius build tests/tcyr/coptic.tcyr build/_v_coptic && ./build/_v_coptic
+
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/coptic.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+var TOL = 0;
+var HALF = 0;
+
+fn main() {
+    alloc_init();
+    coptic_init();
+    TOL = f64_parse("0.0000001");
+    HALF = f64_parse("0.5");
+
+    var epoch = coptic_epoch_jdn();
+
+    # ---- epoch_roundtrip ----
+    var d0 = jdn_to_coptic(epoch);
+    assert_eq(coptic_date_year(d0), 1, "epoch year=1");
+    assert_eq(coptic_date_month(d0), CM_THOUT, "epoch month=Thout");
+    assert_eq(coptic_date_day(d0), 1, "epoch day=1");
+    var r0 = coptic_to_jdn(d0);
+    ok(is_ok(r0), "epoch to_jdn ok");
+    var j0 = result_unwrap(r0);
+    ok(f64_approx_eq(j0, epoch, TOL), "epoch jdn round-trips");
+
+    # ---- known_date_cross_check: JDN 2460564.5 = 1 Thout 1741 AM ----
+    var jknown = f64_add(f64_from(2460564), HALF);
+    var dk = jdn_to_coptic(jknown);
+    assert_eq(coptic_date_year(dk), 1741, "known year=1741");
+    assert_eq(coptic_date_month(dk), CM_THOUT, "known month=Thout");
+    assert_eq(coptic_date_day(dk), 1, "known day=1");
+
+    # ---- leap_year_rules ----
+    assert_eq(coptic_is_leap(3), 1, "leap 3");
+    assert_eq(coptic_is_leap(7), 1, "leap 7");
+    assert_eq(coptic_is_leap(1), 0, "not leap 1");
+    assert_eq(coptic_is_leap(2), 0, "not leap 2");
+    assert_eq(coptic_is_leap(4), 0, "not leap 4");
+
+    # ---- year_days ----
+    assert_eq(coptic_year_days(1), 365, "year_days 1 = 365");
+    assert_eq(coptic_year_days(3), 366, "year_days 3 = 366");
+    assert_eq(coptic_year_days(4), 365, "year_days 4 = 365");
+    assert_eq(coptic_year_days(7), 366, "year_days 7 = 366");
+
+    # ---- nasie_leap_6_days: {3, Nasie, 6} valid ----
+    var dnl = coptic_date_new(3, CM_NASIE, 6);
+    var rnl = coptic_to_jdn(dnl);
+    ok(is_ok(rnl), "Nasie 6 valid in leap year 3");
+
+    # ---- nasie_common_rejects_6: {1, Nasie, 6} invalid ----
+    var dnc = coptic_date_new(1, CM_NASIE, 6);
+    var rnc = coptic_to_jdn(dnc);
+    ok(is_err_result(rnc), "Nasie 6 invalid in common year 1");
+
+    # ---- invalid_day_zero: {1, Thout, 0} ----
+    var dz = coptic_date_new(1, CM_THOUT, 0);
+    var rz = coptic_to_jdn(dz);
+    ok(is_err_result(rz), "day 0 rejected");
+
+    # ---- invalid_day_31: {1, Thout, 31} ----
+    var d31 = coptic_date_new(1, CM_THOUT, 31);
+    var r31 = coptic_to_jdn(d31);
+    ok(is_err_result(r31), "day 31 rejected");
+
+    # error message parity (day 6 out of range for Nasie in common year 1, max 5)
+    var emsg = sk_err_msg(err_code_of(rnc));
+    ok(str_eq_cstr(emsg, "day 6 out of range for Nasie in year 1 AM (max 5)"), "error message parity");
+
+    # ---- roundtrip_sequential_days: 1500 consecutive days from epoch ----
+    var seq_fail = 0;
+    var offset = 0;
+    while (offset < 1500) {
+        var jdn = f64_add(epoch, f64_from(offset));
+        var date = jdn_to_coptic(jdn);
+        var res = coptic_to_jdn(date);
+        if (is_ok(res) == 0) {
+            seq_fail = seq_fail + 1;
+        } else {
+            var back = result_unwrap(res);
+            if (f64_approx_eq(back, jdn, TOL) == 0) { seq_fail = seq_fail + 1; }
+        }
+        offset = offset + 1;
+    }
+    assert_eq(seq_fail, 0, "1500 sequential-day round-trips");
+
+    # ---- roundtrip_wide_range: JDN 1_000_000..3_000_000 step 7777, +0.5 ----
+    var wide_fail = 0;
+    var ji = 1000000;
+    while (ji < 3000000) {
+        var wjdn = f64_add(f64_from(ji), HALF);
+        var wdate = jdn_to_coptic(wjdn);
+        var wres = coptic_to_jdn(wdate);
+        if (is_ok(wres) == 0) {
+            wide_fail = wide_fail + 1;
+        } else {
+            var wback = result_unwrap(wres);
+            if (f64_approx_eq(wback, wjdn, TOL) == 0) { wide_fail = wide_fail + 1; }
+        }
+        ji = ji + 7777;
+    }
+    assert_eq(wide_fail, 0, "wide-range round-trips");
+
+    # ---- display_format ----
+    var dd = coptic_date_new(1741, CM_THOUT, 1);
+    ok(str_eq_cstr(coptic_date_to_str(dd), "1 Thout 1741 AM"), "display '1 Thout 1741 AM'");
+
+    # ---- month_display ----
+    ok(str_eq_cstr(coptic_month_to_str(CM_THOUT), "Thout"), "month Thout");
+    ok(str_eq_cstr(coptic_month_to_str(CM_NASIE), "Nasie"), "month Nasie");
+    ok(str_eq_cstr(coptic_month_to_str(CM_MESORI), "Mesori"), "month Mesori");
+
+    # ---- logging init doesn't crash ----
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

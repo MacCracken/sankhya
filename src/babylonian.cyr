@@ -1,0 +1,611 @@
+# babylonian.cyr — Babylonian mathematics (port of rust-old/src/babylonian.rs).
+#
+# Sexagesimal (base-60) number system, Babylonian cuneiform numeral
+# decomposition (via varna), the Saros eclipse cycle, a simplified 354-day
+# Babylonian lunisolar calendar (Seleucid Era) with JDN<->date conversion,
+# reciprocal tables of regular numbers, the 15 Plimpton 322 Pythagorean
+# triples, and Heron's iterative square-root method.
+#
+# Self-contained (NO include lines): stdlib + varna are auto-resolved by the
+# build tool. Depends (in link order) on error.cyr, util.cyr, f64_util.cyr.
+#
+# Parity notes:
+#  * Rust returned Result<T, SankhyaError>. Here: Ok(v) on success, or
+#    sk_fail(SKE_*, str_from("<exact Rust message>")) on error (error.cyr).
+#  * tracing::trace!/debug! sites are preserved as message-only sakshi_trace/
+#    sakshi_debug calls; the structured field values (jdn, n, ...) are dropped
+#    (the playbook's recommended reduction — no field=value f64 formatting).
+
+# ---------------------------------------------------------------------------
+# Module f64 constants (initialised once via babylonian_init()).
+# ---------------------------------------------------------------------------
+
+# SAROS_DAYS: 6585.3211 — Saros eclipse cycle length in days (223 synodic months).
+var SAROS_DAYS = 0;
+# SYNODIC_MONTH_DAYS: 29.530594 — Babylonian System B mean synodic month.
+var SYNODIC_MONTH_DAYS = 0;
+# BABYLONIAN_EPOCH_JDN: 1607738.5 — JDN of 1 Nisannu, Year 1 SE (April 3, 311 BCE Julian).
+var BABYLONIAN_EPOCH_JDN = 0;
+
+# Days in a standard 12-month year (6*30 + 6*29). Integer-literal global (no init cost).
+var BABYLONIAN_YEAR_DAYS = 354;
+
+# Call once (after alloc_init) before using the calendar / cycle functions.
+fn babylonian_init() {
+    SAROS_DAYS = f64_parse("6585.3211");
+    SYNODIC_MONTH_DAYS = f64_parse("29.530594");
+    BABYLONIAN_EPOCH_JDN = f64_parse("1607738.5");
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# BabylonianMonth enum + name table
+# ---------------------------------------------------------------------------
+
+# The 12 months of the lunisolar calendar. Enum value == month index (0-11).
+enum BabylonianMonth {
+    BM_NISANNU;
+    BM_AYARU;
+    BM_SIMANU;
+    BM_DUMUZU;
+    BM_ABU;
+    BM_ULULU;
+    BM_TASHRITU;
+    BM_ARAHSAMNA;
+    BM_KISLIMU;
+    BM_TEBETU;
+    BM_SHABATU;
+    BM_ADDARU;
+}
+
+# Lazy-singleton vec of month names. Serde identifier == Display string here
+# (all ASCII, no spaces), so babmonth_name and babmonth_display are equal.
+var babmonth_names_vec = 0;
+var babmonth_names_done = 0;
+
+fn _build_babmonth_names() {
+    var v = vec_new();
+    vec_push(v, str_from("Nisannu"));
+    vec_push(v, str_from("Ayaru"));
+    vec_push(v, str_from("Simanu"));
+    vec_push(v, str_from("Dumuzu"));
+    vec_push(v, str_from("Abu"));
+    vec_push(v, str_from("Ululu"));
+    vec_push(v, str_from("Tashritu"));
+    vec_push(v, str_from("Arahsamna"));
+    vec_push(v, str_from("Kislimu"));
+    vec_push(v, str_from("Tebetu"));
+    vec_push(v, str_from("Shabatu"));
+    vec_push(v, str_from("Addaru"));
+    return v;
+}
+
+#must_use
+fn all_babmonth_names() {
+    if (babmonth_names_done == 0) {
+        babmonth_names_vec = _build_babmonth_names();
+        babmonth_names_done = 1;
+    }
+    return babmonth_names_vec;
+}
+
+# Serde identifier (== Display string for Babylonian months).
+#must_use
+fn babmonth_name(i) { return vec_get(all_babmonth_names(), i); }
+
+# Display string (identical to the serde identifier here).
+#must_use
+fn babmonth_display(i) { return vec_get(all_babmonth_names(), i); }
+
+# ---------------------------------------------------------------------------
+# Babylonian month-length table (alternating 30/29, private const in Rust)
+# ---------------------------------------------------------------------------
+
+var babmonthdays_vec = 0;
+var babmonthdays_done = 0;
+
+fn _build_babmonthdays() {
+    var v = vec_new();
+    vec_push(v, 30);
+    vec_push(v, 29);
+    vec_push(v, 30);
+    vec_push(v, 29);
+    vec_push(v, 30);
+    vec_push(v, 29);
+    vec_push(v, 30);
+    vec_push(v, 29);
+    vec_push(v, 30);
+    vec_push(v, 29);
+    vec_push(v, 30);
+    vec_push(v, 29);
+    return v;
+}
+
+#must_use
+fn all_bab_month_days() {
+    if (babmonthdays_done == 0) {
+        babmonthdays_vec = _build_babmonthdays();
+        babmonthdays_done = 1;
+    }
+    return babmonthdays_vec;
+}
+
+#must_use
+fn bab_month_days(i) { return vec_get(all_bab_month_days(), i); }
+
+# ---------------------------------------------------------------------------
+# Sexagesimal (base-60) number system
+# ---------------------------------------------------------------------------
+
+# Decimal -> base-60 digits, most significant first. Returns [0] for n == 0.
+#must_use
+fn to_sexagesimal(n) {
+    if (n == 0) {
+        var z = vec_new();
+        vec_push(z, 0);
+        return z;
+    }
+    var digits = vec_new();
+    var m = n;
+    while (m > 0) {
+        vec_push(digits, m % 60);
+        m = m / 60;
+    }
+    # reverse (least-significant-first -> most-significant-first)
+    var rev = vec_new();
+    var len = vec_len(digits);
+    var i = len - 1;
+    while (i >= 0) {
+        vec_push(rev, vec_get(digits, i));
+        i = i - 1;
+    }
+    return rev;
+}
+
+fn _msg_sexa_digit(d) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "sexagesimal digit ");
+    str_builder_add_int(sb, d);
+    str_builder_add_cstr(sb, " out of range 0..60");
+    return str_builder_build(sb);
+}
+
+# Base-60 digits (a vec of i64) -> decimal. Ok(value), or an Err:
+#   SKE_INVALID_BASE if any digit >= 60,
+#   SKE_OVERFLOW on checked_mul(60)/checked_add overflow.
+#must_use
+fn from_sexagesimal(digits) {
+    var result = 0;
+    var n = vec_len(digits);
+    var limit = 0x7FFFFFFFFFFFFFFF;
+    var i = 0;
+    while (i < n) {
+        var d = vec_get(digits, i);
+        if (d >= 60) {
+            return sk_fail(SKE_INVALID_BASE, _msg_sexa_digit(d));
+        }
+        var lim60 = limit / 60;
+        if (result > lim60) {
+            return sk_fail(SKE_OVERFLOW, str_from("sexagesimal conversion overflow"));
+        }
+        result = result * 60;
+        var limd = limit - d;
+        if (result > limd) {
+            return sk_fail(SKE_OVERFLOW, str_from("sexagesimal conversion overflow"));
+        }
+        result = result + d;
+        i = i + 1;
+    }
+    return Ok(result);
+}
+
+# ---------------------------------------------------------------------------
+# BabylonianNumeral: a single sexagesimal digit 0-59 as { tens, units }.
+# ---------------------------------------------------------------------------
+
+enum BabNumOff { BN_TENS = 0; BN_UNITS = 8; BN_SIZE = 16; }
+
+#must_use
+fn babnum_new(tens, units) {
+    var p = alloc(BN_SIZE);
+    store64(p + BN_TENS, tens);
+    store64(p + BN_UNITS, units);
+    return p;
+}
+
+#must_use
+fn babnum_tens(p) { return load64(p + BN_TENS); }
+
+#must_use
+fn babnum_units(p) { return load64(p + BN_UNITS); }
+
+# Decimal value of a numeral: tens*10 + units.
+#must_use
+fn babnum_value(p) { return load64(p + BN_TENS) * 10 + load64(p + BN_UNITS); }
+
+fn _msg_bab_digit(v) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "Babylonian digit ");
+    str_builder_add_int(sb, v);
+    str_builder_add_cstr(sb, " out of range 0..60");
+    return str_builder_build(sb);
+}
+
+# Build a numeral from 0-59. Ok(ptr) or Err(SKE_INVALID_BASE) if value >= 60.
+#must_use
+fn babnum_from_value(value) {
+    if (value >= 60) {
+        return sk_fail(SKE_INVALID_BASE, _msg_bab_digit(value));
+    }
+    var p = babnum_new(value / 10, value % 10);
+    return Ok(p);
+}
+
+# ---------------------------------------------------------------------------
+# Saros cycle
+# ---------------------------------------------------------------------------
+
+# Predict the JDN of the next eclipse one Saros cycle later.
+#must_use
+fn saros_cycle(eclipse_jdn) {
+    return f64_add(eclipse_jdn, SAROS_DAYS);
+}
+
+# ---------------------------------------------------------------------------
+# Babylonian lunar calendar
+# ---------------------------------------------------------------------------
+
+enum BabDateOff { BD_YEAR = 0; BD_MONTH = 8; BD_DAY = 16; BD_SIZE = 24; }
+
+#must_use
+fn babdate_new(year, month, day) {
+    var p = alloc(BD_SIZE);
+    store64(p + BD_YEAR, year);
+    store64(p + BD_MONTH, month);
+    store64(p + BD_DAY, day);
+    return p;
+}
+
+#must_use
+fn babdate_year(p) { return load64(p + BD_YEAR); }
+
+#must_use
+fn babdate_month(p) { return load64(p + BD_MONTH); }
+
+#must_use
+fn babdate_day(p) { return load64(p + BD_DAY); }
+
+# Convert a Julian Day Number to a Babylonian date (354-day model).
+#must_use
+fn jdn_to_babylonian(jdn) {
+    sakshi_trace("JDN to Babylonian", strlen("JDN to Babylonian"));
+    var diff = f64_sub(jdn, BABYLONIAN_EPOCH_JDN);
+    var days_since_epoch = f64_to(f64_floor(diff));
+    var years = div_euclid(days_since_epoch, BABYLONIAN_YEAR_DAYS);
+    var remaining = rem_euclid(days_since_epoch, BABYLONIAN_YEAR_DAYS);
+    var year = years + 1;
+    var month_idx = 0;
+    var i = 0;
+    while (i < 12) {
+        var md = bab_month_days(i);
+        if (remaining < md) {
+            month_idx = i;
+            break;
+        }
+        remaining = remaining - md;
+        if (i == 11) { month_idx = 11; }
+        i = i + 1;
+    }
+    return babdate_new(year, month_idx, remaining + 1);
+}
+
+fn _msg_invalid_day(day, month_idx, max_day) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "day ");
+    str_builder_add_int(sb, day);
+    str_builder_add_cstr(sb, " out of range for ");
+    str_builder_add(sb, babmonth_name(month_idx));
+    str_builder_add_cstr(sb, " (max ");
+    str_builder_add_int(sb, max_day);
+    str_builder_add_cstr(sb, ")");
+    return str_builder_build(sb);
+}
+
+# Convert a Babylonian date to a JDN. Ok(jdn) or Err(SKE_INVALID_DATE).
+#must_use
+fn babylonian_to_jdn(date) {
+    sakshi_trace("Babylonian to JDN", strlen("Babylonian to JDN"));
+    var month_idx = babdate_month(date);
+    var max_day = bab_month_days(month_idx);
+    var day = babdate_day(date);
+    var bad = 0;
+    if (day == 0) { bad = 1; }
+    if (day > max_day) { bad = 1; }
+    if (bad == 1) {
+        return sk_fail(SKE_INVALID_DATE, _msg_invalid_day(day, month_idx, max_day));
+    }
+    var days = BABYLONIAN_YEAR_DAYS * (babdate_year(date) - 1);
+    var i = 0;
+    while (i < month_idx) {
+        days = days + bab_month_days(i);
+        i = i + 1;
+    }
+    days = days + (day - 1);
+    var jdn = f64_add(BABYLONIAN_EPOCH_JDN, f64_from(days));
+    return Ok(jdn);
+}
+
+# Complete synodic months elapsed between two JDNs, and the leftover days.
+# Returns (complete_months, remainder_days).
+#must_use
+fn synodic_months_between(jdn1, jdn2) {
+    var elapsed = f64_abs(f64_sub(jdn2, jdn1));
+    var months_f = f64_floor(f64_div(elapsed, SYNODIC_MONTH_DAYS));
+    var remainder = f64_sub(elapsed, f64_mul(months_f, SYNODIC_MONTH_DAYS));
+    var months = f64_to(months_f);
+    return (months, remainder);
+}
+
+# Display for BabylonianDate: "{day} {month}, Year {year} SE".
+#must_use
+fn babdate_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, babdate_day(p));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add(sb, babmonth_name(babdate_month(p)));
+    str_builder_add_cstr(sb, ", Year ");
+    str_builder_add_int(sb, babdate_year(p));
+    str_builder_add_cstr(sb, " SE");
+    return str_builder_build(sb);
+}
+
+# Display for BabylonianMonth (ASCII variant name).
+#must_use
+fn babmonth_to_str(i) { return babmonth_name(i); }
+
+# ---------------------------------------------------------------------------
+# Reciprocal tables (regular numbers) — was BTreeMap<u64, Vec<u8>>.
+# Modelled as a vec of { key, digits-vec } records, inserted key-ascending.
+# ---------------------------------------------------------------------------
+
+enum RecipOff { RC_KEY = 0; RC_DIGITS = 8; RC_SIZE = 16; }
+
+#must_use
+fn recip_new(key, digits_vec) {
+    var p = alloc(RC_SIZE);
+    store64(p + RC_KEY, key);
+    store64(p + RC_DIGITS, digits_vec);
+    return p;
+}
+
+#must_use
+fn recip_key(p) { return load64(p + RC_KEY); }
+
+#must_use
+fn recip_digits(p) { return load64(p + RC_DIGITS); }
+
+fn _dv1(a) { var v = vec_new(); vec_push(v, a); return v; }
+fn _dv2(a, b) { var v = vec_new(); vec_push(v, a); vec_push(v, b); return v; }
+fn _dv3(a, b, c) { var v = vec_new(); vec_push(v, a); vec_push(v, b); vec_push(v, c); return v; }
+fn _dv4(a, b, c, d) { var v = vec_new(); vec_push(v, a); vec_push(v, b); vec_push(v, c); vec_push(v, d); return v; }
+
+# Reciprocal table for regular numbers up to 81 (29 entries, key-ascending).
+#must_use
+fn reciprocal_table() {
+    var t = vec_new();
+    vec_push(t, recip_new(2, _dv1(30)));
+    vec_push(t, recip_new(3, _dv1(20)));
+    vec_push(t, recip_new(4, _dv1(15)));
+    vec_push(t, recip_new(5, _dv1(12)));
+    vec_push(t, recip_new(6, _dv1(10)));
+    vec_push(t, recip_new(8, _dv2(7, 30)));
+    vec_push(t, recip_new(9, _dv2(6, 40)));
+    vec_push(t, recip_new(10, _dv1(6)));
+    vec_push(t, recip_new(12, _dv1(5)));
+    vec_push(t, recip_new(15, _dv1(4)));
+    vec_push(t, recip_new(16, _dv2(3, 45)));
+    vec_push(t, recip_new(18, _dv2(3, 20)));
+    vec_push(t, recip_new(20, _dv1(3)));
+    vec_push(t, recip_new(24, _dv2(2, 30)));
+    vec_push(t, recip_new(25, _dv2(2, 24)));
+    vec_push(t, recip_new(27, _dv3(2, 13, 20)));
+    vec_push(t, recip_new(30, _dv1(2)));
+    vec_push(t, recip_new(32, _dv3(1, 52, 30)));
+    vec_push(t, recip_new(36, _dv2(1, 40)));
+    vec_push(t, recip_new(40, _dv2(1, 30)));
+    vec_push(t, recip_new(45, _dv2(1, 20)));
+    vec_push(t, recip_new(48, _dv2(1, 15)));
+    vec_push(t, recip_new(50, _dv2(1, 12)));
+    vec_push(t, recip_new(54, _dv3(1, 6, 40)));
+    vec_push(t, recip_new(60, _dv1(1)));
+    vec_push(t, recip_new(64, _dv3(0, 56, 15)));
+    vec_push(t, recip_new(72, _dv2(0, 50)));
+    vec_push(t, recip_new(80, _dv2(0, 45)));
+    vec_push(t, recip_new(81, _dv4(0, 44, 26, 40)));
+    return t;
+}
+
+# BTreeMap::get analogue — linear scan, returns the digits vec or 0 if absent.
+#must_use
+fn reciprocal_lookup(table, key) {
+    var n = vec_len(table);
+    var i = 0;
+    while (i < n) {
+        var p = vec_get(table, i);
+        if (recip_key(p) == key) { return recip_digits(p); }
+        i = i + 1;
+    }
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# Plimpton 322 Pythagorean triples
+# ---------------------------------------------------------------------------
+
+enum TripleOff { TR_A = 0; TR_B = 8; TR_C = 16; TR_SIZE = 24; }
+
+#must_use
+fn triple_new(a, b, c) {
+    var p = alloc(TR_SIZE);
+    store64(p + TR_A, a);
+    store64(p + TR_B, b);
+    store64(p + TR_C, c);
+    return p;
+}
+
+#must_use
+fn triple_a(p) { return load64(p + TR_A); }
+
+#must_use
+fn triple_b(p) { return load64(p + TR_B); }
+
+#must_use
+fn triple_c(p) { return load64(p + TR_C); }
+
+# The 15 Pythagorean triples of Plimpton 322, in tablet row order.
+#must_use
+fn generate_plimpton_triples() {
+    var v = vec_new();
+    vec_push(v, triple_new(119, 120, 169));
+    vec_push(v, triple_new(3367, 3456, 4825));
+    vec_push(v, triple_new(4601, 4800, 6649));
+    vec_push(v, triple_new(12709, 13500, 18541));
+    vec_push(v, triple_new(65, 72, 97));
+    vec_push(v, triple_new(319, 360, 481));
+    vec_push(v, triple_new(2291, 2700, 3541));
+    vec_push(v, triple_new(799, 960, 1249));
+    vec_push(v, triple_new(481, 600, 769));
+    vec_push(v, triple_new(4961, 6480, 8161));
+    vec_push(v, triple_new(45, 60, 75));
+    vec_push(v, triple_new(1679, 2400, 2929));
+    vec_push(v, triple_new(161, 240, 289));
+    vec_push(v, triple_new(1771, 2700, 3229));
+    vec_push(v, triple_new(56, 90, 106));
+    return v;
+}
+
+# ---------------------------------------------------------------------------
+# Babylonian square root (Heron's method)
+# ---------------------------------------------------------------------------
+
+# Heron iteration x = (x + n/x) / 2, `iterations` times.
+#   Err(SKE_COMPUTATION) if n is negative, NaN, or infinite.
+#   Ok(0.0) if n == 0.0.
+#   Err(SKE_INVALID_BASE) if iterations == 0.
+#must_use
+fn babylonian_sqrt(n, iterations) {
+    sakshi_debug("Babylonian/Heron sqrt", strlen("Babylonian/Heron sqrt"));
+    if (f64_is_nan(n) == 1) {
+        return sk_fail(SKE_COMPUTATION, str_from("cannot compute square root of negative, NaN, or infinite number"));
+    }
+    if (f64_is_inf(n) == 1) {
+        return sk_fail(SKE_COMPUTATION, str_from("cannot compute square root of negative, NaN, or infinite number"));
+    }
+    var neg = f64_lt(n, f64_from(0));
+    if (neg == 1) {
+        return sk_fail(SKE_COMPUTATION, str_from("cannot compute square root of negative, NaN, or infinite number"));
+    }
+    var zero = f64_eq(n, f64_from(0));
+    if (zero == 1) {
+        return Ok(f64_from(0));
+    }
+    if (iterations == 0) {
+        return sk_fail(SKE_INVALID_BASE, str_from("iterations must be at least 1"));
+    }
+    # Initial guess: 1.0 if n < 2, else n/2.
+    var x = f64_from(1);
+    var ge2 = f64_ge(n, f64_from(2));
+    if (ge2 == 1) {
+        x = f64_div(n, f64_from(2));
+    }
+    var i = 0;
+    while (i < iterations) {
+        x = f64_div(f64_add(x, f64_div(n, x)), f64_from(2));
+        i = i + 1;
+    }
+    return Ok(x);
+}
+
+# ---------------------------------------------------------------------------
+# Cuneiform display (via varna numerals)
+# ---------------------------------------------------------------------------
+
+# The available tens symbols, highest first: 30, 20, 10.
+fn _cune_tens_val(ti) {
+    if (ti == 0) { return 30; }
+    if (ti == 1) { return 20; }
+    return 10;
+}
+
+fn _msg_cune_digit(d) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "cuneiform digit ");
+    str_builder_add_int(sb, d);
+    str_builder_add_cstr(sb, " out of range 0..60");
+    return str_builder_build(sb);
+}
+
+# Render a sexagesimal digit (0-59) in cuneiform. " " for 0.
+#   Err(SKE_INVALID_BASE) if digit >= 60.
+#must_use
+fn cuneiform_digit(digit) {
+    if (digit >= 60) {
+        return sk_fail(SKE_INVALID_BASE, _msg_cune_digit(digit));
+    }
+    if (digit == 0) {
+        return Ok(str_from(" "));
+    }
+    var sys = numerals_babylonian_sexagesimal();
+    var tens = digit / 10;
+    var units = digit % 10;
+    var sb = str_builder_new();
+    if (tens > 0) {
+        var remaining_tens = tens;
+        var ti = 0;
+        while (ti < 3) {
+            var val = _cune_tens_val(ti);
+            var lhs = remaining_tens * 10;
+            var cond = lhs >= val;
+            if (cond == 1) {
+                var ch = numerals_char_for(sys, val);
+                if (ch != 0) {
+                    str_builder_add_cstr(sb, ch);
+                    remaining_tens = remaining_tens - val / 10;
+                }
+            }
+            if (remaining_tens == 0) { break; }
+            ti = ti + 1;
+        }
+    }
+    if (units > 0) {
+        var uch = numerals_char_for(sys, units);
+        if (uch != 0) {
+            str_builder_add_cstr(sb, uch);
+        }
+    }
+    return Ok(str_builder_build(sb));
+}
+
+# Render a full number in cuneiform sexagesimal, digits joined with '·'.
+#   Propagates any Err from cuneiform_digit.
+#must_use
+fn to_cuneiform(n) {
+    var digits = to_sexagesimal(n);
+    var sb = str_builder_new();
+    var len = vec_len(digits);
+    var i = 0;
+    while (i < len) {
+        var d = vec_get(digits, i);
+        var r = cuneiform_digit(d);
+        if (is_err_result(r) == 1) {
+            return r;
+        }
+        var part = result_unwrap(r);
+        if (i > 0) {
+            str_builder_add_cstr(sb, "·");
+        }
+        str_builder_add(sb, part);
+        i = i + 1;
+    }
+    return Ok(str_builder_build(sb));
+}

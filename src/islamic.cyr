@@ -1,0 +1,619 @@
+# islamic.cyr — Islamic / Arabic mathematics (port of rust-old/src/islamic.rs).
+#
+# al-Khwarizmi's six canonical quadratic forms with geometric completion of the
+# square; Omar Khayyam's cubic classification (solved numerically via Newton's
+# method); and the tabular Hijri (Islamic lunar) calendar with JDN<->date
+# conversion over the 30-year leap cycle.
+#
+# Depends on foundation: error.cyr (sk_fail/SKE_*), util.cyr (rem_euclid/
+# div_euclid), f64_util.cyr, logging.cyr. Self-contained — no include lines.
+
+# ---------------------------------------------------------------------------
+# Constants (exact IEEE-754 bit patterns → no global-init cost, always valid)
+# ---------------------------------------------------------------------------
+
+# JDN of 1 Muharram 1 AH (16 Jul 622 CE Julian). Half-integer f64 = 1948439.5.
+var HIJRI_EPOCH_JDN = 0x413DBB1780000000;
+
+# Mean synodic lunar month length in days = 29.53058886 (declared, unused here).
+var ISLAMIC_MONTH_DAYS = 0x403D87D4ABE9526A;
+
+# Days in the 30-year tabular cycle (19*354 + 11*355 = 10631).
+var HIJRI_30_YEAR_CYCLE_DAYS = 10631;
+
+# f64::EPSILON = 2.220446049250313e-16 (used for zero-coeff + form branching).
+var ISLAMIC_F64_EPSILON = 0x3CB0000000000000;
+# Newton's-method step tolerance = 1e-12.
+var ISLAMIC_STEP_TOL = 0x3D719799812DEA11;
+# Newton's-method residual-accept / root-dedup tolerance = 1e-8.
+var ISLAMIC_ACCEPT_TOL = 0x3E45798EE2308C3A;
+
+# ---------------------------------------------------------------------------
+# Enums (integer constants)
+# ---------------------------------------------------------------------------
+
+# al-Khwarizmi's six canonical forms of degree-<=2 equations.
+enum AlJabrForm {
+    ALJ_SQUARES_EQUAL_ROOTS;            # ax^2 = bx
+    ALJ_SQUARES_EQUAL_NUMBER;           # ax^2 = c
+    ALJ_ROOTS_EQUAL_NUMBER;             # bx = c
+    ALJ_SQUARES_AND_ROOTS_EQUAL_NUMBER; # ax^2 + bx = c
+    ALJ_SQUARES_AND_NUMBER_EQUAL_ROOTS; # ax^2 + c = bx
+    ALJ_ROOTS_AND_NUMBER_EQUAL_SQUARES; # bx + c = ax^2
+}
+
+# Omar Khayyam's cubic classification (5 of his 19 types).
+enum KhayyamCubicType {
+    KCT_CUBE_EQUAL_NUMBER;              # x^3 = d
+    KCT_CUBE_AND_THING_EQUAL_NUMBER;    # x^3 + bx = d
+    KCT_CUBE_AND_SQUARE_EQUAL_NUMBER;   # x^3 + cx^2 = d
+    KCT_CUBE_EQUAL_THING_AND_NUMBER;    # x^3 = bx + d
+    KCT_CUBE_THING_NUMBER_EQUAL_SQUARE; # x^3 + bx + d = cx^2
+}
+
+# The 12 months of the Islamic calendar (value == index, 0..11).
+enum HijriMonth {
+    HM_MUHARRAM;        # 0
+    HM_SAFAR;           # 1
+    HM_RABI_AL_AWWAL;   # 2
+    HM_RABI_AL_THANI;   # 3
+    HM_JUMADA_AL_ULA;   # 4
+    HM_JUMADA_AL_THANI; # 5
+    HM_RAJAB;           # 6
+    HM_SHABAN;          # 7
+    HM_RAMADAN;         # 8
+    HM_SHAWWAL;         # 9
+    HM_DHUL_QADAH;      # 10
+    HM_DHUL_HIJJAH;     # 11
+}
+
+# ---------------------------------------------------------------------------
+# tracing → sakshi (keep the Rust trace sites; no-ops at default SK_INFO level)
+# ---------------------------------------------------------------------------
+
+fn _islamic_trace(s) {
+    var m = str_from(s);
+    sakshi_trace(str_data(m), str_len(m));
+    return 0;
+}
+
+fn _islamic_debug(s) {
+    var m = str_from(s);
+    sakshi_debug(str_data(m), str_len(m));
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# HijriMonth name tables (lazy singletons)
+#   hijri_month_name(i)    — serde/Debug identifier (no spaces): "RabiAlAwwal"
+#   hijri_month_display(i) — Display string (spelled): "Rabi al-Awwal"
+# ---------------------------------------------------------------------------
+
+var _hm_name_vec = 0;
+var _hm_name_done = 0;
+
+fn _build_hm_names() {
+    var v = vec_new();
+    vec_push(v, str_from("Muharram"));
+    vec_push(v, str_from("Safar"));
+    vec_push(v, str_from("RabiAlAwwal"));
+    vec_push(v, str_from("RabiAlThani"));
+    vec_push(v, str_from("JumadaAlUla"));
+    vec_push(v, str_from("JumadaAlThani"));
+    vec_push(v, str_from("Rajab"));
+    vec_push(v, str_from("Shaban"));
+    vec_push(v, str_from("Ramadan"));
+    vec_push(v, str_from("Shawwal"));
+    vec_push(v, str_from("DhulQadah"));
+    vec_push(v, str_from("DhulHijjah"));
+    return v;
+}
+
+#must_use
+fn hijri_month_name(i) {
+    if (_hm_name_done == 0) { _hm_name_vec = _build_hm_names(); _hm_name_done = 1; }
+    return vec_get(_hm_name_vec, i);
+}
+
+var _hm_disp_vec = 0;
+var _hm_disp_done = 0;
+
+fn _build_hm_disp() {
+    var v = vec_new();
+    vec_push(v, str_from("Muharram"));
+    vec_push(v, str_from("Safar"));
+    vec_push(v, str_from("Rabi al-Awwal"));
+    vec_push(v, str_from("Rabi al-Thani"));
+    vec_push(v, str_from("Jumada al-Ula"));
+    vec_push(v, str_from("Jumada al-Thani"));
+    vec_push(v, str_from("Rajab"));
+    vec_push(v, str_from("Sha'ban"));
+    vec_push(v, str_from("Ramadan"));
+    vec_push(v, str_from("Shawwal"));
+    vec_push(v, str_from("Dhul Qa'dah"));
+    vec_push(v, str_from("Dhul Hijjah"));
+    return v;
+}
+
+#must_use
+fn hijri_month_display(i) {
+    if (_hm_disp_done == 0) { _hm_disp_vec = _build_hm_disp(); _hm_disp_done = 1; }
+    return vec_get(_hm_disp_vec, i);
+}
+
+# HijriMonth Display impl.
+#must_use
+fn hijri_month_to_str(m) {
+    return hijri_month_display(m);
+}
+
+# ---------------------------------------------------------------------------
+# HIJRI_MONTH_DAYS table [30,29,30,29,...] (lazy singleton)
+# ---------------------------------------------------------------------------
+
+var _hmd_arr = 0;
+var _hmd_done = 0;
+
+fn _build_hmd() {
+    var a = alloc(12 * 8);
+    store64(a + 0 * 8, 30);
+    store64(a + 1 * 8, 29);
+    store64(a + 2 * 8, 30);
+    store64(a + 3 * 8, 29);
+    store64(a + 4 * 8, 30);
+    store64(a + 5 * 8, 29);
+    store64(a + 6 * 8, 30);
+    store64(a + 7 * 8, 29);
+    store64(a + 8 * 8, 30);
+    store64(a + 9 * 8, 29);
+    store64(a + 10 * 8, 30);
+    store64(a + 11 * 8, 29);
+    return a;
+}
+
+#must_use
+fn hijri_month_days(idx) {
+    if (_hmd_done == 0) { _hmd_arr = _build_hmd(); _hmd_done = 1; }
+    return load64(_hmd_arr + idx * 8);
+}
+
+# ---------------------------------------------------------------------------
+# AlJabrSolution struct: form(0) roots(8) a(16) b(24) c(32) = 40 bytes
+# ---------------------------------------------------------------------------
+
+enum AljSolOff { AJS_FORM = 0; AJS_ROOTS = 8; AJS_A = 16; AJS_B = 24; AJS_C = 32; AJS_SIZE = 40; }
+
+#must_use
+fn aljabr_sol_new(form, roots, a, b, c) {
+    var p = alloc(AJS_SIZE);
+    store64(p + AJS_FORM, form);
+    store64(p + AJS_ROOTS, roots);
+    store64(p + AJS_A, a);
+    store64(p + AJS_B, b);
+    store64(p + AJS_C, c);
+    return p;
+}
+
+#must_use
+fn aljabr_sol_form(p) { return load64(p + AJS_FORM); }
+#must_use
+fn aljabr_sol_roots(p) { return load64(p + AJS_ROOTS); }
+#must_use
+fn aljabr_sol_a(p) { return load64(p + AJS_A); }
+#must_use
+fn aljabr_sol_b(p) { return load64(p + AJS_B); }
+#must_use
+fn aljabr_sol_c(p) { return load64(p + AJS_C); }
+
+# ---------------------------------------------------------------------------
+# KhayyamResult (the (KhayyamCubicType, Vec<f64>) tuple): type(0) roots(8)
+# ---------------------------------------------------------------------------
+
+enum KhResOff { KHR_TYPE = 0; KHR_ROOTS = 8; KHR_SIZE = 16; }
+
+#must_use
+fn khres_new(ctype, roots) {
+    var p = alloc(KHR_SIZE);
+    store64(p + KHR_TYPE, ctype);
+    store64(p + KHR_ROOTS, roots);
+    return p;
+}
+
+#must_use
+fn khres_type(p) { return load64(p + KHR_TYPE); }
+#must_use
+fn khres_roots(p) { return load64(p + KHR_ROOTS); }
+
+# ---------------------------------------------------------------------------
+# CompleteSquare (the (x, area) tuple): x(0) area(8)
+# ---------------------------------------------------------------------------
+
+enum CsqOff { CSQ_X = 0; CSQ_AREA = 8; CSQ_SIZE = 16; }
+
+#must_use
+fn csq_new(x, area) {
+    var p = alloc(CSQ_SIZE);
+    store64(p + CSQ_X, x);
+    store64(p + CSQ_AREA, area);
+    return p;
+}
+
+#must_use
+fn csq_x(p) { return load64(p + CSQ_X); }
+#must_use
+fn csq_area(p) { return load64(p + CSQ_AREA); }
+
+# ---------------------------------------------------------------------------
+# HijriDate struct: year(0) month(8) day(16) = 24 bytes
+# ---------------------------------------------------------------------------
+
+enum HijriDateOff { HD_YEAR = 0; HD_MONTH = 8; HD_DAY = 16; HD_SIZE = 24; }
+
+#must_use
+fn hijri_date_new(year, month, day) {
+    var p = alloc(HD_SIZE);
+    store64(p + HD_YEAR, year);
+    store64(p + HD_MONTH, month);
+    store64(p + HD_DAY, day);
+    return p;
+}
+
+#must_use
+fn hijri_date_year(p) { return load64(p + HD_YEAR); }
+#must_use
+fn hijri_date_month(p) { return load64(p + HD_MONTH); }
+#must_use
+fn hijri_date_day(p) { return load64(p + HD_DAY); }
+
+# HijriDate Display impl: "{day} {month:?} {year} AH" (month via Debug identifier).
+#must_use
+fn hijri_date_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, hijri_date_day(p));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add(sb, hijri_month_name(hijri_date_month(p)));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add_int(sb, hijri_date_year(p));
+    str_builder_add_cstr(sb, " AH");
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# Al-Khwarizmi's al-Jabr: classify + solve a quadratic
+# ---------------------------------------------------------------------------
+
+#must_use
+fn solve_al_jabr(a, b, c) {
+    _islamic_debug("solving al-Jabr equation ax^2 + bx + c = 0");
+
+    var aeps = f64_lt(f64_abs(a), ISLAMIC_F64_EPSILON);
+    var beps = f64_lt(f64_abs(b), ISLAMIC_F64_EPSILON);
+    var ceps = f64_lt(f64_abs(c), ISLAMIC_F64_EPSILON);
+
+    if (aeps == 1 && beps == 1 && ceps == 1) {
+        return sk_fail(SKE_COMPUTATION, str_from("all coefficients are zero"));
+    }
+
+    # Linear case: bx + c = 0
+    if (aeps == 1) {
+        if (beps == 1) {
+            return sk_fail(SKE_COMPUTATION, str_from("degenerate equation: no variable terms"));
+        }
+        var lroot = f64_div(f64_neg(c), b);
+        var lroots = vec_new();
+        var lpos = f64_gt(lroot, f64_from(0));
+        if (lpos == 1) { vec_push(lroots, lroot); }
+        return Ok(aljabr_sol_new(ALJ_ROOTS_EQUAL_NUMBER, lroots, a, b, c));
+    }
+
+    # Quadratic case: normalize x^2 + p x + q = 0 with p = b/a, q = c/a
+    var p = f64_div(b, a);
+    var q = f64_div(c, a);
+
+    var peps = f64_lt(f64_abs(p), ISLAMIC_F64_EPSILON);
+    var qeps = f64_lt(f64_abs(q), ISLAMIC_F64_EPSILON);
+    var ppos = f64_gt(p, f64_from(0));
+    var qpos = f64_gt(q, f64_from(0));
+    var pneg = f64_lt(p, f64_from(0));
+    var qneg = f64_lt(q, f64_from(0));
+
+    # Cascade mirroring the Rust if/else-if chain exactly.
+    var form = ALJ_ROOTS_AND_NUMBER_EQUAL_SQUARES;
+    if (peps == 1 && qeps == 1) {
+        form = ALJ_SQUARES_EQUAL_ROOTS;
+    } else {
+        if (qeps == 1) {
+            form = ALJ_SQUARES_EQUAL_ROOTS;
+        } else {
+            if (peps == 1) {
+                form = ALJ_SQUARES_EQUAL_NUMBER;
+            } else {
+                if (ppos == 1 && qpos == 1) {
+                    form = ALJ_SQUARES_AND_ROOTS_EQUAL_NUMBER;
+                } else {
+                    if (ppos == 1 && qneg == 1) {
+                        form = ALJ_SQUARES_AND_ROOTS_EQUAL_NUMBER;
+                    } else {
+                        if (pneg == 1 && qpos == 1) {
+                            form = ALJ_SQUARES_AND_NUMBER_EQUAL_ROOTS;
+                        } else {
+                            form = ALJ_ROOTS_AND_NUMBER_EQUAL_SQUARES;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    # Quadratic formula, keep positive roots (> EPSILON), dedup within EPSILON.
+    var disc = f64_sub(f64_mul(b, b), f64_mul(f64_mul(f64_from(4), a), c));
+    var roots = vec_new();
+    var discnn = f64_ge(disc, f64_from(0));
+    if (discnn == 1) {
+        var sqrt_d = f64_sqrt(disc);
+        var two_a = f64_mul(f64_from(2), a);
+        var r1 = f64_div(f64_add(f64_neg(b), sqrt_d), two_a);
+        var r2 = f64_div(f64_sub(f64_neg(b), sqrt_d), two_a);
+        var r1pos = f64_gt(r1, ISLAMIC_F64_EPSILON);
+        if (r1pos == 1) { vec_push(roots, r1); }
+        var r2pos = f64_gt(r2, ISLAMIC_F64_EPSILON);
+        var rdiff = f64_gt(f64_abs(f64_sub(r1, r2)), ISLAMIC_F64_EPSILON);
+        if (r2pos == 1 && rdiff == 1) { vec_push(roots, r2); }
+    }
+
+    return Ok(aljabr_sol_new(form, roots, a, b, c));
+}
+
+# ---------------------------------------------------------------------------
+# Al-Khwarizmi's completion of the square: x^2 + bx = c  (b, c > 0)
+# ---------------------------------------------------------------------------
+
+#must_use
+fn complete_the_square(b, c) {
+    var bbad = f64_le(b, f64_from(0));
+    var cbad = f64_le(c, f64_from(0));
+    if (bbad == 1 || cbad == 1) {
+        return sk_fail(SKE_INVALID_BASE, str_from("al-Khwarizmi's completion requires positive b and c"));
+    }
+    var half_b = f64_div(b, f64_from(2));
+    var completed_area = f64_add(c, f64_mul(half_b, half_b));
+    var x = f64_sub(f64_sqrt(completed_area), half_b);
+    return Ok(csq_new(x, completed_area));
+}
+
+# ---------------------------------------------------------------------------
+# Omar Khayyam's cubic classification + numeric root solving (Newton)
+# ---------------------------------------------------------------------------
+
+# f(x) = a3*x*x*x + a2*x*x + a1*x + a0   (Rust left-assoc op order preserved)
+fn _khayyam_f(a3, a2, a1, a0, x) {
+    var t1 = f64_mul(f64_mul(f64_mul(a3, x), x), x);
+    var t2 = f64_mul(f64_mul(a2, x), x);
+    var t3 = f64_mul(a1, x);
+    return f64_add(f64_add(f64_add(t1, t2), t3), a0);
+}
+
+# df(x) = 3*a3*x*x + 2*a2*x + a1
+fn _khayyam_df(a3, a2, a1, x) {
+    var d1 = f64_mul(f64_mul(f64_mul(f64_from(3), a3), x), x);
+    var d2 = f64_mul(f64_mul(f64_from(2), a2), x);
+    return f64_add(f64_add(d1, d2), a1);
+}
+
+# Ascending f64 comparator (partial_cmp with NaN → Equal); for vec_sort.
+fn _f64_cmp_asc(u, w) {
+    var lt = f64_lt(u, w);
+    if (lt == 1) { return 0 - 1; }
+    var gt = f64_gt(u, w);
+    if (gt == 1) { return 1; }
+    return 0;
+}
+
+#must_use
+fn classify_khayyam_cubic(a3, a2, a1, a0) {
+    var a3eps = f64_lt(f64_abs(a3), ISLAMIC_F64_EPSILON);
+    if (a3eps == 1) {
+        return sk_fail(SKE_COMPUTATION, str_from("leading coefficient is zero — not a cubic"));
+    }
+
+    # Normalize to monic: x^3 + c x^2 + b x + d = 0
+    var c = f64_div(a2, a3);
+    var b = f64_div(a1, a3);
+    var d = f64_div(a0, a3);
+
+    var ceps = f64_lt(f64_abs(c), ISLAMIC_F64_EPSILON);
+    var beps = f64_lt(f64_abs(b), ISLAMIC_F64_EPSILON);
+    var dneg = f64_lt(d, f64_from(0));
+    var bneg = f64_lt(b, f64_from(0));
+
+    var cubic_type = KCT_CUBE_THING_NUMBER_EQUAL_SQUARE;
+    if (ceps == 1 && beps == 1) {
+        cubic_type = KCT_CUBE_EQUAL_NUMBER;
+    } else {
+        if (ceps == 1 && dneg == 1) {
+            cubic_type = KCT_CUBE_AND_THING_EQUAL_NUMBER;
+        } else {
+            if (beps == 1 && dneg == 1) {
+                cubic_type = KCT_CUBE_AND_SQUARE_EQUAL_NUMBER;
+            } else {
+                if (ceps == 1 && bneg == 1) {
+                    cubic_type = KCT_CUBE_EQUAL_THING_AND_NUMBER;
+                } else {
+                    cubic_type = KCT_CUBE_THING_NUMBER_EQUAL_SQUARE;
+                }
+            }
+        }
+    }
+
+    # Newton's method from 7 seed points.
+    var seeds = alloc(7 * 8);
+    store64(seeds + 0 * 8, f64_from(0));
+    store64(seeds + 1 * 8, f64_from(1));
+    store64(seeds + 2 * 8, f64_neg(f64_from(1)));
+    store64(seeds + 3 * 8, f64_from(10));
+    store64(seeds + 4 * 8, f64_neg(f64_from(10)));
+    store64(seeds + 5 * 8, f64_from(100));
+    store64(seeds + 6 * 8, f64_neg(f64_from(100)));
+
+    var roots = vec_new();
+    var si = 0;
+    while (si < 7) {
+        var x = load64(seeds + si * 8);
+        var conv = 0;
+        var it = 0;
+        while (it < 200) {
+            var fx = _khayyam_f(a3, a2, a1, a0, x);
+            var dfx = _khayyam_df(a3, a2, a1, x);
+            var dfxsmall = f64_lt(f64_abs(dfx), ISLAMIC_F64_EPSILON);
+            if (dfxsmall == 1) { break; }
+            var x_new = f64_sub(x, f64_div(fx, dfx));
+            var stepsmall = f64_lt(f64_abs(f64_sub(x_new, x)), ISLAMIC_STEP_TOL);
+            if (stepsmall == 1) { conv = 1; x = x_new; break; }
+            x = x_new;
+            it = it + 1;
+        }
+        var fxfinal = _khayyam_f(a3, a2, a1, a0, x);
+        var accept = f64_lt(f64_abs(fxfinal), ISLAMIC_ACCEPT_TOL);
+        if (conv == 1 && accept == 1) {
+            var isdup = 0;
+            var ri = 0;
+            var rn = vec_len(roots);
+            while (ri < rn) {
+                var rv = vec_get(roots, ri);
+                var close = f64_lt(f64_abs(f64_sub(rv, x)), ISLAMIC_ACCEPT_TOL);
+                if (close == 1) { isdup = 1; }
+                ri = ri + 1;
+            }
+            if (isdup == 0) { vec_push(roots, x); }
+        }
+        si = si + 1;
+    }
+
+    var nroots = vec_len(roots);
+    if (nroots == 0) {
+        return sk_fail(SKE_COMPUTATION, str_from("Newton's method failed to find a real root"));
+    }
+
+    # Sort ascending for deterministic output.
+    sk_vec_sort(roots, &_f64_cmp_asc);
+    return Ok(khres_new(cubic_type, roots));
+}
+
+# ---------------------------------------------------------------------------
+# Hijri (Islamic) tabular calendar
+# ---------------------------------------------------------------------------
+
+# Leap test in the 30-year cycle. rem_euclid is load-bearing for negative years.
+#must_use
+fn hijri_is_leap(year) {
+    var y = rem_euclid(year, 30);
+    if (y == 2) { return 1; }
+    if (y == 5) { return 1; }
+    if (y == 7) { return 1; }
+    if (y == 10) { return 1; }
+    if (y == 13) { return 1; }
+    if (y == 16) { return 1; }
+    if (y == 18) { return 1; }
+    if (y == 21) { return 1; }
+    if (y == 24) { return 1; }
+    if (y == 26) { return 1; }
+    if (y == 29) { return 1; }
+    return 0;
+}
+
+# Days in a Hijri year (354 common, 355 leap).
+#must_use
+fn hijri_year_days(year) {
+    var leap = hijri_is_leap(year);
+    if (leap == 1) { return 355; }
+    return 354;
+}
+
+# Position of a HijriMonth in the month order (== its value for 0..11).
+#must_use
+fn hijri_month_index(month) {
+    if (month < 0) { return 0; }
+    if (month >= 12) { return 0; }
+    return month;
+}
+
+# Convert a Julian Day Number to a Hijri date (tabular calendar).
+#must_use
+fn jdn_to_hijri(jdn) {
+    _islamic_trace("JDN to Hijri");
+    var days_since_epoch = f64_to(f64_floor(f64_sub(jdn, HIJRI_EPOCH_JDN)));
+
+    var cycles = div_euclid(days_since_epoch, HIJRI_30_YEAR_CYCLE_DAYS);
+    var remaining = rem_euclid(days_since_epoch, HIJRI_30_YEAR_CYCLE_DAYS);
+
+    var year = cycles * 30 + 1;
+
+    # Count complete years within the cycle.
+    while (1 == 1) {
+        var yd = hijri_year_days(year);
+        if (remaining < yd) { break; }
+        remaining = remaining - yd;
+        year = year + 1;
+    }
+
+    # Count complete months within the year.
+    var month_idx = 0;
+    while (1 == 1) {
+        var md = hijri_month_days(month_idx);
+        if (month_idx == 11 && hijri_is_leap(year) == 1) { md = 30; }
+        if (remaining < md) { break; }
+        remaining = remaining - md;
+        month_idx = month_idx + 1;
+        if (month_idx >= 12) { month_idx = 11; break; }
+    }
+
+    return hijri_date_new(year, month_idx, remaining + 1);
+}
+
+# Convert a Hijri date to a Julian Day Number (tabular calendar).
+#must_use
+fn hijri_to_jdn(date) {
+    _islamic_trace("Hijri to JDN");
+    var month = hijri_date_month(date);
+    var year = hijri_date_year(date);
+    var day = hijri_date_day(date);
+
+    var month_idx = hijri_month_index(month);
+
+    var max_day = hijri_month_days(month_idx);
+    if (month_idx == 11 && hijri_is_leap(year) == 1) { max_day = 30; }
+
+    if (day == 0 || day > max_day) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "day ");
+        str_builder_add_int(sb, day);
+        str_builder_add_cstr(sb, " out of range for ");
+        str_builder_add(sb, hijri_month_name(month));
+        str_builder_add_cstr(sb, " (max ");
+        str_builder_add_int(sb, max_day);
+        str_builder_add_cstr(sb, ")");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sb));
+    }
+
+    # Days from complete years.
+    var days = 0;
+    var y = 1;
+    while (y < year) {
+        days = days + hijri_year_days(y);
+        y = y + 1;
+    }
+
+    # Days from complete months in this year.
+    var m = 0;
+    while (m < month_idx) {
+        var md2 = hijri_month_days(m);
+        if (m == 11 && hijri_is_leap(year) == 1) { md2 = 30; }
+        days = days + md2;
+        m = m + 1;
+    }
+
+    # Days within the month.
+    days = days + (day - 1);
+
+    return Ok(f64_add(HIJRI_EPOCH_JDN, f64_from(days)));
+}

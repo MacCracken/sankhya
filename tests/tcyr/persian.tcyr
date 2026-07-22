@@ -1,0 +1,143 @@
+# persian.tcyr — integration suite for the Persian (Solar Hijri) calendar port.
+# Ports every non-serde #[cfg(test)] test from rust-old/src/persian.rs.
+
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/gregorian.cyr"
+include "src/persian.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# f64::EPSILON = 2.220446049250313e-16 (Rust round-trip tolerance). The JDN
+# arithmetic here is exact (integer/half-integer), so differences are 0.0.
+var TOL_EPS = 0;
+fn persian_test_init() {
+    TOL_EPS = f64_parse("0.0000000000000002220446049250313");
+    return 0;
+}
+
+# JDN half-integer helper: whole + 0.5
+fn jdn_half(whole) {
+    return f64_add(f64_from(whole), f64_div(f64_from(1), f64_from(2)));
+}
+
+fn main() {
+    alloc_init();
+    gregorian_init();
+    persian_init();
+    persian_test_init();
+    println("=== sankhya persian test suite ===");
+
+    # ---- epoch_roundtrip ----
+    var d = jdn_to_persian(PERSIAN_EPOCH_JDN);
+    assert_eq(pd_year(d), 1, "epoch year=1");
+    assert_eq(pd_month(d), PM_FARVARDIN, "epoch month=Farvardin");
+    assert_eq(pd_day(d), 1, "epoch day=1");
+    var r = persian_to_jdn(d);
+    ok(is_ok(r), "epoch persian_to_jdn ok");
+    var j = result_unwrap(r);
+    ok(f64_approx_eq(j, PERSIAN_EPOCH_JDN, TOL_EPS), "epoch jdn roundtrip");
+
+    # ---- known_date_nowruz_1404 ----
+    # 1 Farvardin 1404 AP = March 21 2025 = JDN 2460755.5
+    var d1404 = jdn_to_persian(jdn_half(2460755));
+    assert_eq(pd_year(d1404), 1404, "1404 year");
+    assert_eq(pd_month(d1404), PM_FARVARDIN, "1404 month");
+    assert_eq(pd_day(d1404), 1, "1404 day");
+
+    # ---- known_date_nowruz_1400 ----
+    # 1 Farvardin 1400 AP = March 21 2021 = JDN 2459294.5
+    var d1400 = jdn_to_persian(jdn_half(2459294));
+    assert_eq(pd_year(d1400), 1400, "1400 year");
+    assert_eq(pd_month(d1400), PM_FARVARDIN, "1400 month");
+    assert_eq(pd_day(d1400), 1, "1400 day");
+
+    # ---- leap_year_known ----
+    assert_eq(persian_is_leap(1399), 1, "1399 leap");
+    assert_eq(persian_is_leap(1403), 1, "1403 leap");
+    assert_eq(persian_is_leap(1408), 1, "1408 leap");
+    assert_eq(persian_is_leap(1400), 0, "1400 common");
+    assert_eq(persian_is_leap(1401), 0, "1401 common");
+    assert_eq(persian_is_leap(1402), 0, "1402 common");
+
+    # ---- year_days_values ----
+    assert_eq(persian_year_days(1399), 366, "1399 -> 366 days");
+    assert_eq(persian_year_days(1400), 365, "1400 -> 365 days");
+
+    # ---- esfand_leap_30_days ----
+    var e1 = persian_date_new(1399, PM_ESFAND, 30);
+    var re1 = persian_to_jdn(e1);
+    ok(is_ok(re1), "Esfand 30 valid in leap 1399");
+
+    # ---- esfand_common_rejects_30 ----
+    var e2 = persian_date_new(1400, PM_ESFAND, 30);
+    var re2 = persian_to_jdn(e2);
+    ok(is_err_result(re2), "Esfand 30 rejected in common 1400");
+
+    # ---- invalid_day_zero ----
+    var e3 = persian_date_new(1400, PM_FARVARDIN, 0);
+    var re3 = persian_to_jdn(e3);
+    ok(is_err_result(re3), "day 0 rejected");
+
+    # ---- roundtrip_sequential_days ----
+    # 1500 consecutive days from Nowruz 1400 round-trip within EPSILON.
+    var start = jdn_half(2459294);
+    var off = 0;
+    var rt_ok = 1;
+    while (off < 1500) {
+        var jj = f64_add(start, f64_from(off));
+        var dd = jdn_to_persian(jj);
+        var rr = persian_to_jdn(dd);
+        if (is_ok(rr) == 1) {
+            var bk = result_unwrap(rr);
+            if (f64_approx_eq(bk, jj, TOL_EPS) == 0) { rt_ok = 0; }
+        }
+        if (is_ok(rr) == 0) { rt_ok = 0; }
+        off = off + 1;
+    }
+    assert_eq(rt_ok, 1, "1500-day sequential roundtrip");
+
+    # ---- roundtrip_across_leap_boundary ----
+    var lb = persian_date_new(1399, PM_ESFAND, 30);
+    var rlb = persian_to_jdn(lb);
+    ok(is_ok(rlb), "last_1399 ok");
+    var last_1399 = result_unwrap(rlb);
+    var fb = persian_date_new(1400, PM_FARVARDIN, 1);
+    var rfb = persian_to_jdn(fb);
+    ok(is_ok(rfb), "first_1400 ok");
+    var first_1400 = result_unwrap(rfb);
+    # (first_1400 - last_1399 - 1.0).abs() < EPSILON
+    var diff = f64_sub(f64_sub(first_1400, last_1399), f64_from(1));
+    ok(f64_approx_eq(diff, f64_from(0), TOL_EPS), "leap boundary adjacency (1 day)");
+
+    var db1 = jdn_to_persian(last_1399);
+    assert_eq(pd_year(db1), 1399, "db1 year=1399");
+    assert_eq(pd_month(db1), PM_ESFAND, "db1 month=Esfand");
+    assert_eq(pd_day(db1), 30, "db1 day=30");
+
+    var db2 = jdn_to_persian(first_1400);
+    assert_eq(pd_year(db2), 1400, "db2 year=1400");
+    assert_eq(pd_month(db2), PM_FARVARDIN, "db2 month=Farvardin");
+    assert_eq(pd_day(db2), 1, "db2 day=1");
+
+    # ---- display_format ----
+    var dfd = persian_date_new(1404, PM_FARVARDIN, 1);
+    var dfs = persian_date_to_str(dfd);
+    ok(str_eq_cstr(dfs, "1 Farvardin 1404 AP"), "display '1 Farvardin 1404 AP'");
+
+    # ---- month_display ----
+    ok(str_eq_cstr(persian_month_to_str(PM_FARVARDIN), "Farvardin"), "month Farvardin");
+    ok(str_eq_cstr(persian_month_to_str(PM_ESFAND), "Esfand"), "month Esfand");
+    ok(str_eq_cstr(persian_month_to_str(PM_MEHR), "Mehr"), "month Mehr");
+
+    # ---- logging init doesn't crash ----
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

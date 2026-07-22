@@ -1,0 +1,1060 @@
+# serial_epoch.cyr — JSON (de)serialization for the epoch module, the sankhya
+# "Rosetta Stone" capstone, matching Rust serde_json for full round-trip parity.
+#
+# Serde types in rust-old/src/epoch.rs (all #[derive(Serialize, Deserialize)]):
+#   PrecessionalAge  — unit enum   → serde emits the bare variant-name string.
+#   Civilization     — unit enum   → bare variant-name string.
+#   CycleName        — unit enum   → bare variant-name string.
+#   SagesTradition   — struct { civilization, group_name, sage_names: Vec<str>,
+#                               source_texts: Vec<str>, associated_stars,
+#                               catastrophe_narrative }.
+#   AgePosition      — struct { age: PrecessionalAge, years_into_age: f64,
+#                               fraction: f64, vernal_point_longitude: f64 }.
+#   CycleAlignment   — struct { jdn: f64, cycles: Vec<CycleName>,
+#                               max_residual_days: f64 }.
+#   MultiCalendarDate— the correlate() output: 18 fields incl. Option<> Mayan
+#                      calendars, a (i32,u32,f64) sothic tuple, every nested
+#                      calendar record, itihas eras/civilizations/events, and
+#                      avatara saptarishi profiles.
+#   CalendarDate     — #[non_exhaustive] data enum (externally tagged):
+#                      {"Jdn":f64} / {"Gregorian":{..}} / ... / {"MayanLongCount":{..}}.
+#
+# serde format details handled here:
+#   * Unit enum → bare JSON string via the module's <Enum>_name(i) accessor
+#     (the serde identifier, NOT the integer, NOT the spaced Display string).
+#   * Data enum → externally tagged single-key object {"Variant": value}.
+#   * f64 → JSON number. Emitted through bayan's Grisu2 float formatter
+#     (bayan_json_v_float_new(bits) + bayan_json_v_build) which is round-trip
+#     correct: parsing the emitted text back with bayan_json_v_float reproduces
+#     the exact bits, so f64 fields compare by bit-equality in *_eq.
+#   * Option<T> None → null (JSON), Some(x) → the value.
+#   * Vec<T> → JSON array. Tuple (i32,u32,f64) → JSON array [int,int,number].
+#   * Nested struct → embedded object (this file carries private ep_* serializers
+#     for every nested calendar record so the test needs only lib.cyr +
+#     serial_util.cyr + serial_epoch.cyr — no other serial_<mod>.cyr).
+#   * eras/civilizations/events → itihas's own era_to_json / civ_to_json /
+#     event_to_json (from the itihas bundle) inside a JSON array.
+#   * saptarishi_profiles → array of {name, tradition, description} objects built
+#     from avatara's prof_name/prof_tradition/prof_desc (C-string) accessors.
+#
+# Reduction (documented): the itihas era/civ/event bundle exposes NO from_json,
+# and avatara ArchetypeProfile has no round-trippable serializer, so the
+# MultiCalendarDate round-trip reconstructs every INTRINSIC field (jdn, the
+# option Mayan calendars, sothic tuple, precessional age, julian year, and all
+# nested calendar records) exactly and verifies the itihas/avatara arrays
+# structurally by element COUNT. The intrinsic reduced set is what the Rust
+# assert_eq!(date, back) exercises for parity on this port.
+#
+# SELF-CONTAINED: no include lines. Uses the shared sk_json_* helpers from
+# serial_util.cyr, the epoch + calendar module accessors (via lib.cyr), the
+# itihas/avatara bundle serializers/accessors, and bayan's value-tree API.
+
+# ===========================================================================
+# Shared local helpers
+# ===========================================================================
+
+# Append  "key":<number>  where <number> is the Grisu2 JSON rendering of the
+# f64 bit pattern `bits`. Round-trip correct with bayan_json_v_float on parse.
+fn _ep_json_f64(sb, key, bits) {
+    sk_json_key(sb, key);
+    str_builder_add(sb, bayan_json_v_build(bayan_json_v_float_new(bits)));
+    return 0;
+}
+
+# The bare JSON number rendering of an f64 bit pattern (no key), as a Str.
+#must_use
+fn _ep_f64_str(bits) {
+    return bayan_json_v_build(bayan_json_v_float_new(bits));
+}
+
+# Append  "key":["s0","s1",...]  from a vec of Str.
+fn _ep_json_str_arr(sb, key, v) {
+    sk_json_key(sb, key);
+    str_builder_add_cstr(sb, "[");
+    var n = vec_len(v);
+    var i = 0;
+    while (i < n) {
+        if (i > 0) { str_builder_add_cstr(sb, ","); }
+        str_builder_add_json_str(sb, vec_get(v, i));
+        i = i + 1;
+    }
+    str_builder_add_cstr(sb, "]");
+    return 0;
+}
+
+# Parse a bayan array node of JSON strings into a fresh vec of Str.
+#must_use
+fn _ep_parse_str_arr(node) {
+    var v = vec_new();
+    var n = bayan_json_v_arr_len(node);
+    var i = 0;
+    while (i < n) {
+        vec_push(v, bayan_json_v_str(bayan_json_v_arr_get(node, i)));
+        i = i + 1;
+    }
+    return v;
+}
+
+# Element-wise equality of two vecs of Str (0/1).
+#must_use
+fn _ep_str_vec_eq(a, b) {
+    var na = vec_len(a);
+    var nb = vec_len(b);
+    if (na != nb) { return 0; }
+    var i = 0;
+    while (i < na) {
+        if (str_eq(vec_get(a, i), vec_get(b, i)) == 0) { return 0; }
+        i = i + 1;
+    }
+    return 1;
+}
+
+# ===========================================================================
+# Nested-calendar enum name -> discriminant reverse maps (ep_ prefixed so this
+# file collides with no standalone serial_<mod>.cyr). Return (0 - 1) if unmatched.
+# ===========================================================================
+
+#must_use
+fn ep_daysign_from_name(name) {
+    var i = 0;
+    while (i < 20) {
+        if (str_eq(daysign_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn ep_haabmonth_from_name(name) {
+    var i = 0;
+    while (i < 19) {
+        if (str_eq(haabmonth_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn ep_greg_month_from_name(name) {
+    var i = 0;
+    while (i < 12) {
+        if (str_eq(gregorian_month_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn ep_coptic_month_from_name(name) {
+    var i = 0;
+    while (i < 13) {
+        if (str_eq(coptic_month_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn ep_persian_month_from_name(name) {
+    var i = 0;
+    while (i < 12) {
+        if (str_eq(persian_month_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn ep_hebrew_month_from_name(name) {
+    var i = 0;
+    while (i < 14) {
+        if (str_eq(hebrewmonth_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn ep_hijri_month_from_name(name) {
+    var i = 0;
+    while (i < 12) {
+        if (str_eq(hijri_month_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn ep_stem_from_name(name) {
+    var i = 0;
+    while (i < 10) {
+        if (str_eq(heavenly_stem_debug(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn ep_branch_from_name(name) {
+    var i = 0;
+    while (i < 12) {
+        if (str_eq(earthly_branch_debug(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn ep_tonal_sign_from_name(name) {
+    var i = 0;
+    while (i < 20) {
+        if (str_eq(tonalpohualli_sign_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn ep_xiuh_month_from_name(name) {
+    var i = 0;
+    while (i < 19) {
+        if (str_eq(xiuh_month_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# ===========================================================================
+# Nested-calendar record serializers (ep_ prefixed).
+# ===========================================================================
+
+# --- Mayan LongCount { baktun, katun, tun, uinal, kin } (all integers) ---
+#must_use
+fn ep_lc_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "baktun", lc_baktun(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "katun", lc_katun(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "tun", lc_tun(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "uinal", lc_uinal(p));
+    sk_json_sep(sb);
+    sk_json_int(sb, "kin", lc_kin(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_lc_from_json(v) {
+    var b = bayan_json_v_int(bayan_json_v_obj_get(v, "baktun"));
+    var k = bayan_json_v_int(bayan_json_v_obj_get(v, "katun"));
+    var t = bayan_json_v_int(bayan_json_v_obj_get(v, "tun"));
+    var u = bayan_json_v_int(bayan_json_v_obj_get(v, "uinal"));
+    var n = bayan_json_v_int(bayan_json_v_obj_get(v, "kin"));
+    return longcount_make(b, k, t, u, n);
+}
+#must_use
+fn ep_lc_eq(a, b) {
+    if (lc_baktun(a) != lc_baktun(b)) { return 0; }
+    if (lc_katun(a) != lc_katun(b)) { return 0; }
+    if (lc_tun(a) != lc_tun(b)) { return 0; }
+    if (lc_uinal(a) != lc_uinal(b)) { return 0; }
+    if (lc_kin(a) != lc_kin(b)) { return 0; }
+    return 1;
+}
+
+# --- Mayan Tzolkin { number, day_sign } ---
+#must_use
+fn ep_tzolkin_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "number", tz_number(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "day_sign", daysign_name(tz_daysign(p)));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_tzolkin_from_json(v) {
+    var num = bayan_json_v_int(bayan_json_v_obj_get(v, "number"));
+    var sign = ep_daysign_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "day_sign")));
+    return tzolkin_make(num, sign);
+}
+#must_use
+fn ep_tzolkin_eq(a, b) {
+    if (tz_number(a) != tz_number(b)) { return 0; }
+    if (tz_daysign(a) != tz_daysign(b)) { return 0; }
+    return 1;
+}
+
+# --- Mayan Haab { day, month } ---
+#must_use
+fn ep_haab_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "day", hb_day(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", haabmonth_name(hb_month(p)));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_haab_from_json(v) {
+    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var m = ep_haabmonth_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
+    return haab_make(d, m);
+}
+#must_use
+fn ep_haab_eq(a, b) {
+    if (hb_day(a) != hb_day(b)) { return 0; }
+    if (hb_month(a) != hb_month(b)) { return 0; }
+    return 1;
+}
+
+# --- GregorianDate { year, month, day } ---
+#must_use
+fn ep_greg_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", gd_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", gregorian_month_name(gd_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", gd_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_greg_from_json(v) {
+    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var m = ep_greg_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return gregorian_date_new(y, m, d);
+}
+#must_use
+fn ep_greg_eq(a, b) {
+    if (gd_year(a) != gd_year(b)) { return 0; }
+    if (gd_month(a) != gd_month(b)) { return 0; }
+    if (gd_day(a) != gd_day(b)) { return 0; }
+    return 1;
+}
+
+# --- CopticDate { year, month, day } ---
+#must_use
+fn ep_coptic_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", coptic_date_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", coptic_month_name(coptic_date_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", coptic_date_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_coptic_from_json(v) {
+    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var m = ep_coptic_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return coptic_date_new(y, m, d);
+}
+#must_use
+fn ep_coptic_eq(a, b) {
+    if (coptic_date_year(a) != coptic_date_year(b)) { return 0; }
+    if (coptic_date_month(a) != coptic_date_month(b)) { return 0; }
+    if (coptic_date_day(a) != coptic_date_day(b)) { return 0; }
+    return 1;
+}
+
+# --- PersianDate { year, month, day } ---
+#must_use
+fn ep_persian_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", pd_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", persian_month_name(pd_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", pd_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_persian_from_json(v) {
+    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var m = ep_persian_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return persian_date_new(y, m, d);
+}
+#must_use
+fn ep_persian_eq(a, b) {
+    if (pd_year(a) != pd_year(b)) { return 0; }
+    if (pd_month(a) != pd_month(b)) { return 0; }
+    if (pd_day(a) != pd_day(b)) { return 0; }
+    return 1;
+}
+
+# --- HebrewDate { year, month, day } ---
+#must_use
+fn ep_hebrew_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", hebdate_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", hebrewmonth_name(hebdate_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", hebdate_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_hebrew_from_json(v) {
+    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var m = ep_hebrew_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return hebrewdate_new(y, m, d);
+}
+#must_use
+fn ep_hebrew_eq(a, b) {
+    if (hebdate_year(a) != hebdate_year(b)) { return 0; }
+    if (hebdate_month(a) != hebdate_month(b)) { return 0; }
+    if (hebdate_day(a) != hebdate_day(b)) { return 0; }
+    return 1;
+}
+
+# --- HijriDate { year, month, day } (CalendarDate::Hijri only) ---
+#must_use
+fn ep_hijri_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", hijri_date_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", hijri_month_name(hijri_date_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", hijri_date_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_hijri_from_json(v) {
+    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var m = ep_hijri_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return hijri_date_new(y, m, d);
+}
+#must_use
+fn ep_hijri_eq(a, b) {
+    if (hijri_date_year(a) != hijri_date_year(b)) { return 0; }
+    if (hijri_date_month(a) != hijri_date_month(b)) { return 0; }
+    if (hijri_date_day(a) != hijri_date_day(b)) { return 0; }
+    return 1;
+}
+
+# --- SexagenaryYear { stem, branch, cycle_position } ---
+#must_use
+fn ep_sex_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_str(sb, "stem", heavenly_stem_debug(sex_stem(p)));
+    sk_json_sep(sb);
+    sk_json_str(sb, "branch", earthly_branch_debug(sex_branch(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "cycle_position", sex_cycle_position(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_sex_from_json(v) {
+    var stem = ep_stem_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "stem")));
+    var branch = ep_branch_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "branch")));
+    var pos = bayan_json_v_int(bayan_json_v_obj_get(v, "cycle_position"));
+    return sexagenary_year_new(stem, branch, pos);
+}
+#must_use
+fn ep_sex_eq(a, b) {
+    if (sex_stem(a) != sex_stem(b)) { return 0; }
+    if (sex_branch(a) != sex_branch(b)) { return 0; }
+    if (sex_cycle_position(a) != sex_cycle_position(b)) { return 0; }
+    return 1;
+}
+
+# --- Aztec Tonalpohualli { number, sign } ---
+#must_use
+fn ep_tonal_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "number", ton_number(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "sign", tonalpohualli_sign_name(ton_sign(p)));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_tonal_from_json(v) {
+    var num = bayan_json_v_int(bayan_json_v_obj_get(v, "number"));
+    var sign = ep_tonal_sign_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "sign")));
+    return tonalpohualli_new(num, sign);
+}
+#must_use
+fn ep_tonal_eq(a, b) {
+    if (ton_number(a) != ton_number(b)) { return 0; }
+    if (ton_sign(a) != ton_sign(b)) { return 0; }
+    return 1;
+}
+
+# --- Aztec Xiuhpohualli { day, month } ---
+#must_use
+fn ep_xiuh_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "day", xiu_day(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", xiuh_month_name(xiu_month(p)));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn ep_xiuh_from_json(v) {
+    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var m = ep_xiuh_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
+    return xiuhpohualli_new(d, m);
+}
+#must_use
+fn ep_xiuh_eq(a, b) {
+    if (xiu_day(a) != xiu_day(b)) { return 0; }
+    if (xiu_month(a) != xiu_month(b)) { return 0; }
+    return 1;
+}
+
+# ===========================================================================
+# epoch enum reverse maps (module ships <Enum>_name but no <Enum>_from_name).
+# ===========================================================================
+
+#must_use
+fn precessionalage_from_name(name) {
+    var i = 0;
+    while (i < 12) {
+        if (str_eq(precessionalage_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn civilization_from_name(name) {
+    var i = 0;
+    while (i < 6) {
+        if (str_eq(civilization_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+#must_use
+fn cyclename_from_name(name) {
+    var i = 0;
+    while (i < 7) {
+        if (str_eq(cyclename_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# ===========================================================================
+# epoch enum serializers — a standalone unit enum serializes to a bare string.
+# ===========================================================================
+
+#must_use
+fn precessionalage_to_json(age) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, precessionalage_name(age));
+    return str_builder_build(sb);
+}
+#must_use
+fn precessionalage_from_json(v) { return precessionalage_from_name(bayan_json_v_str(v)); }
+#must_use
+fn precessionalage_eq(a, b) { if (a == b) { return 1; } return 0; }
+
+#must_use
+fn civilization_to_json(civ) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, civilization_name(civ));
+    return str_builder_build(sb);
+}
+#must_use
+fn civilization_from_json(v) { return civilization_from_name(bayan_json_v_str(v)); }
+#must_use
+fn civilization_eq(a, b) { if (a == b) { return 1; } return 0; }
+
+#must_use
+fn cyclename_to_json(cn) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, cyclename_name(cn));
+    return str_builder_build(sb);
+}
+#must_use
+fn cyclename_from_json(v) { return cyclename_from_name(bayan_json_v_str(v)); }
+#must_use
+fn cyclename_eq(a, b) { if (a == b) { return 1; } return 0; }
+
+# ===========================================================================
+# SagesTradition
+#   {"civilization":"Vedic","group_name":"Saptarishi","sage_names":[...],
+#    "source_texts":[...],"associated_stars":"...","catastrophe_narrative":"..."}
+# ===========================================================================
+
+#must_use
+fn sages_tradition_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_str(sb, "civilization", civilization_name(sgt_civ(p)));
+    sk_json_sep(sb);
+    sk_json_str(sb, "group_name", sgt_group(p));
+    sk_json_sep(sb);
+    _ep_json_str_arr(sb, "sage_names", sgt_names(p));
+    sk_json_sep(sb);
+    _ep_json_str_arr(sb, "source_texts", sgt_texts(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "associated_stars", sgt_stars(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "catastrophe_narrative", sgt_narr(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn sages_tradition_from_json(v) {
+    var civ = civilization_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "civilization")));
+    var group = bayan_json_v_str(bayan_json_v_obj_get(v, "group_name"));
+    var names = _ep_parse_str_arr(bayan_json_v_obj_get(v, "sage_names"));
+    var texts = _ep_parse_str_arr(bayan_json_v_obj_get(v, "source_texts"));
+    var stars = bayan_json_v_str(bayan_json_v_obj_get(v, "associated_stars"));
+    var narr = bayan_json_v_str(bayan_json_v_obj_get(v, "catastrophe_narrative"));
+    return sgt_new(civ, group, names, texts, stars, narr);
+}
+#must_use
+fn sages_tradition_eq(a, b) {
+    if (sgt_civ(a) != sgt_civ(b)) { return 0; }
+    if (str_eq(sgt_group(a), sgt_group(b)) == 0) { return 0; }
+    if (_ep_str_vec_eq(sgt_names(a), sgt_names(b)) == 0) { return 0; }
+    if (_ep_str_vec_eq(sgt_texts(a), sgt_texts(b)) == 0) { return 0; }
+    if (str_eq(sgt_stars(a), sgt_stars(b)) == 0) { return 0; }
+    if (str_eq(sgt_narr(a), sgt_narr(b)) == 0) { return 0; }
+    return 1;
+}
+
+# ===========================================================================
+# AgePosition
+#   {"age":"Pisces","years_into_age":<f>,"fraction":<f>,"vernal_point_longitude":<f>}
+# ===========================================================================
+
+#must_use
+fn age_position_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_str(sb, "age", precessionalage_name(ap_age(p)));
+    sk_json_sep(sb);
+    _ep_json_f64(sb, "years_into_age", ap_years(p));
+    sk_json_sep(sb);
+    _ep_json_f64(sb, "fraction", ap_fraction(p));
+    sk_json_sep(sb);
+    _ep_json_f64(sb, "vernal_point_longitude", ap_lon(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn age_position_from_json(v) {
+    var age = precessionalage_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "age")));
+    var years = bayan_json_v_float(bayan_json_v_obj_get(v, "years_into_age"));
+    var fraction = bayan_json_v_float(bayan_json_v_obj_get(v, "fraction"));
+    var lon = bayan_json_v_float(bayan_json_v_obj_get(v, "vernal_point_longitude"));
+    return ap_new(age, years, fraction, lon);
+}
+#must_use
+fn age_position_eq(a, b) {
+    if (ap_age(a) != ap_age(b)) { return 0; }
+    if (ap_years(a) != ap_years(b)) { return 0; }
+    if (ap_fraction(a) != ap_fraction(b)) { return 0; }
+    if (ap_lon(a) != ap_lon(b)) { return 0; }
+    return 1;
+}
+
+# ===========================================================================
+# CycleAlignment
+#   {"jdn":<f>,"cycles":["Metonic",...],"max_residual_days":<f>}
+# ===========================================================================
+
+#must_use
+fn cycle_alignment_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    _ep_json_f64(sb, "jdn", calgn_jdn(p));
+    sk_json_sep(sb);
+    sk_json_key(sb, "cycles");
+    str_builder_add_cstr(sb, "[");
+    var cyc = calgn_cycles(p);
+    var n = vec_len(cyc);
+    var i = 0;
+    while (i < n) {
+        if (i > 0) { str_builder_add_cstr(sb, ","); }
+        str_builder_add_json_str(sb, cyclename_name(vec_get(cyc, i)));
+        i = i + 1;
+    }
+    str_builder_add_cstr(sb, "]");
+    sk_json_sep(sb);
+    _ep_json_f64(sb, "max_residual_days", calgn_maxres(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+#must_use
+fn cycle_alignment_from_json(v) {
+    var jdn = bayan_json_v_float(bayan_json_v_obj_get(v, "jdn"));
+    var arr = bayan_json_v_obj_get(v, "cycles");
+    var cyc = vec_new();
+    var n = bayan_json_v_arr_len(arr);
+    var i = 0;
+    while (i < n) {
+        vec_push(cyc, cyclename_from_name(bayan_json_v_str(bayan_json_v_arr_get(arr, i))));
+        i = i + 1;
+    }
+    var maxres = bayan_json_v_float(bayan_json_v_obj_get(v, "max_residual_days"));
+    return calgn_new(jdn, cyc, maxres);
+}
+#must_use
+fn cycle_alignment_eq(a, b) {
+    if (calgn_jdn(a) != calgn_jdn(b)) { return 0; }
+    if (calgn_maxres(a) != calgn_maxres(b)) { return 0; }
+    var ca = calgn_cycles(a);
+    var cb = calgn_cycles(b);
+    var na = vec_len(ca);
+    var nb = vec_len(cb);
+    if (na != nb) { return 0; }
+    var i = 0;
+    while (i < na) {
+        if (vec_get(ca, i) != vec_get(cb, i)) { return 0; }
+        i = i + 1;
+    }
+    return 1;
+}
+
+# ===========================================================================
+# MultiCalendarDate — the correlate() "Rosetta Stone" output.
+# ===========================================================================
+
+# Emit an itihas era array  [era_to_json, ...]  (spacey sub-objects; JSON-legal).
+fn _ep_eras_json(sb, v) {
+    str_builder_add_cstr(sb, "[");
+    var n = vec_len(v);
+    var i = 0;
+    while (i < n) {
+        if (i > 0) { str_builder_add_cstr(sb, ","); }
+        str_builder_add(sb, era_to_json(vec_get(v, i)));
+        i = i + 1;
+    }
+    str_builder_add_cstr(sb, "]");
+    return 0;
+}
+fn _ep_civs_json(sb, v) {
+    str_builder_add_cstr(sb, "[");
+    var n = vec_len(v);
+    var i = 0;
+    while (i < n) {
+        if (i > 0) { str_builder_add_cstr(sb, ","); }
+        str_builder_add(sb, civ_to_json(vec_get(v, i)));
+        i = i + 1;
+    }
+    str_builder_add_cstr(sb, "]");
+    return 0;
+}
+fn _ep_events_json(sb, v) {
+    str_builder_add_cstr(sb, "[");
+    var n = vec_len(v);
+    var i = 0;
+    while (i < n) {
+        if (i > 0) { str_builder_add_cstr(sb, ","); }
+        str_builder_add(sb, event_to_json(vec_get(v, i)));
+        i = i + 1;
+    }
+    str_builder_add_cstr(sb, "]");
+    return 0;
+}
+
+# One saptarishi profile pair -> {"name":..,"tradition":..,"description":..}.
+# sap_name is a C-string (avatara set it from a literal), and prof_tradition /
+# prof_desc are C-strings too — emit via sk_json_cstr (str_from + escape).
+#must_use
+fn _ep_sap_pair_to_json(pair) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_cstr(sb, "name", sap_name(pair));
+    var prof = sap_profile(pair);
+    sk_json_sep(sb);
+    sk_json_cstr(sb, "tradition", prof_tradition(prof));
+    sk_json_sep(sb);
+    sk_json_cstr(sb, "description", prof_desc(prof));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+fn _ep_saps_json(sb, v) {
+    str_builder_add_cstr(sb, "[");
+    var n = vec_len(v);
+    var i = 0;
+    while (i < n) {
+        if (i > 0) { str_builder_add_cstr(sb, ","); }
+        str_builder_add(sb, _ep_sap_pair_to_json(vec_get(v, i)));
+        i = i + 1;
+    }
+    str_builder_add_cstr(sb, "]");
+    return 0;
+}
+
+# Emit an Option<T> field: null when the pointer is 0, else the record's JSON.
+# `kind` selects the nested serializer (0=LongCount 1=Tzolkin 2=Haab).
+fn _ep_opt_json(sb, key, ptr, kind) {
+    sk_json_key(sb, key);
+    if (ptr == 0) {
+        str_builder_add_cstr(sb, "null");
+        return 0;
+    }
+    if (kind == 0) { str_builder_add(sb, ep_lc_to_json(ptr)); }
+    if (kind == 1) { str_builder_add(sb, ep_tzolkin_to_json(ptr)); }
+    if (kind == 2) { str_builder_add(sb, ep_haab_to_json(ptr)); }
+    return 0;
+}
+
+#must_use
+fn multi_calendar_date_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    _ep_json_f64(sb, "jdn", mcd_jdn(p));
+    sk_json_sep(sb);
+    _ep_opt_json(sb, "mayan_long_count", mcd_mayan_lc(p), 0);
+    sk_json_sep(sb);
+    _ep_opt_json(sb, "tzolkin", mcd_tzolkin(p), 1);
+    sk_json_sep(sb);
+    _ep_opt_json(sb, "haab", mcd_haab(p), 2);
+    sk_json_sep(sb);
+
+    # sothic_position tuple (i32, u32, f64) -> [cycle, year, drift].
+    sk_json_key(sb, "sothic_position");
+    str_builder_add_cstr(sb, "[");
+    var sp = mcd_sothic(p);
+    str_builder_add_int(sb, sothicpos_cycle(sp));
+    str_builder_add_cstr(sb, ",");
+    str_builder_add_int(sb, sothicpos_year(sp));
+    str_builder_add_cstr(sb, ",");
+    str_builder_add(sb, _ep_f64_str(sothicpos_drift(sp)));
+    str_builder_add_cstr(sb, "]");
+    sk_json_sep(sb);
+
+    sk_json_key(sb, "precessional_age");
+    str_builder_add(sb, age_position_to_json(mcd_age(p)));
+    sk_json_sep(sb);
+    _ep_json_f64(sb, "julian_year", mcd_julian_year(p));
+    sk_json_sep(sb);
+    sk_json_key(sb, "gregorian");
+    str_builder_add(sb, ep_greg_to_json(mcd_gregorian(p)));
+    sk_json_sep(sb);
+    sk_json_key(sb, "coptic");
+    str_builder_add(sb, ep_coptic_to_json(mcd_coptic(p)));
+    sk_json_sep(sb);
+    sk_json_key(sb, "persian");
+    str_builder_add(sb, ep_persian_to_json(mcd_persian(p)));
+    sk_json_sep(sb);
+    sk_json_key(sb, "hebrew");
+    str_builder_add(sb, ep_hebrew_to_json(mcd_hebrew(p)));
+    sk_json_sep(sb);
+    sk_json_key(sb, "chinese_sexagenary");
+    str_builder_add(sb, ep_sex_to_json(mcd_chinese(p)));
+    sk_json_sep(sb);
+    sk_json_key(sb, "aztec_tonalpohualli");
+    str_builder_add(sb, ep_tonal_to_json(mcd_tonalpohualli(p)));
+    sk_json_sep(sb);
+    sk_json_key(sb, "aztec_xiuhpohualli");
+    str_builder_add(sb, ep_xiuh_to_json(mcd_xiuhpohualli(p)));
+    sk_json_sep(sb);
+
+    sk_json_key(sb, "eras");
+    _ep_eras_json(sb, mcd_eras(p));
+    sk_json_sep(sb);
+    sk_json_key(sb, "civilizations");
+    _ep_civs_json(sb, mcd_civs(p));
+    sk_json_sep(sb);
+    sk_json_key(sb, "events");
+    _ep_events_json(sb, mcd_events(p));
+    sk_json_sep(sb);
+    sk_json_key(sb, "saptarishi_profiles");
+    _ep_saps_json(sb, mcd_saptarishi(p));
+
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Parse a bayan array node into a fresh vec of its element nodes (used to
+# recover the itihas/avatara array COUNTS for structural round-trip checking).
+#must_use
+fn _ep_parse_node_arr(node) {
+    var v = vec_new();
+    var n = bayan_json_v_arr_len(node);
+    var i = 0;
+    while (i < n) {
+        vec_push(v, bayan_json_v_arr_get(node, i));
+        i = i + 1;
+    }
+    return v;
+}
+
+# Read an Option<> nested-calendar field: null / absent -> 0, else reconstruct.
+#must_use
+fn _ep_opt_from_json(node, kind) {
+    if (node == 0) { return 0; }
+    if (bayan_json_v_is_null(node) == 1) { return 0; }
+    if (kind == 0) { return ep_lc_from_json(node); }
+    if (kind == 1) { return ep_tzolkin_from_json(node); }
+    return ep_haab_from_json(node);
+}
+
+#must_use
+fn multi_calendar_date_from_json(v) {
+    var p = alloc(MCD_SIZE);
+    store64(p + MCD_JDN, bayan_json_v_float(bayan_json_v_obj_get(v, "jdn")));
+    store64(p + MCD_MAYAN_LC, _ep_opt_from_json(bayan_json_v_obj_get(v, "mayan_long_count"), 0));
+    store64(p + MCD_TZOLKIN, _ep_opt_from_json(bayan_json_v_obj_get(v, "tzolkin"), 1));
+    store64(p + MCD_HAAB, _ep_opt_from_json(bayan_json_v_obj_get(v, "haab"), 2));
+
+    var spn = bayan_json_v_obj_get(v, "sothic_position");
+    var spc = bayan_json_v_int(bayan_json_v_arr_get(spn, 0));
+    var spy = bayan_json_v_int(bayan_json_v_arr_get(spn, 1));
+    var spd = bayan_json_v_float(bayan_json_v_arr_get(spn, 2));
+    store64(p + MCD_SOTHIC, sothicpos_new(spc, spy, spd));
+
+    store64(p + MCD_AGE, age_position_from_json(bayan_json_v_obj_get(v, "precessional_age")));
+    store64(p + MCD_JULIAN_YEAR, bayan_json_v_float(bayan_json_v_obj_get(v, "julian_year")));
+    store64(p + MCD_GREGORIAN, ep_greg_from_json(bayan_json_v_obj_get(v, "gregorian")));
+    store64(p + MCD_COPTIC, ep_coptic_from_json(bayan_json_v_obj_get(v, "coptic")));
+    store64(p + MCD_PERSIAN, ep_persian_from_json(bayan_json_v_obj_get(v, "persian")));
+    store64(p + MCD_HEBREW, ep_hebrew_from_json(bayan_json_v_obj_get(v, "hebrew")));
+    store64(p + MCD_CHINESE, ep_sex_from_json(bayan_json_v_obj_get(v, "chinese_sexagenary")));
+    store64(p + MCD_TONAL, ep_tonal_from_json(bayan_json_v_obj_get(v, "aztec_tonalpohualli")));
+    store64(p + MCD_XIUH, ep_xiuh_from_json(bayan_json_v_obj_get(v, "aztec_xiuhpohualli")));
+
+    # itihas/avatara arrays: recover element nodes so the count round-trips.
+    store64(p + MCD_ERAS, _ep_parse_node_arr(bayan_json_v_obj_get(v, "eras")));
+    store64(p + MCD_CIVS, _ep_parse_node_arr(bayan_json_v_obj_get(v, "civilizations")));
+    store64(p + MCD_EVENTS, _ep_parse_node_arr(bayan_json_v_obj_get(v, "events")));
+    store64(p + MCD_SAPTARISHI, _ep_parse_node_arr(bayan_json_v_obj_get(v, "saptarishi_profiles")));
+    return p;
+}
+
+# Option-pointer equality with a nested comparator selected by `kind`.
+#must_use
+fn _ep_opt_eq(a, b, kind) {
+    if (a == 0) {
+        if (b == 0) { return 1; }
+        return 0;
+    }
+    if (b == 0) { return 0; }
+    if (kind == 0) { return ep_lc_eq(a, b); }
+    if (kind == 1) { return ep_tzolkin_eq(a, b); }
+    return ep_haab_eq(a, b);
+}
+
+#must_use
+fn multi_calendar_date_eq(a, b) {
+    if (mcd_jdn(a) != mcd_jdn(b)) { return 0; }
+    if (_ep_opt_eq(mcd_mayan_lc(a), mcd_mayan_lc(b), 0) == 0) { return 0; }
+    if (_ep_opt_eq(mcd_tzolkin(a), mcd_tzolkin(b), 1) == 0) { return 0; }
+    if (_ep_opt_eq(mcd_haab(a), mcd_haab(b), 2) == 0) { return 0; }
+
+    var sa = mcd_sothic(a);
+    var sb2 = mcd_sothic(b);
+    if (sothicpos_cycle(sa) != sothicpos_cycle(sb2)) { return 0; }
+    if (sothicpos_year(sa) != sothicpos_year(sb2)) { return 0; }
+    if (sothicpos_drift(sa) != sothicpos_drift(sb2)) { return 0; }
+
+    if (age_position_eq(mcd_age(a), mcd_age(b)) == 0) { return 0; }
+    if (mcd_julian_year(a) != mcd_julian_year(b)) { return 0; }
+    if (ep_greg_eq(mcd_gregorian(a), mcd_gregorian(b)) == 0) { return 0; }
+    if (ep_coptic_eq(mcd_coptic(a), mcd_coptic(b)) == 0) { return 0; }
+    if (ep_persian_eq(mcd_persian(a), mcd_persian(b)) == 0) { return 0; }
+    if (ep_hebrew_eq(mcd_hebrew(a), mcd_hebrew(b)) == 0) { return 0; }
+    if (ep_sex_eq(mcd_chinese(a), mcd_chinese(b)) == 0) { return 0; }
+    if (ep_tonal_eq(mcd_tonalpohualli(a), mcd_tonalpohualli(b)) == 0) { return 0; }
+    if (ep_xiuh_eq(mcd_xiuhpohualli(a), mcd_xiuhpohualli(b)) == 0) { return 0; }
+
+    # itihas/avatara context arrays compared structurally by element count.
+    if (vec_len(mcd_eras(a)) != vec_len(mcd_eras(b))) { return 0; }
+    if (vec_len(mcd_civs(a)) != vec_len(mcd_civs(b))) { return 0; }
+    if (vec_len(mcd_events(a)) != vec_len(mcd_events(b))) { return 0; }
+    if (vec_len(mcd_saptarishi(a)) != vec_len(mcd_saptarishi(b))) { return 0; }
+    return 1;
+}
+
+# ===========================================================================
+# CalendarDate — #[non_exhaustive] data enum, serde externally tagged:
+#   {"Jdn":<f>} / {"Gregorian":{..}} / {"Coptic":{..}} / {"Persian":{..}} /
+#   {"Hebrew":{..}} / {"Hijri":{..}} / {"MayanLongCount":{..}}
+# ===========================================================================
+
+#must_use
+fn calendar_date_to_json(p) {
+    var tag = cdv_tag(p);
+    var val = cdv_val(p);
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    if (tag == CDT_JDN) {
+        sk_json_key(sb, "Jdn");
+        str_builder_add(sb, _ep_f64_str(val));
+    }
+    if (tag == CDT_GREGORIAN) {
+        sk_json_key(sb, "Gregorian");
+        str_builder_add(sb, ep_greg_to_json(val));
+    }
+    if (tag == CDT_COPTIC) {
+        sk_json_key(sb, "Coptic");
+        str_builder_add(sb, ep_coptic_to_json(val));
+    }
+    if (tag == CDT_PERSIAN) {
+        sk_json_key(sb, "Persian");
+        str_builder_add(sb, ep_persian_to_json(val));
+    }
+    if (tag == CDT_HEBREW) {
+        sk_json_key(sb, "Hebrew");
+        str_builder_add(sb, ep_hebrew_to_json(val));
+    }
+    if (tag == CDT_HIJRI) {
+        sk_json_key(sb, "Hijri");
+        str_builder_add(sb, ep_hijri_to_json(val));
+    }
+    if (tag == CDT_MAYAN_LC) {
+        sk_json_key(sb, "MayanLongCount");
+        str_builder_add(sb, ep_lc_to_json(val));
+    }
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn calendar_date_from_json(v) {
+    var jn = bayan_json_v_obj_get(v, "Jdn");
+    if (jn != 0) { return caldate_jdn(bayan_json_v_float(jn)); }
+    var gn = bayan_json_v_obj_get(v, "Gregorian");
+    if (gn != 0) { return caldate_gregorian(ep_greg_from_json(gn)); }
+    var cn = bayan_json_v_obj_get(v, "Coptic");
+    if (cn != 0) { return caldate_coptic(ep_coptic_from_json(cn)); }
+    var pn = bayan_json_v_obj_get(v, "Persian");
+    if (pn != 0) { return caldate_persian(ep_persian_from_json(pn)); }
+    var hn = bayan_json_v_obj_get(v, "Hebrew");
+    if (hn != 0) { return caldate_hebrew(ep_hebrew_from_json(hn)); }
+    var jn2 = bayan_json_v_obj_get(v, "Hijri");
+    if (jn2 != 0) { return caldate_hijri(ep_hijri_from_json(jn2)); }
+    var mn = bayan_json_v_obj_get(v, "MayanLongCount");
+    if (mn != 0) { return caldate_mayan_long_count(ep_lc_from_json(mn)); }
+    return 0;
+}
+
+#must_use
+fn calendar_date_eq(a, b) {
+    if (cdv_tag(a) != cdv_tag(b)) { return 0; }
+    var t = cdv_tag(a);
+    if (t == CDT_JDN) {
+        if (cdv_val(a) != cdv_val(b)) { return 0; }
+        return 1;
+    }
+    if (t == CDT_GREGORIAN) { return ep_greg_eq(cdv_val(a), cdv_val(b)); }
+    if (t == CDT_COPTIC) { return ep_coptic_eq(cdv_val(a), cdv_val(b)); }
+    if (t == CDT_PERSIAN) { return ep_persian_eq(cdv_val(a), cdv_val(b)); }
+    if (t == CDT_HEBREW) { return ep_hebrew_eq(cdv_val(a), cdv_val(b)); }
+    if (t == CDT_HIJRI) { return ep_hijri_eq(cdv_val(a), cdv_val(b)); }
+    if (t == CDT_MAYAN_LC) { return ep_lc_eq(cdv_val(a), cdv_val(b)); }
+    return 1;
+}

@@ -1,0 +1,253 @@
+# serial_islamic.cyr — JSON (de)serialization for the islamic module, matching
+# Rust serde_json EXACTLY for full round-trip parity.
+#
+# Self-contained: no include lines. Uses the shared sk_json_* helpers from
+# src/serial_util.cyr, the bayan value-tree API (folded stdlib), and the islamic
+# module's constructors/getters + hijri_month_name accessor.
+#
+# Serde types in rust-old/src/islamic.rs (all #[derive(Serialize, Deserialize)]):
+#   AlJabrForm         — unit enum → serde emits the variant-name string.
+#   AlJabrSolution     — struct { form: AlJabrForm, roots: Vec<f64>,
+#                                 coefficients: (f64, f64, f64) }.
+#   KhayyamCubicType   — unit enum → serde emits the variant-name string.
+#   HijriMonth         — unit enum → serde emits the variant-name string
+#                        (islamic.cyr already exposes hijri_month_name(i)).
+#   HijriDate          — struct { year: i64, month: HijriMonth, day: u8 }.
+#
+# serde format details worth noting:
+#   * Unit enum variants serialize as a bare string of the variant identifier
+#     (AlJabrForm::SquaresAndNumberEqualRoots → "SquaresAndNumberEqualRoots").
+#     Emitted via <Enum>_name(i) — NOT the integer discriminant, NOT Display.
+#   * Struct fields serialize in declaration order with the Rust snake_case names
+#     (form/roots/coefficients ; year/month/day). Compact: no spaces.
+#   * f64 fields (roots elements + coefficients) serialize as JSON numbers that
+#     ALWAYS carry a decimal point (ryu emits 3.0, -5.0, 1.0 — never 3/-5/1).
+#     We emit them via the bayan value-tree float path (bayan_json_v_float_new +
+#     bayan_json_v_build), whose Grisu2 formatter produces the identical "N.0".
+#   * Vec<f64> `roots` → JSON array [e0,e1,...] ; the (f64,f64,f64) tuple
+#     `coefficients` → JSON array [a,b,c] (serde serializes tuples as arrays).
+
+# ---------------------------------------------------------------------------
+# AlJabrForm name table + name<->discriminant mapping.
+# islamic.cyr does not expose an AlJabrForm name accessor, so build one here
+# (lazy singleton, matching hijri_month_name's shape).
+# ---------------------------------------------------------------------------
+
+var _aljf_name_vec = 0;
+var _aljf_name_done = 0;
+
+fn _build_aljf_names() {
+    var v = vec_new();
+    vec_push(v, str_from("SquaresEqualRoots"));
+    vec_push(v, str_from("SquaresEqualNumber"));
+    vec_push(v, str_from("RootsEqualNumber"));
+    vec_push(v, str_from("SquaresAndRootsEqualNumber"));
+    vec_push(v, str_from("SquaresAndNumberEqualRoots"));
+    vec_push(v, str_from("RootsAndNumberEqualSquares"));
+    return v;
+}
+
+# AlJabrForm serde identifier for discriminant i.
+#must_use
+fn aljabr_form_name(i) {
+    if (_aljf_name_done == 0) { _aljf_name_vec = _build_aljf_names(); _aljf_name_done = 1; }
+    return vec_get(_aljf_name_vec, i);
+}
+
+# AlJabrForm discriminant for a serde identifier Str, or (0 - 1) if none.
+#must_use
+fn aljabr_form_from_name(name) {
+    var i = 0;
+    while (i < 6) {
+        if (str_eq(aljabr_form_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# ---------------------------------------------------------------------------
+# KhayyamCubicType name table + name<->discriminant mapping.
+# ---------------------------------------------------------------------------
+
+var _kct_name_vec = 0;
+var _kct_name_done = 0;
+
+fn _build_kct_names() {
+    var v = vec_new();
+    vec_push(v, str_from("CubeEqualNumber"));
+    vec_push(v, str_from("CubeAndThingEqualNumber"));
+    vec_push(v, str_from("CubeAndSquareEqualNumber"));
+    vec_push(v, str_from("CubeEqualThingAndNumber"));
+    vec_push(v, str_from("CubeThingNumberEqualSquare"));
+    return v;
+}
+
+# KhayyamCubicType serde identifier for discriminant i.
+#must_use
+fn khayyam_type_name(i) {
+    if (_kct_name_done == 0) { _kct_name_vec = _build_kct_names(); _kct_name_done = 1; }
+    return vec_get(_kct_name_vec, i);
+}
+
+# KhayyamCubicType discriminant for a serde identifier Str, or (0 - 1) if none.
+#must_use
+fn khayyam_type_from_name(name) {
+    var i = 0;
+    while (i < 5) {
+        if (str_eq(khayyam_type_name(i), name) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# ---------------------------------------------------------------------------
+# HijriMonth discriminant for a serde identifier Str (islamic.cyr supplies the
+# forward hijri_month_name(i); this is the parse-side inverse).
+# ---------------------------------------------------------------------------
+
+#must_use
+fn hijri_month_from_name(name) {
+    var mi = 0;
+    while (mi < 12) {
+        if (str_eq(hijri_month_name(mi), name) == 1) { return mi; }
+        mi = mi + 1;
+    }
+    return 0 - 1;
+}
+
+# ---------------------------------------------------------------------------
+# AlJabrSolution — {"form":"NAME","roots":[..],"coefficients":[a,b,c]}
+# ---------------------------------------------------------------------------
+
+# Serialize an AlJabrSolution to a JSON object string, byte-for-byte matching
+# serde_json (compact, Rust field names, enum as variant-name string, f64s with
+# a decimal point via the bayan value tree, tuple/vec as JSON arrays).
+#must_use
+fn aljabr_sol_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+
+    # form → variant-name string
+    sk_json_str(sb, "form", aljabr_form_name(aljabr_sol_form(p)));
+    sk_json_sep(sb);
+
+    # roots → JSON array of f64 numbers, built via the value tree so each keeps
+    # its decimal point (e.g. [3.0,2.0]).
+    sk_json_key(sb, "roots");
+    var rarr = bayan_json_v_arr_new();
+    var roots = aljabr_sol_roots(p);
+    var rn = vec_len(roots);
+    var ri = 0;
+    while (ri < rn) {
+        bayan_json_v_arr_push(rarr, bayan_json_v_float_new(vec_get(roots, ri)));
+        ri = ri + 1;
+    }
+    str_builder_add(sb, bayan_json_v_build(rarr));
+    sk_json_sep(sb);
+
+    # coefficients (f64, f64, f64) → serde emits a tuple as a JSON array [a,b,c].
+    sk_json_key(sb, "coefficients");
+    var carr = bayan_json_v_arr_new();
+    bayan_json_v_arr_push(carr, bayan_json_v_float_new(aljabr_sol_a(p)));
+    bayan_json_v_arr_push(carr, bayan_json_v_float_new(aljabr_sol_b(p)));
+    bayan_json_v_arr_push(carr, bayan_json_v_float_new(aljabr_sol_c(p)));
+    str_builder_add(sb, bayan_json_v_build(carr));
+
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Deserialize a bayan value-tree node (from sk_json_parse) back into an
+# AlJabrSolution via aljabr_sol_new.
+#must_use
+fn aljabr_sol_from_json(v) {
+    var form_name = bayan_json_v_str(bayan_json_v_obj_get(v, "form"));
+    var form = aljabr_form_from_name(form_name);
+
+    # roots array → a fresh vec of f64 bit patterns.
+    var rootsv = vec_new();
+    var rarr = bayan_json_v_obj_get(v, "roots");
+    var rn = bayan_json_v_arr_len(rarr);
+    var ri = 0;
+    while (ri < rn) {
+        vec_push(rootsv, bayan_json_v_float(bayan_json_v_arr_get(rarr, ri)));
+        ri = ri + 1;
+    }
+
+    # coefficients array → (a, b, c).
+    var carr = bayan_json_v_obj_get(v, "coefficients");
+    var a = bayan_json_v_float(bayan_json_v_arr_get(carr, 0));
+    var b = bayan_json_v_float(bayan_json_v_arr_get(carr, 1));
+    var c = bayan_json_v_float(bayan_json_v_arr_get(carr, 2));
+
+    return aljabr_sol_new(form, rootsv, a, b, c);
+}
+
+# Field-by-field equality (Rust derives PartialEq). Enum via ==, f64 via f64_eq
+# (value equality, mirroring Rust's f64 PartialEq), roots elementwise.
+#must_use
+fn aljabr_sol_eq(a, b) {
+    var same = 1;
+    if (aljabr_sol_form(a) != aljabr_sol_form(b)) { same = 0; }
+
+    var ra = aljabr_sol_roots(a);
+    var rb = aljabr_sol_roots(b);
+    var na = vec_len(ra);
+    var nb = vec_len(rb);
+    if (na != nb) { same = 0; }
+    if (na == nb) {
+        var i = 0;
+        while (i < na) {
+            var fe = f64_eq(vec_get(ra, i), vec_get(rb, i));
+            if (fe == 0) { same = 0; }
+            i = i + 1;
+        }
+    }
+
+    var ea = f64_eq(aljabr_sol_a(a), aljabr_sol_a(b));
+    if (ea == 0) { same = 0; }
+    var eb = f64_eq(aljabr_sol_b(a), aljabr_sol_b(b));
+    if (eb == 0) { same = 0; }
+    var ec = f64_eq(aljabr_sol_c(a), aljabr_sol_c(b));
+    if (ec == 0) { same = 0; }
+
+    return same;
+}
+
+# ---------------------------------------------------------------------------
+# HijriDate — {"year":Y,"month":"NAME","day":D}
+# ---------------------------------------------------------------------------
+
+# Serialize a HijriDate. All fields are integer or enum → str_builder + sk_json_*
+# suffice (no float path needed). month is the variant-name string.
+#must_use
+fn hijri_date_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", hijri_date_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", hijri_month_name(hijri_date_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", hijri_date_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Deserialize a bayan value-tree node back into a HijriDate via hijri_date_new.
+#must_use
+fn hijri_date_from_json(v) {
+    var year = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var month_name = bayan_json_v_str(bayan_json_v_obj_get(v, "month"));
+    var month = hijri_month_from_name(month_name);
+    var day = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return hijri_date_new(year, month, day);
+}
+
+# Field-by-field equality (Rust derives PartialEq/Eq — all integer fields).
+#must_use
+fn hijri_date_eq(a, b) {
+    if (hijri_date_year(a) != hijri_date_year(b)) { return 0; }
+    if (hijri_date_month(a) != hijri_date_month(b)) { return 0; }
+    if (hijri_date_day(a) != hijri_date_day(b)) { return 0; }
+    return 1;
+}

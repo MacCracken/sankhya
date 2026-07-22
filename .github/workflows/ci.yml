@@ -1,84 +1,111 @@
 name: CI
+
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
   workflow_call:
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
-env:
-  CARGO_TERM_COLOR: always
-  RUST_BACKTRACE: 1
+
 jobs:
-  check:
-    name: Check & Lint
+  build:
+    name: Build & Test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all -- --check
-      - run: cargo clippy --all-features --all-targets -- -D warnings
-      - run: cargo check --all-features
-  security:
-    name: Security Audit
+
+      - name: Install Cyrius toolchain
+        run: |
+          set -e
+          # The cyrius.cyml `[package].cyrius` pin is the single source of
+          # truth for the toolchain version — no version is hardcoded here.
+          CYRIUS_VERSION="$(grep '^cyrius = ' cyrius.cyml | head -1 | sed 's/cyrius = "\(.*\)"/\1/')"
+          echo "Installing Cyrius $CYRIUS_VERSION"
+          curl -sSf https://raw.githubusercontent.com/MacCracken/cyrius/main/scripts/install.sh | \
+            CYRIUS_VERSION="$CYRIUS_VERSION" sh
+          echo "$HOME/.cyrius/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve dependencies
+        # `deps` resolves the git-tagged sibling deps (varna / itihas / avatara)
+        # declared in cyrius.cyml into lib/; `lib sync` vendors the folded stdlib
+        # modules (bayan, sakshi, math, ganita, net/http, ...) from the toolchain
+        # pin. Both are always-on — the crate ships full parity, no feature gates.
+        run: |
+          cyrius deps
+          cyrius lib sync
+
+      - name: Lint
+        # Hard gate: any non-cosmetic `warn` line fails CI. Line-length warnings
+        # are exempt — astro/epoch carry long nested-f64 constant expressions.
+        run: |
+          fail=0
+          for f in src/*.cyr; do
+            out=$(cyrius lint "$f" 2>&1 || true)
+            echo "$out"
+            bad=$(echo "$out" | grep -E '^[[:space:]]*warn ' | grep -v 'exceeds 120 characters' || true)
+            if [ -n "$bad" ]; then echo "lint: warnings in $f"; fail=1; fi
+          done
+          [ $fail -eq 0 ] || { echo "lint: warnings present"; exit 1; }
+
+      - name: Build (DCE)
+        run: |
+          mkdir -p build
+          CYRIUS_DCE=1 cyrius build src/main.cyr build/sankhya
+          echo "sankhya: $(wc -c < build/sankhya) bytes"
+
+      - name: Verify ELF
+        run: xxd -l 4 build/sankhya | grep -q "7f45 4c46"
+
+      - name: Smoke test
+        # build/sankhya is the minimal CLI entry point — it does not include the
+        # library, only proves the toolchain builds and runs the package.
+        run: |
+          chmod +x build/sankhya
+          ./build/sankhya 2>&1 | tee /tmp/smoke
+          grep -q "cyrius port" /tmp/smoke
+
+      - name: Unit tests
+        # 32 .tcyr suites under tests/tcyr (~1,346 assertions: per-module, serial
+        # round-trip, integration, adversarial/never-panic). Summary: "N failed".
+        run: |
+          cyrius tests tests/tcyr 2>&1 | tee /tmp/test_output
+          grep -v '^[[:space:]]*$' /tmp/test_output | tail -1 | grep -q "0 failed"
+
+      - name: Benchmarks
+        # Build + run the suite to catch performance regressions / build breakage.
+        run: |
+          CYRIUS_DCE=1 cyrius build tests/sankhya.bcyr build/sankhya_bench
+          ./build/sankhya_bench
+
+      - name: Verify dist bundle is current
+        # dist/sankhya.cyr is committed for consumers (hisab, ...); ensure it
+        # matches source.
+        run: |
+          cyrius distlib
+          git diff --exit-code dist || { echo "dist is stale — run 'cyrius distlib' and commit"; exit 1; }
+
+  docs:
+    name: Documentation
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo install cargo-audit
-      - run: cargo audit
-  deny:
-    name: Supply Chain
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: EmbarkStudios/cargo-deny-action@v2
-  test:
-    name: Test (${{ matrix.os }})
-    needs: [check]
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-          - os: macos-latest
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo test --all-features
-      - run: cargo test --doc
-  msrv:
-    name: MSRV (1.89)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.89"
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo check --all-features
-      - run: cargo test --all-features
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    needs: [check]
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: llvm-tools-preview
-      - uses: Swatinem/rust-cache@v2
-      - run: cargo install cargo-llvm-cov
-      - run: cargo llvm-cov --all-features --lcov --output-path lcov.info
-      - uses: codecov/codecov-action@v4
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        with:
-          files: lcov.info
-          fail_ci_if_error: false
+      - name: Check required docs
+        run: |
+          MISSING=0
+          for doc in README.md CHANGELOG.md VERSION CONTRIBUTING.md SECURITY.md LICENSE cyrius.cyml; do
+            if [ -f "$doc" ]; then echo "  OK: $doc"; else echo "  MISSING: $doc"; MISSING=1; fi
+          done
+          exit $MISSING
+      - name: Verify version consistency
+        run: |
+          FILE_VERSION=$(cat VERSION | tr -d '[:space:]')
+          CYML_RAW=$(grep '^version = ' cyrius.cyml | head -1 | sed 's/version = "\(.*\)"/\1/')
+          # ${file:VERSION} template means cyml derives from the VERSION file.
+          if [ "$CYML_RAW" = "\${file:VERSION}" ]; then CYML_VERSION="$FILE_VERSION"; else CYML_VERSION="$CYML_RAW"; fi
+          [ "$FILE_VERSION" = "$CYML_VERSION" ] || { echo "VERSION ($FILE_VERSION) != cyrius.cyml ($CYML_RAW)"; exit 1; }
+          grep -q "$FILE_VERSION" CHANGELOG.md || { echo "version not in CHANGELOG.md"; exit 1; }
+          echo "Version consistent: $FILE_VERSION"

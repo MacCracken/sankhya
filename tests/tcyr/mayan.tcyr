@@ -1,0 +1,190 @@
+# mayan.tcyr — ports the Rust #[cfg(test)] mod tests from src/mayan.rs plus
+# Display-string and error-message parity checks. Serde round-trip tests are
+# skipped (JSON is a later module). Run:
+#   cyrius build tests/tcyr/mayan.tcyr build/_v_mayan && ./build/_v_mayan
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/mayan.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# Build a vec of digits from up to 5 most-significant-first values (unused
+# trailing slots pass a sentinel of -1 to stop).
+fn digits5(a, b, c, d, e) {
+    var v = vec_new();
+    if (a >= 0) { vec_push(v, a); }
+    if (b >= 0) { vec_push(v, b); }
+    if (c >= 0) { vec_push(v, c); }
+    if (d >= 0) { vec_push(v, d); }
+    if (e >= 0) { vec_push(v, e); }
+    return v;
+}
+
+# Round-trip one value through to_vigesimal -> from_vigesimal, assert equal.
+fn vig_roundtrip(n, name) {
+    var digits = to_vigesimal(n);
+    var r = from_vigesimal(digits);
+    var okr = is_ok(r);
+    if (okr == 0) { return assert_eq(0, 1, name); }
+    return assert_eq(result_unwrap(r), n, name);
+}
+
+fn main() {
+    alloc_init();
+    println("=== sankhya mayan test suite ===");
+
+    var tol = f64_parse("0.000001");
+
+    # ---- vigesimal_zero ----
+    var v0 = to_vigesimal(0);
+    assert_eq(vec_len(v0), 1, "to_vigesimal(0) len 1");
+    assert_eq(vec_get(v0, 0), 0, "to_vigesimal(0) = [0]");
+    var d0 = digits5(0, (0 - 1), (0 - 1), (0 - 1), (0 - 1));
+    var rz = from_vigesimal(d0);
+    ok(is_ok(rz), "from_vigesimal([0]) ok");
+    assert_eq(result_unwrap(rz), 0, "from_vigesimal([0]) = 0");
+
+    # ---- vigesimal_roundtrip ----
+    vig_roundtrip(1, "vig roundtrip 1");
+    vig_roundtrip(19, "vig roundtrip 19");
+    vig_roundtrip(20, "vig roundtrip 20");
+    vig_roundtrip(399, "vig roundtrip 399");
+    vig_roundtrip(400, "vig roundtrip 400");
+    vig_roundtrip(8000, "vig roundtrip 8000");
+    vig_roundtrip(160000, "vig roundtrip 160000");
+    vig_roundtrip(1000000, "vig roundtrip 1000000");
+
+    # ---- from_vigesimal error path (digit >= 20) ----
+    var dbad = digits5(20, (0 - 1), (0 - 1), (0 - 1), (0 - 1));
+    var rbad = from_vigesimal(dbad);
+    ok(is_err_result(rbad), "from_vigesimal([20]) err");
+    assert_eq(sk_result_code(rbad), SKE_INVALID_BASE, "from_vigesimal([20]) InvalidBase");
+    ok(str_eq_cstr(sk_err_msg(err_code_of(rbad)), "vigesimal digit 20 out of range 0..20"), "from_vigesimal msg parity");
+
+    # ---- mayan_numeral_values ----
+    var rzero = mayan_numeral_from_value(0);
+    ok(is_ok(rzero), "numeral 0 ok");
+    var zero = result_unwrap(rzero);
+    assert_eq(mayan_numeral_shell(zero), 1, "numeral 0 shell");
+    assert_eq(mayan_numeral_value(zero), 0, "numeral 0 value");
+    var r13 = mayan_numeral_from_value(13);
+    var thirteen = result_unwrap(r13);
+    assert_eq(mayan_numeral_dots(thirteen), 3, "numeral 13 dots");
+    assert_eq(mayan_numeral_bars(thirteen), 2, "numeral 13 bars");
+    assert_eq(mayan_numeral_value(thirteen), 13, "numeral 13 value");
+    # numeral out-of-range error
+    var rbign = mayan_numeral_from_value(20);
+    ok(is_err_result(rbign), "numeral 20 err");
+    assert_eq(sk_result_code(rbign), SKE_INVALID_BASE, "numeral 20 InvalidBase");
+    ok(str_eq_cstr(sk_err_msg(err_code_of(rbign)), "Mayan numeral value 20 out of range 0..19"), "numeral msg parity");
+
+    # ---- long_count_creation_date ----
+    var rc0 = long_count_from_days(0);
+    ok(is_ok(rc0), "from_days(0) ok");
+    var lc0 = result_unwrap(rc0);
+    assert_eq(long_count_to_days(lc0), 0, "from_days(0) to_days=0");
+    assert_eq(lc_baktun(lc0), 0, "from_days(0) baktun=0");
+
+    # ---- long_count_dec_21_2012 ----
+    var days2012 = 13 * 144000;
+    var rc12 = long_count_from_days(days2012);
+    var lc12 = result_unwrap(rc12);
+    assert_eq(lc_baktun(lc12), 13, "2012 baktun=13");
+    assert_eq(lc_katun(lc12), 0, "2012 katun=0");
+    assert_eq(lc_tun(lc12), 0, "2012 tun=0");
+    assert_eq(lc_uinal(lc12), 0, "2012 uinal=0");
+    assert_eq(lc_kin(lc12), 0, "2012 kin=0");
+    assert_eq(long_count_to_days(lc12), days2012, "2012 to_days round-trip");
+    # Display parity
+    ok(str_eq_cstr(longcount_to_str(lc12), "13.0.0.0.0"), "longcount display 13.0.0.0.0");
+
+    # ---- long_count_new validation + JDN correlation ----
+    var rnew_bad = long_count_new(0, 20, 0, 0, 0);
+    ok(is_err_result(rnew_bad), "new katun=20 err");
+    assert_eq(sk_result_code(rnew_bad), SKE_INVALID_DATE, "new katun=20 InvalidDate");
+    ok(str_eq_cstr(sk_err_msg(err_code_of(rnew_bad)), "katun 20 out of range 0..20"), "new katun msg parity");
+    var rnew_ok = long_count_new(13, 0, 0, 0, 0);
+    ok(is_ok(rnew_ok), "new valid ok");
+    var rjd = long_count_from_julian_day(EPOCH_JDN);
+    ok(is_ok(rjd), "from_julian_day(EPOCH_JDN) ok");
+    var lcjd = result_unwrap(rjd);
+    assert_eq(long_count_to_days(lcjd), 0, "from_julian_day(EPOCH_JDN) = day 0");
+    assert_eq(long_count_to_julian_day(lcjd), EPOCH_JDN, "to_julian_day = EPOCH_JDN");
+    var pre = EPOCH_JDN - 1;
+    var rjd_bad = long_count_from_julian_day(pre);
+    ok(is_err_result(rjd_bad), "from_julian_day(pre-epoch) err");
+    assert_eq(sk_result_code(rjd_bad), SKE_INVALID_DATE, "from_julian_day pre-epoch InvalidDate");
+
+    # ---- tzolkin_at_creation ----
+    var tz0 = tzolkin_from_days(0);
+    assert_eq(tz_number(tz0), 4, "tzolkin day0 number=4");
+    assert_eq(tz_daysign(tz0), DS_AHAU, "tzolkin day0 sign=Ahau");
+    ok(str_eq_cstr(tzolkin_to_str(tz0), "4 Ahau"), "tzolkin display 4 Ahau");
+
+    # ---- haab_at_creation ----
+    var hb0 = haab_from_days(0);
+    assert_eq(hb_day(hb0), 8, "haab day0 day=8");
+    assert_eq(hb_month(hb0), HM_KUMKU, "haab day0 month=Kumku");
+    ok(str_eq_cstr(haab_to_str(hb0), "8 Kumku"), "haab display 8 Kumku");
+
+    # ---- calendar_round pair ----
+    var cr = calendar_round(0);
+    assert_eq(tz_number(cr_tzolkin(cr)), 4, "calendar_round tz number=4");
+    assert_eq(hb_day(cr_haab(cr)), 8, "calendar_round hb day=8");
+
+    # ---- venus_cycle_length ----
+    assert_eq(236 + 90 + 250 + 8, 584, "venus cycle 584");
+    # venus_phase classification across the cycle
+    assert_eq(venus_phase(0), VP_MORNING_STAR, "venus 0 MorningStar");
+    assert_eq(venus_phase(240), VP_SUPERIOR_CONJUNCTION, "venus 240 SuperiorConjunction");
+    assert_eq(venus_phase(400), VP_EVENING_STAR, "venus 400 EveningStar");
+    assert_eq(venus_phase(580), VP_INFERIOR_CONJUNCTION, "venus 580 InferiorConjunction");
+    ok(f64_approx_eq(venus_synodic_period(), f64_parse("583.92"), tol), "VENUS_SYNODIC_PERIOD=583.92");
+
+    # ---- find_calendar_round_at_creation ----
+    var fcr0 = find_calendar_round(4, DS_AHAU, 8, HM_KUMKU, 0);
+    ok(is_ok(fcr0), "find_calendar_round at creation ok");
+    assert_eq(result_unwrap(fcr0), 0, "find_calendar_round at creation = 0");
+
+    # ---- find_calendar_round_next_cycle ----
+    var fcr1 = find_calendar_round(4, DS_AHAU, 8, HM_KUMKU, 1);
+    ok(is_ok(fcr1), "find_calendar_round next cycle ok");
+    assert_eq(result_unwrap(fcr1), CALENDAR_ROUND_DAYS, "find_calendar_round next = 18980");
+
+    # ---- find_calendar_round_invalid_tzolkin ----
+    var fcr_lo = find_calendar_round(0, DS_AHAU, 0, HM_POP, 0);
+    ok(is_err_result(fcr_lo), "find_calendar_round(0) err");
+    assert_eq(sk_result_code(fcr_lo), SKE_INVALID_DATE, "find_calendar_round(0) InvalidDate");
+    ok(str_eq_cstr(sk_err_msg(err_code_of(fcr_lo)), "Tzolkin number 0 out of range 1..13"), "fcr(0) msg parity");
+    var fcr_hi = find_calendar_round(14, DS_AHAU, 0, HM_POP, 0);
+    ok(is_err_result(fcr_hi), "find_calendar_round(14) err");
+    assert_eq(sk_result_code(fcr_hi), SKE_INVALID_DATE, "find_calendar_round(14) InvalidDate");
+
+    # ---- find_tzolkin_at_creation ----
+    var ft0 = find_tzolkin(4, DS_AHAU, 0);
+    ok(is_ok(ft0), "find_tzolkin at creation ok");
+    assert_eq(result_unwrap(ft0), 0, "find_tzolkin at creation = 0");
+
+    # ---- find_tzolkin_next_occurrence ----
+    var ft1 = find_tzolkin(4, DS_AHAU, 1);
+    ok(is_ok(ft1), "find_tzolkin next ok");
+    assert_eq(result_unwrap(ft1), 260, "find_tzolkin next = 260");
+
+    # ---- name-table spot checks ----
+    ok(str_eq_cstr(daysign_name(DS_IMIX), "Imix"), "daysign_name Imix");
+    ok(str_eq_cstr(daysign_name(DS_AHAU), "Ahau"), "daysign_name Ahau");
+    ok(str_eq_cstr(haabmonth_name(HM_POP), "Pop"), "haabmonth_name Pop");
+    ok(str_eq_cstr(haabmonth_name(HM_WAYEB), "Wayeb"), "haabmonth_name Wayeb");
+    ok(str_eq_cstr(venusphase_name(VP_MORNING_STAR), "MorningStar"), "venusphase_name MorningStar");
+
+    # ---- logging init does not crash ----
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

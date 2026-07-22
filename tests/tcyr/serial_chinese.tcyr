@@ -1,0 +1,62 @@
+# serial_chinese.tcyr — serde round-trip parity for the chinese module.
+# Ports rust-old/src/chinese.rs #[cfg(test)] sexagenary_serde_roundtrip, plus a
+# RodNumeral round-trip and standalone-enum round-trips. Verifies the emitted
+# JSON matches serde_json::to_string exactly (Rust field names, unit enums as
+# their variant-identifier string, integers as bare numbers), then parses it back
+# and compares field-by-field.
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/chinese.cyr"
+include "src/serial_chinese.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+    println("=== serial_chinese test suite ===");
+
+    # ---- RodNumeral round-trip: {"value":42} ----
+    var rod = rod_numeral_new(42);
+    var rod_js = rod_numeral_to_json(rod);
+    ok(str_contains_cstr(rod_js, "\"value\":42"), "rod json has value:42");
+    var rod2 = rod_numeral_from_json(sk_json_parse(rod_js));
+    ok(rod_numeral_eq(rod, rod2), "rod numeral roundtrip");
+
+    # ---- HeavenlyStem standalone enum: "Jia" ----
+    var stem_js = heavenly_stem_to_json(HS_JIA);
+    ok(str_contains_cstr(stem_js, "\"Jia\""), "stem json is \"Jia\"");
+    var stem2 = heavenly_stem_from_json(sk_json_parse(stem_js));
+    ok(heavenly_stem_eq(HS_JIA, stem2), "heavenly stem roundtrip");
+
+    # ---- EarthlyBranch standalone enum: "Chen" ----
+    var branch_js = earthly_branch_to_json(EB_CHEN);
+    ok(str_contains_cstr(branch_js, "\"Chen\""), "branch json is \"Chen\"");
+    var branch2 = earthly_branch_from_json(sk_json_parse(branch_js));
+    ok(earthly_branch_eq(EB_CHEN, branch2), "earthly branch roundtrip");
+
+    # ---- sexagenary_serde_roundtrip: sexagenary_from_year(2024) ----
+    # serde: {"stem":"Jia","branch":"Chen","cycle_position":41}
+    var s = sexagenary_from_year(2024);
+    var js = sexagenary_year_to_json(s);
+    ok(str_contains_cstr(js, "\"stem\":\"Jia\""), "sex json stem=Jia");
+    ok(str_contains_cstr(js, "\"branch\":\"Chen\""), "sex json branch=Chen");
+    ok(str_contains_cstr(js, "\"cycle_position\":41"), "sex json cycle_position=41");
+    var back = sexagenary_year_from_json(sk_json_parse(js));
+    ok(sexagenary_year_eq(s, back), "sexagenary year serde roundtrip");
+
+    # ---- second sexagenary case: 2025 = Yi / Si ----
+    var s25 = sexagenary_from_year(2025);
+    var js25 = sexagenary_year_to_json(s25);
+    ok(str_contains_cstr(js25, "\"stem\":\"Yi\""), "2025 stem=Yi");
+    ok(str_contains_cstr(js25, "\"branch\":\"Si\""), "2025 branch=Si");
+    var back25 = sexagenary_year_from_json(sk_json_parse(js25));
+    ok(sexagenary_year_eq(s25, back25), "2025 sexagenary roundtrip");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

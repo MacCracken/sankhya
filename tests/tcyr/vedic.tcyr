@@ -1,0 +1,131 @@
+# vedic.tcyr — port of rust-old/src/vedic.rs #[cfg(test)] mod tests.
+# stdlib + varna are auto-resolved by the build tool.
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/vedic.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+fn check(a, b, name) { return assert_eq(a, b, name); }
+
+# Tolerances (set once after alloc_init).
+var TOL_1E15 = 0;
+var TOL_1E5 = 0;
+fn consts_init() {
+    TOL_1E15 = f64_parse("0.000000000000001");
+    TOL_1E5 = f64_parse("0.00001");
+    return 0;
+}
+
+# Encode then decode; return decoded value or (0-1) on Err.
+fn katapayadi_rt(n) {
+    var e = katapayadi_encode(n);
+    var r = katapayadi_decode(e);
+    if (is_ok(r) == 0) { return 0 - 1; }
+    return result_unwrap(r);
+}
+
+fn main() {
+    alloc_init();
+    consts_init();
+
+    # ---- vedic_multiply_basic ----
+    check(vedic_multiply(97, 96), 9312, "vedic_multiply 97*96=9312");
+    check(vedic_multiply(12, 13), 156, "vedic_multiply 12*13=156");
+
+    # ---- vedic_nikhilam_near_100 ----
+    var r = vedic_multiply_nikhilam(97, 96);
+    ok(is_ok(r), "nikhilam(97,96) ok");
+    var steps = result_unwrap(r);
+    check(nk_base(steps), 100, "nikhilam base=100");
+    check(nk_da(steps), 3, "nikhilam da=3");
+    check(nk_db(steps), 4, "nikhilam db=4");
+    check(nk_cross(steps), 93, "nikhilam cross=93");
+    check(nk_product(steps), 9312, "nikhilam product=9312");
+
+    # ---- sulba_diagonal_3_4_5 ----
+    var d = sulba_diagonal(f64_from(3), f64_from(4));
+    ok(f64_approx_eq(d, f64_from(5), TOL_1E15), "sulba_diagonal(3,4)=5");
+
+    # ---- sulba_sqrt2_accuracy ----
+    var approx = sulba_sqrt2();
+    var exp577 = f64_div(f64_from(577), f64_from(408));
+    ok(f64_approx_eq(approx, exp577, TOL_1E15), "sulba_sqrt2 == 577/408");
+    var sqrt2 = f64_parse("1.4142135623730951");
+    ok(f64_approx_eq(approx, sqrt2, TOL_1E5), "sulba_sqrt2 within 1e-5 of SQRT_2");
+
+    # ---- katapayadi_roundtrip ----
+    check(katapayadi_rt(0), 0, "katapayadi roundtrip 0");
+    check(katapayadi_rt(1), 1, "katapayadi roundtrip 1");
+    check(katapayadi_rt(42), 42, "katapayadi roundtrip 42");
+    check(katapayadi_rt(123), 123, "katapayadi roundtrip 123");
+    check(katapayadi_rt(9876), 9876, "katapayadi roundtrip 9876");
+
+    # spot-check the exact encoded form + an error path
+    var e42 = katapayadi_encode(42);
+    ok(str_eq_cstr(e42, "kha-gha"), "encode(42) = kha-gha");
+    var bad = katapayadi_decode(str_from("zzz"));
+    ok(is_err_result(bad), "decode(zzz) is Err");
+    check(sk_result_code(bad), SKE_COMPUTATION, "decode(zzz) -> ComputationError");
+
+    # ---- meru_prastara_5_rows ----
+    var mr = meru_prastara(5);
+    ok(is_ok(mr), "meru_prastara(5) ok");
+    var tri = result_unwrap(mr);
+    check(vec_len(tri), 5, "meru 5 rows");
+
+    var mrow0 = vec_get(tri, 0);
+    check(vec_len(mrow0), 1, "meru row0 len=1");
+    check(vec_get(mrow0, 0), 1, "meru row0 = [1]");
+
+    var mrow1 = vec_get(tri, 1);
+    check(vec_len(mrow1), 2, "meru row1 len=2");
+    check(vec_get(mrow1, 0), 1, "meru row1[0]=1");
+    check(vec_get(mrow1, 1), 1, "meru row1[1]=1");
+
+    var mrow2 = vec_get(tri, 2);
+    check(vec_len(mrow2), 3, "meru row2 len=3");
+    check(vec_get(mrow2, 0), 1, "meru row2[0]=1");
+    check(vec_get(mrow2, 1), 2, "meru row2[1]=2");
+    check(vec_get(mrow2, 2), 1, "meru row2[2]=1");
+
+    var mrow3 = vec_get(tri, 3);
+    check(vec_len(mrow3), 4, "meru row3 len=4");
+    check(vec_get(mrow3, 0), 1, "meru row3[0]=1");
+    check(vec_get(mrow3, 1), 3, "meru row3[1]=3");
+    check(vec_get(mrow3, 2), 3, "meru row3[2]=3");
+    check(vec_get(mrow3, 3), 1, "meru row3[3]=1");
+
+    var mrow4 = vec_get(tri, 4);
+    check(vec_len(mrow4), 5, "meru row4 len=5");
+    check(vec_get(mrow4, 0), 1, "meru row4[0]=1");
+    check(vec_get(mrow4, 1), 4, "meru row4[1]=4");
+    check(vec_get(mrow4, 2), 6, "meru row4[2]=6");
+    check(vec_get(mrow4, 3), 4, "meru row4[3]=4");
+    check(vec_get(mrow4, 4), 1, "meru row4[4]=1");
+
+    # meru_prastara(0) -> empty
+    var mr0 = meru_prastara(0);
+    ok(is_ok(mr0), "meru_prastara(0) ok");
+    check(vec_len(result_unwrap(mr0)), 0, "meru_prastara(0) empty");
+
+    # ---- devanagari_digits_basic ----
+    ok(str_eq_cstr(to_devanagari_digits(0), "०"), "to_devanagari_digits(0)=०");
+    ok(str_eq_cstr(to_devanagari_digits(123), "१२३"), "to_devanagari_digits(123)=१२३");
+    ok(str_eq_cstr(to_devanagari_digits(9876), "९८७६"), "to_devanagari_digits(9876)=९८७६");
+
+    # ---- katapayadi_devanagari_zero / single / multi ----
+    ok(str_eq_cstr(katapayadi_encode_devanagari(0), "ञ"), "katapayadi_devanagari(0)=ञ");
+    ok(str_eq_cstr(katapayadi_encode_devanagari(1), "क"), "katapayadi_devanagari(1)=क");
+    ok(str_eq_cstr(katapayadi_encode_devanagari(21), "क ख"), "katapayadi_devanagari(21)=क ख");
+
+    # ---- logging init doesn't crash ----
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

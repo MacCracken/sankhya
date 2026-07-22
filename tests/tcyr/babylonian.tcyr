@@ -1,0 +1,210 @@
+# babylonian.tcyr — integration suite for src/babylonian.cyr.
+# Ports every non-serde #[cfg(test)] test from rust-old/src/babylonian.rs
+# (unconditional + varna-gated cuneiform tests). Run:
+#   cyrius build tests/tcyr/babylonian.tcyr build/_v_babylonian && ./build/_v_babylonian
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/babylonian.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# f64 tolerances (set in main via f64_parse).
+var TOL_1E15 = 0;
+var TOL_1E10 = 0;
+var HALF = 0;
+
+# One sexagesimal round-trip: from_sexagesimal(to_sexagesimal(n)) == n.
+fn roundtrip_ok(n) {
+    var d = to_sexagesimal(n);
+    var r = from_sexagesimal(d);
+    if (is_ok(r) == 0) { return 0; }
+    var v = result_unwrap(r);
+    if (v == n) { return 1; }
+    return 0;
+}
+
+fn main() {
+    alloc_init();
+    babylonian_init();
+    TOL_1E15 = f64_parse("0.000000000000001");
+    TOL_1E10 = f64_parse("0.0000000001");
+    HALF = f64_parse("0.5");
+    println("=== sankhya babylonian test suite ===");
+
+    # ---- sexagesimal_zero ----
+    var z = to_sexagesimal(0);
+    assert_eq(vec_len(z), 1, "to_sexagesimal(0) len 1");
+    assert_eq(vec_get(z, 0), 0, "to_sexagesimal(0)[0]=0");
+    var rz = from_sexagesimal(z);
+    ok(is_ok(rz), "from_sexagesimal([0]) ok");
+    assert_eq(result_unwrap(rz), 0, "from_sexagesimal([0])=0");
+
+    # ---- sexagesimal_roundtrip ----
+    ok(roundtrip_ok(1), "roundtrip 1");
+    ok(roundtrip_ok(59), "roundtrip 59");
+    ok(roundtrip_ok(60), "roundtrip 60");
+    ok(roundtrip_ok(3599), "roundtrip 3599");
+    ok(roundtrip_ok(3600), "roundtrip 3600");
+    ok(roundtrip_ok(216000), "roundtrip 216000");
+    ok(roundtrip_ok(1000000), "roundtrip 1000000");
+
+    # ---- babylonian_numeral_value ----
+    var rn = babnum_from_value(42);
+    ok(is_ok(rn), "from_value(42) ok");
+    var num = result_unwrap(rn);
+    assert_eq(babnum_tens(num), 4, "numeral 42 tens=4");
+    assert_eq(babnum_units(num), 2, "numeral 42 units=2");
+    assert_eq(babnum_value(num), 42, "numeral 42 value=42");
+
+    # ---- from_value out of range ----
+    var rbadnum = babnum_from_value(60);
+    ok(is_err_result(rbadnum), "from_value(60) err");
+
+    # ---- plimpton_triples_valid ----
+    var tr = generate_plimpton_triples();
+    assert_eq(vec_len(tr), 15, "15 plimpton triples");
+    var pi = 0;
+    var allvalid = 1;
+    while (pi < 15) {
+        var t = vec_get(tr, pi);
+        var a = triple_a(t);
+        var b = triple_b(t);
+        var c = triple_c(t);
+        var lhs = a * a + b * b;
+        var rhs = c * c;
+        if (lhs != rhs) { allvalid = 0; }
+        pi = pi + 1;
+    }
+    ok(allvalid, "all plimpton triples satisfy a^2+b^2=c^2");
+
+    # ---- sqrt_2_accuracy ----
+    var r2 = babylonian_sqrt(f64_from(2), 10);
+    ok(is_ok(r2), "sqrt(2) ok");
+    var s = result_unwrap(r2);
+    var sqrt2 = f64_parse("1.4142135623730951");
+    ok(f64_approx_eq(s, sqrt2, TOL_1E15), "sqrt(2) within 1e-15");
+
+    # ---- babylonian_sqrt error paths ----
+    var rneg = babylonian_sqrt(f64_neg(f64_from(4)), 10);
+    ok(is_err_result(rneg), "sqrt(-4) err");
+    var r0iter = babylonian_sqrt(f64_from(4), 0);
+    ok(is_err_result(r0iter), "sqrt with 0 iterations err");
+    var rzero = babylonian_sqrt(f64_from(0), 10);
+    ok(is_ok(rzero), "sqrt(0) ok");
+    assert_eq(f64_to(result_unwrap(rzero)), 0, "sqrt(0)=0");
+
+    # ---- saros_cycle_test ----
+    var j2000 = f64_from(2451545);
+    var next = saros_cycle(j2000);
+    var expected = f64_add(j2000, SAROS_DAYS);
+    ok(f64_approx_eq(next, expected, TOL_1E10), "saros_cycle within 1e-10");
+
+    # ---- babylonian_epoch_roundtrip ----
+    var date = jdn_to_babylonian(BABYLONIAN_EPOCH_JDN);
+    assert_eq(babdate_year(date), 1, "epoch year=1");
+    assert_eq(babdate_month(date), BM_NISANNU, "epoch month=Nisannu");
+    assert_eq(babdate_day(date), 1, "epoch day=1");
+    var rj = babylonian_to_jdn(date);
+    ok(is_ok(rj), "babylonian_to_jdn(epoch) ok");
+    var jdn = result_unwrap(rj);
+    var ediff = f64_abs(f64_sub(jdn, BABYLONIAN_EPOCH_JDN));
+    var within = f64_lt(ediff, HALF);
+    ok(within, "epoch jdn within 0.5");
+
+    # ---- babylonian_year_is_354 ----
+    var mdays = all_bab_month_days();
+    var total = 0;
+    var mi = 0;
+    while (mi < 12) {
+        total = total + vec_get(mdays, mi);
+        mi = mi + 1;
+    }
+    assert_eq(total, 354, "months sum to 354");
+
+    # ---- babylonian_month_alternates ----
+    var ai = 0;
+    var altok = 1;
+    while (ai < 12) {
+        var dd = bab_month_days(ai);
+        var parity = ai % 2;
+        if (parity == 0) { if (dd != 30) { altok = 0; } }
+        if (parity != 0) { if (dd != 29) { altok = 0; } }
+        ai = ai + 1;
+    }
+    ok(altok, "months alternate 30/29 by index parity");
+
+    # ---- babylonian_to_jdn_invalid_day ----
+    var baddate = babdate_new(1, BM_AYARU, 30);
+    var rbad = babylonian_to_jdn(baddate);
+    ok(is_err_result(rbad), "day 30 in Ayaru (29-day) is err");
+    assert_eq(sk_result_code(rbad), SKE_INVALID_DATE, "invalid day -> SKE_INVALID_DATE");
+
+    # ---- synodic_months_one_year ----
+    var months, srem = synodic_months_between(f64_from(0), f64_parse("365.25"));
+    assert_eq(months, 12, "12 synodic months in a year");
+
+    # ---- Display: BabylonianDate ----
+    var ds = babdate_to_str(date);
+    ok(str_eq_cstr(ds, "1 Nisannu, Year 1 SE"), "date display '1 Nisannu, Year 1 SE'");
+    var mds = babmonth_to_str(BM_TASHRITU);
+    ok(str_eq_cstr(mds, "Tashritu"), "month display Tashritu");
+
+    # ---- reciprocal_table ----
+    var rtab = reciprocal_table();
+    assert_eq(vec_len(rtab), 29, "reciprocal table has 29 entries");
+    var recip2 = reciprocal_lookup(rtab, 2);
+    ok(recip2, "reciprocal_lookup(2) found");
+    assert_eq(vec_len(recip2), 1, "recip(2) has 1 digit");
+    assert_eq(vec_get(recip2, 0), 30, "recip(2)=[30]");
+    var recip81 = reciprocal_lookup(rtab, 81);
+    assert_eq(vec_len(recip81), 4, "recip(81) has 4 digits");
+    assert_eq(vec_get(recip81, 0), 0, "recip(81)[0]=0");
+    assert_eq(vec_get(recip81, 3), 40, "recip(81)[3]=40");
+    var recipmiss = reciprocal_lookup(rtab, 7);
+    assert_eq(recipmiss, 0, "reciprocal_lookup(7) not found");
+
+    # ---- cuneiform_digit_units ----
+    var c1 = cuneiform_digit(1);
+    ok(is_ok(c1), "cuneiform_digit(1) ok");
+    ok(str_eq_cstr(result_unwrap(c1), "𒐕"), "cuneiform(1)=U+12415");
+    var c9 = cuneiform_digit(9);
+    ok(str_eq_cstr(result_unwrap(c9), "𒐝"), "cuneiform(9)=U+1241D");
+
+    # ---- cuneiform_digit_tens ----
+    var c10 = cuneiform_digit(10);
+    ok(str_eq_cstr(result_unwrap(c10), "𒌋"), "cuneiform(10)=U+1230B");
+    var c30 = cuneiform_digit(30);
+    ok(str_eq_cstr(result_unwrap(c30), "𒌍"), "cuneiform(30)=U+1230D");
+
+    # ---- cuneiform_digit_composite (42 = 30 + 10 + 2) ----
+    var c42 = cuneiform_digit(42);
+    var s42 = result_unwrap(c42);
+    ok(str_contains_cstr(s42, "𒌍"), "cuneiform(42) contains 30");
+    ok(str_contains_cstr(s42, "𒐖"), "cuneiform(42) contains 2");
+
+    # ---- cuneiform_digit_zero ----
+    var c0 = cuneiform_digit(0);
+    ok(str_eq_cstr(result_unwrap(c0), " "), "cuneiform(0)=space");
+
+    # ---- cuneiform_digit_out_of_range ----
+    var c60 = cuneiform_digit(60);
+    ok(is_err_result(c60), "cuneiform(60) err");
+
+    # ---- to_cuneiform_basic (60 = [1, 0]) ----
+    var tc = to_cuneiform(60);
+    ok(is_ok(tc), "to_cuneiform(60) ok");
+    var stc = result_unwrap(tc);
+    ok(str_contains_cstr(stc, "·"), "to_cuneiform(60) contains middle dot");
+    ok(str_contains_cstr(stc, "𒐕"), "to_cuneiform(60) contains diš");
+
+    # ---- logging init does not crash ----
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

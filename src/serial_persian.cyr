@@ -1,0 +1,99 @@
+# serial_persian.cyr — JSON (de)serialization for the persian module, for full
+# serde round-trip parity with Rust's derived Serialize + Deserialize.
+#
+# Rust serde emits:
+#   PersianMonth  → the bare variant-name string, e.g. "Farvardin"
+#   PersianDate   → {"year":<i64>,"month":"<Variant>","day":<u8>}  (declaration order)
+#
+# SELF-CONTAINED: no include lines. Uses the shared sk_json_* helpers from
+# serial_util.cyr, the persian module accessors, and bayan's value-tree API.
+
+# ---------------------------------------------------------------------------
+# PersianMonth enum <-> serde variant-name string
+# ---------------------------------------------------------------------------
+
+# Map a variant-name Str back to the PersianMonth discriminant (0..11).
+# Scans persian_month_name(i) for a match. Returns (0 - 1) if none matches.
+#must_use
+fn persian_month_from_name(name) {
+    var i = 0;
+    while (i < 12) {
+        if (str_eq(persian_month_name(i), name) == 1) {
+            return i;
+        }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# Serialize a PersianMonth discriminant to a bare JSON string ("Farvardin").
+#must_use
+fn persian_month_to_json(m) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, persian_month_name(m));
+    return str_builder_build(sb);
+}
+
+# Deserialize a bayan value node (a JSON string) to a PersianMonth discriminant.
+#must_use
+fn persian_month_from_json(v) {
+    var name = bayan_json_v_str(v);
+    return persian_month_from_name(name);
+}
+
+# Equality of two PersianMonth discriminants (0/1).
+#must_use
+fn persian_month_eq(a, b) {
+    if (a == b) {
+        return 1;
+    }
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# PersianDate struct <-> {"year":i64,"month":"<Variant>","day":u8}
+# ---------------------------------------------------------------------------
+
+# Serialize a PersianDate pointer to serde-compact JSON. Field order matches
+# the Rust struct declaration: year, month, day. The month enum is emitted as
+# its serde variant-name string.
+#must_use
+fn persian_date_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "year", pd_year(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "month", persian_month_name(pd_month(p)));
+    sk_json_sep(sb);
+    sk_json_int(sb, "day", pd_day(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Deserialize a bayan value node (a JSON object) to a PersianDate pointer.
+# The month field is read as its variant-name string and mapped back to the
+# discriminant via persian_month_from_name.
+#must_use
+fn persian_date_from_json(v) {
+    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
+    var mv = bayan_json_v_obj_get(v, "month");
+    var mname = bayan_json_v_str(mv);
+    var m = persian_month_from_name(mname);
+    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    return persian_date_new(y, m, d);
+}
+
+# Field-by-field equality of two PersianDate pointers (0/1).
+#must_use
+fn persian_date_eq(a, b) {
+    if (pd_year(a) != pd_year(b)) {
+        return 0;
+    }
+    if (pd_month(a) != pd_month(b)) {
+        return 0;
+    }
+    if (pd_day(a) != pd_day(b)) {
+        return 0;
+    }
+    return 1;
+}

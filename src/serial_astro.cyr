@@ -1,0 +1,359 @@
+# serial_astro.cyr — JSON (de)serialization for the astro module, matching
+# Rust serde_json round-trip output EXACTLY (derived Serialize + Deserialize on
+# CelestialCoord / EclipticCoord / HorizontalCoord / Star / StarName /
+# HeliacalEvent / HeliacalEventType / AlignmentTarget / AlignmentResult).
+#
+# SELF-CONTAINED: no include lines. Uses the sk_json_* helpers (serial_util.cyr),
+# the bayan value-tree API (folded stdlib), and the astro.cyr offset getters +
+# <Enum>_name accessors. serde conventions reproduced:
+#   struct → {"field":value,...} with the Rust snake_case field names.
+#   enum unit variant → the variant-name JSON string via <Enum>_name(i).
+#   AlignmentTarget::StarRising(StarName) → {"StarRising":"<starname>"} (serde
+#     external tagging for a single-field tuple variant).
+#   f64 → JSON number formatted by bayan (Grisu2, round-trip correct, matching
+#     serde_json's shortest representation).
+
+# ---------------------------------------------------------------------------
+# Enum <-> variant-name mapping (deserialize side).
+# ---------------------------------------------------------------------------
+
+# Map a StarName variant name (cstr) back to its discriminant, or -1.
+#must_use
+fn starname_from_name(cstr) {
+    var i = 0;
+    while (i < 20) {
+        if (str_eq_cstr(starname_name(i), cstr) == 1) { return i; }
+        i = i + 1;
+    }
+    return 0 - 1;
+}
+
+# Map a HeliacalEventType variant name (cstr) back to its discriminant, or -1.
+#must_use
+fn heltype_from_name(cstr) {
+    var j = 0;
+    while (j < 2) {
+        if (str_eq_cstr(heltype_name(j), cstr) == 1) { return j; }
+        j = j + 1;
+    }
+    return 0 - 1;
+}
+
+# Map an AlignmentTarget variant name (cstr) back to its discriminant, or -1.
+#must_use
+fn alignmenttarget_from_name(cstr) {
+    var k = 0;
+    while (k < 7) {
+        if (str_eq_cstr(alignmenttarget_name(k), cstr) == 1) { return k; }
+        k = k + 1;
+    }
+    return 0 - 1;
+}
+
+# ---------------------------------------------------------------------------
+# Shared emit helpers.
+# ---------------------------------------------------------------------------
+
+# Append  "key":<number>  where bits is an f64 bit pattern. Formatted by bayan
+# (Grisu2) so integer-valued and fractional f64 both match serde_json.
+fn _astro_json_f64(sb, key, bits) {
+    sk_json_key(sb, key);
+    var fv = bayan_json_v_float_new(bits);
+    str_builder_add(sb, bayan_json_v_build(fv));
+    return 0;
+}
+
+# Emit an AlignmentTarget value into sb. Unit variants (target 0..5) emit the
+# bare variant-name string; AT_STAR_RISING (6) emits {"StarRising":"<name>"}.
+fn _at_emit(sb, target, starcode) {
+    if (target == AT_STAR_RISING) {
+        str_builder_add_cstr(sb, "{");
+        sk_json_str(sb, "StarRising", starname_name(starcode));
+        str_builder_add_cstr(sb, "}");
+    } else {
+        str_builder_add_json_str(sb, alignmenttarget_name(target));
+    }
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# CelestialCoord { ra_hours: f64, dec_degrees: f64 }
+# ---------------------------------------------------------------------------
+
+#must_use
+fn celestial_coord_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    _astro_json_f64(sb, "ra_hours", cc_ra_hours(p));
+    sk_json_sep(sb);
+    _astro_json_f64(sb, "dec_degrees", cc_dec_degrees(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn celestial_coord_from_json(v) {
+    var ra = bayan_json_v_float(bayan_json_v_obj_get(v, "ra_hours"));
+    var dec = bayan_json_v_float(bayan_json_v_obj_get(v, "dec_degrees"));
+    return celestial_new(ra, dec);
+}
+
+#must_use
+fn celestial_coord_eq(a, b) {
+    if (f64_eq(cc_ra_hours(a), cc_ra_hours(b)) == 0) { return 0; }
+    if (f64_eq(cc_dec_degrees(a), cc_dec_degrees(b)) == 0) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# EclipticCoord { longitude: f64, latitude: f64 }
+# ---------------------------------------------------------------------------
+
+#must_use
+fn ecliptic_coord_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    _astro_json_f64(sb, "longitude", ec_longitude(p));
+    sk_json_sep(sb);
+    _astro_json_f64(sb, "latitude", ec_latitude(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn ecliptic_coord_from_json(v) {
+    var lon = bayan_json_v_float(bayan_json_v_obj_get(v, "longitude"));
+    var lat = bayan_json_v_float(bayan_json_v_obj_get(v, "latitude"));
+    return ecliptic_new(lon, lat);
+}
+
+#must_use
+fn ecliptic_coord_eq(a, b) {
+    if (f64_eq(ec_longitude(a), ec_longitude(b)) == 0) { return 0; }
+    if (f64_eq(ec_latitude(a), ec_latitude(b)) == 0) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# HorizontalCoord { azimuth: f64, altitude: f64 }
+# ---------------------------------------------------------------------------
+
+#must_use
+fn horizontal_coord_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    _astro_json_f64(sb, "azimuth", hc_azimuth(p));
+    sk_json_sep(sb);
+    _astro_json_f64(sb, "altitude", hc_altitude(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn horizontal_coord_from_json(v) {
+    var az = bayan_json_v_float(bayan_json_v_obj_get(v, "azimuth"));
+    var alt = bayan_json_v_float(bayan_json_v_obj_get(v, "altitude"));
+    return horizontal_new(az, alt);
+}
+
+#must_use
+fn horizontal_coord_eq(a, b) {
+    if (f64_eq(hc_azimuth(a), hc_azimuth(b)) == 0) { return 0; }
+    if (f64_eq(hc_altitude(a), hc_altitude(b)) == 0) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# Star { name, bayer, constellation: &str; ra_j2000, dec_j2000,
+#        visual_magnitude: f64 }
+# ---------------------------------------------------------------------------
+
+#must_use
+fn star_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_str(sb, "name", star_name(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "bayer", star_bayer(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "constellation", star_constellation(p));
+    sk_json_sep(sb);
+    _astro_json_f64(sb, "ra_j2000", star_ra_j2000(p));
+    sk_json_sep(sb);
+    _astro_json_f64(sb, "dec_j2000", star_dec_j2000(p));
+    sk_json_sep(sb);
+    _astro_json_f64(sb, "visual_magnitude", star_visual_magnitude(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn star_from_json(v) {
+    var nm = bayan_json_v_str(bayan_json_v_obj_get(v, "name"));
+    var by = bayan_json_v_str(bayan_json_v_obj_get(v, "bayer"));
+    var co = bayan_json_v_str(bayan_json_v_obj_get(v, "constellation"));
+    var ra = bayan_json_v_float(bayan_json_v_obj_get(v, "ra_j2000"));
+    var dec = bayan_json_v_float(bayan_json_v_obj_get(v, "dec_j2000"));
+    var mag = bayan_json_v_float(bayan_json_v_obj_get(v, "visual_magnitude"));
+    return star_rec_new(nm, by, co, ra, dec, mag);
+}
+
+#must_use
+fn star_eq(a, b) {
+    if (str_eq(star_name(a), star_name(b)) == 0) { return 0; }
+    if (str_eq(star_bayer(a), star_bayer(b)) == 0) { return 0; }
+    if (str_eq(star_constellation(a), star_constellation(b)) == 0) { return 0; }
+    if (f64_eq(star_ra_j2000(a), star_ra_j2000(b)) == 0) { return 0; }
+    if (f64_eq(star_dec_j2000(a), star_dec_j2000(b)) == 0) { return 0; }
+    if (f64_eq(star_visual_magnitude(a), star_visual_magnitude(b)) == 0) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# StarName (unit-variant enum → JSON string).
+# ---------------------------------------------------------------------------
+
+#must_use
+fn starname_to_json(sncode) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, starname_name(sncode));
+    return str_builder_build(sb);
+}
+
+#must_use
+fn starname_from_json(v) {
+    var c = str_cstr(bayan_json_v_str(v));
+    return starname_from_name(c);
+}
+
+#must_use
+fn starname_eq(a, b) {
+    if (a == b) { return 1; }
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# HeliacalEventType (unit-variant enum → JSON string).
+# ---------------------------------------------------------------------------
+
+#must_use
+fn heltype_to_json(etcode) {
+    var sb = str_builder_new();
+    str_builder_add_json_str(sb, heltype_name(etcode));
+    return str_builder_build(sb);
+}
+
+#must_use
+fn heltype_from_json(v) {
+    var c = str_cstr(bayan_json_v_str(v));
+    return heltype_from_name(c);
+}
+
+#must_use
+fn heltype_eq(a, b) {
+    if (a == b) { return 1; }
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# HeliacalEvent { jdn: f64, star: StarName, event_type: HeliacalEventType }
+# ---------------------------------------------------------------------------
+
+#must_use
+fn heliacal_event_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    _astro_json_f64(sb, "jdn", he_jdn(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "star", starname_name(he_star(p)));
+    sk_json_sep(sb);
+    sk_json_str(sb, "event_type", heltype_name(he_event_type(p)));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn heliacal_event_from_json(v) {
+    var jdn = bayan_json_v_float(bayan_json_v_obj_get(v, "jdn"));
+    var sncode = starname_from_name(str_cstr(bayan_json_v_str(bayan_json_v_obj_get(v, "star"))));
+    var etcode = heltype_from_name(str_cstr(bayan_json_v_str(bayan_json_v_obj_get(v, "event_type"))));
+    return heliacal_event_new(jdn, sncode, etcode);
+}
+
+#must_use
+fn heliacal_event_eq(a, b) {
+    if (f64_eq(he_jdn(a), he_jdn(b)) == 0) { return 0; }
+    if (he_star(a) != he_star(b)) { return 0; }
+    if (he_event_type(a) != he_event_type(b)) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# AlignmentTarget (6 unit variants + StarRising(StarName)). Because the ported
+# module stores the carried StarName alongside the target code, the standalone
+# (de)serializers take/return (target, starcode); starcode is -1 for unit
+# variants.
+# ---------------------------------------------------------------------------
+
+#must_use
+fn alignmenttarget_to_json(target, starcode) {
+    var sb = str_builder_new();
+    _at_emit(sb, target, starcode);
+    return str_builder_build(sb);
+}
+
+# Returns (target_code, star_code). star_code is -1 for unit variants.
+#must_use
+fn alignmenttarget_from_json(v) {
+    if (bayan_json_v_is_obj(v) == 1) {
+        var svnode = bayan_json_v_obj_get(v, "StarRising");
+        var scode = starname_from_name(str_cstr(bayan_json_v_str(svnode)));
+        return (AT_STAR_RISING, scode);
+    }
+    var tcode = alignmenttarget_from_name(str_cstr(bayan_json_v_str(v)));
+    return (tcode, 0 - 1);
+}
+
+#must_use
+fn alignmenttarget_eq(ta, sa, tb, sb) {
+    if (ta != tb) { return 0; }
+    if (ta == AT_STAR_RISING) {
+        if (sa != sb) { return 0; }
+    }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# AlignmentResult { target: AlignmentTarget, azimuth: f64, deviation: f64 }
+# ---------------------------------------------------------------------------
+
+#must_use
+fn alignment_result_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_key(sb, "target");
+    _at_emit(sb, ar_target(p), ar_star(p));
+    sk_json_sep(sb);
+    _astro_json_f64(sb, "azimuth", ar_azimuth(p));
+    sk_json_sep(sb);
+    _astro_json_f64(sb, "deviation", ar_deviation(p));
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+#must_use
+fn alignment_result_from_json(v) {
+    var tnode = bayan_json_v_obj_get(v, "target");
+    var tcode, scode = alignmenttarget_from_json(tnode);
+    var az = bayan_json_v_float(bayan_json_v_obj_get(v, "azimuth"));
+    var dev = bayan_json_v_float(bayan_json_v_obj_get(v, "deviation"));
+    return alignment_result_new(tcode, scode, az, dev);
+}
+
+#must_use
+fn alignment_result_eq(a, b) {
+    if (alignmenttarget_eq(ar_target(a), ar_star(a), ar_target(b), ar_star(b)) == 0) { return 0; }
+    if (f64_eq(ar_azimuth(a), ar_azimuth(b)) == 0) { return 0; }
+    if (f64_eq(ar_deviation(a), ar_deviation(b)) == 0) { return 0; }
+    return 1;
+}

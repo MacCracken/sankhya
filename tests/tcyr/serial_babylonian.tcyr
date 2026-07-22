@@ -1,0 +1,65 @@
+# serial_babylonian.tcyr — serde round-trip parity for the babylonian module.
+#
+# Ports rust-old/src/babylonian.rs's #[test] fn serde_roundtrip_babylonian_date:
+#   let date = jdn_to_babylonian(BABYLONIAN_EPOCH_JDN + 500.0);
+#   let json = serde_json::to_string(&date).unwrap();
+#   let back: BabylonianDate = serde_json::from_str(&json).unwrap();
+#   assert_eq!(date, back);
+# Additionally exercises BabylonianNumeral and the BabylonianMonth unit enum,
+# and asserts the emitted JSON matches serde_json's exact byte shape (correct
+# field names + order, integers, and the enum as its variant-name string).
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/babylonian.cyr"
+include "src/serial_babylonian.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+    babylonian_init();
+    println("=== sankhya serial_babylonian test suite ===");
+
+    # ---- BabylonianNumeral(42) = {"tens":4,"units":2} ----
+    var r = babnum_from_value(42);
+    ok(is_ok(r), "from_value(42) ok");
+    var num = result_unwrap(r);
+    var njs = babnum_to_json(num);
+    ok(str_contains_cstr(njs, "\"tens\":4"), "numeral json has tens:4");
+    ok(str_contains_cstr(njs, "\"units\":2"), "numeral json has units:2");
+    ok(str_eq_cstr(njs, "{\"tens\":4,\"units\":2}"), "numeral exact serde shape");
+    var nv = sk_json_parse(njs);
+    ok(nv, "numeral parse ok");
+    var nparsed = babnum_from_json(nv);
+    ok(babnum_eq(num, nparsed), "BabylonianNumeral serde round-trip");
+
+    # ---- BabylonianMonth::Abu = "Abu" (unit enum → bare variant-name string) ----
+    var mjs = babmonth_to_json(BM_ABU);
+    ok(str_eq_cstr(mjs, "\"Abu\""), "month exact serde shape (\"Abu\")");
+    var mv = sk_json_parse(mjs);
+    ok(mv, "month parse ok");
+    var mparsed = babmonth_from_json(mv);
+    ok(babmonth_eq(BM_ABU, mparsed), "BabylonianMonth serde round-trip");
+
+    # ---- serde_roundtrip_babylonian_date: jdn_to_babylonian(EPOCH + 500) ----
+    # Rust: jdn_to_babylonian(BABYLONIAN_EPOCH_JDN + 500.0) → year 2, Abu, day 29.
+    var jdn = f64_add(BABYLONIAN_EPOCH_JDN, f64_from(500));
+    var date = jdn_to_babylonian(jdn);
+    var djs = babdate_to_json(date);
+    ok(str_contains_cstr(djs, "\"year\":2"), "date json has year:2");
+    ok(str_contains_cstr(djs, "\"month\":\"Abu\""), "date json has month:Abu (enum as name)");
+    ok(str_contains_cstr(djs, "\"day\":29"), "date json has day:29");
+    ok(str_eq_cstr(djs, "{\"year\":2,\"month\":\"Abu\",\"day\":29}"), "date exact serde shape");
+    var dv = sk_json_parse(djs);
+    ok(dv, "date parse ok");
+    var dparsed = babdate_from_json(dv);
+    ok(babdate_eq(date, dparsed), "BabylonianDate serde round-trip");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

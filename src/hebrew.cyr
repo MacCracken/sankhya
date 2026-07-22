@@ -1,0 +1,479 @@
+# hebrew.cyr — Hebrew (Jewish) lunisolar calendar.
+#
+# Ported from rust-old/src/hebrew.rs. Implements the arithmetic Hebrew calendar
+# with Julian Day Number conversions, following Dershowitz & Reingold,
+# *Calendrical Calculations* (4th ed., 2018), ch. 8:
+#   - 19-year Metonic leap rule (years 3,6,8,11,14,17,19 leap)
+#   - arithmetic molad (mean new moon) in chalakim (parts)
+#   - four dehiyyot (postponement rules) for Rosh Hashana
+#   - six year types (353/354/355 common, 383/384/385 leap)
+#   - JDN <-> HebrewDate round-trip
+#
+# SELF-CONTAINED: no include lines (distlib bundler strips them; stdlib + the
+# foundation modules error/util/f64_util/logging are resolved at bundle time).
+#
+# CALENDAR MODULO: every Rust .rem_euclid()/.div_euclid() maps to the util
+# helpers rem_euclid()/div_euclid() — pre-epoch day/molad counts can be
+# negative, where plain %/ are truncated and would corrupt the day-of-week and
+# month decomposition.
+
+# ---------------------------------------------------------------------------
+# Constants (integer chalakim / parts arithmetic). Enum members carry no
+# global-init cost.
+# ---------------------------------------------------------------------------
+# PARTS_PER_HOUR = 1080; PARTS_PER_DAY = 24 * 1080 = 25920;
+# MONTH_PARTS = 29*25920 + 12*1080 + 793 = 765433 (mean synodic month);
+# MOLAD_EPOCH offset = PARTS_PER_DAY + 5*PARTS_PER_HOUR + 204 = 31524
+#   (molad of Tishrei year 1: day 1 (Monday), 5h, 204 parts from Sunday 0h);
+# JDN_OFFSET: molad day 1 = JDN 347997, so JDN = day + 347996;
+# MONTHS_PER_CYCLE = 235 (12*19 + 7 leap months per 19-year cycle).
+enum HebConst {
+    HEB_PARTS_PER_HOUR = 1080;
+    HEB_PARTS_PER_DAY = 25920;
+    HEB_MONTH_PARTS = 765433;
+    HEB_JDN_OFFSET = 347996;
+    HEB_MONTHS_PER_CYCLE = 235;
+}
+
+# Julian Day Number of the Hebrew epoch (1 Tishrei year 1 AM), midnight-based:
+# 347996.5. Set by hebrew_init() (called by the test harness / consumer init).
+var HEBREW_EPOCH_JDN = 0;
+
+fn hebrew_init() {
+    HEBREW_EPOCH_JDN = f64_add(f64_from(347996), F64_HALF);
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# Month enum — 14 possible months (Adar splits into Adar I / Adar II in leap
+# years). Discriminants match the Rust enum order (Tishrei = 0 ... Elul = 13).
+# ---------------------------------------------------------------------------
+enum HebrewMonth {
+    HM_TISHREI;
+    HM_CHESHVAN;
+    HM_KISLEV;
+    HM_TEVET;
+    HM_SHEVAT;
+    HM_ADAR;
+    HM_ADAR_I;
+    HM_ADAR_II;
+    HM_NISAN;
+    HM_IYAR;
+    HM_SIVAN;
+    HM_TAMMUZ;
+    HM_AV;
+    HM_ELUL;
+}
+
+# --- Serde identifier names (no spaces: "AdarI"/"AdarII") ---
+var hm_names_vec = 0;
+var hm_names_done = 0;
+
+fn build_hm_names() {
+    var v = vec_new();
+    vec_push(v, str_from("Tishrei"));
+    vec_push(v, str_from("Cheshvan"));
+    vec_push(v, str_from("Kislev"));
+    vec_push(v, str_from("Tevet"));
+    vec_push(v, str_from("Shevat"));
+    vec_push(v, str_from("Adar"));
+    vec_push(v, str_from("AdarI"));
+    vec_push(v, str_from("AdarII"));
+    vec_push(v, str_from("Nisan"));
+    vec_push(v, str_from("Iyar"));
+    vec_push(v, str_from("Sivan"));
+    vec_push(v, str_from("Tammuz"));
+    vec_push(v, str_from("Av"));
+    vec_push(v, str_from("Elul"));
+    return v;
+}
+
+#must_use
+fn hebrewmonth_name(i) {
+    if (hm_names_done == 0) { hm_names_vec = build_hm_names(); hm_names_done = 1; }
+    return vec_get(hm_names_vec, i);
+}
+
+# --- Display names (with spaces: "Adar I"/"Adar II") ---
+var hm_disp_vec = 0;
+var hm_disp_done = 0;
+
+fn build_hm_disp() {
+    var v = vec_new();
+    vec_push(v, str_from("Tishrei"));
+    vec_push(v, str_from("Cheshvan"));
+    vec_push(v, str_from("Kislev"));
+    vec_push(v, str_from("Tevet"));
+    vec_push(v, str_from("Shevat"));
+    vec_push(v, str_from("Adar"));
+    vec_push(v, str_from("Adar I"));
+    vec_push(v, str_from("Adar II"));
+    vec_push(v, str_from("Nisan"));
+    vec_push(v, str_from("Iyar"));
+    vec_push(v, str_from("Sivan"));
+    vec_push(v, str_from("Tammuz"));
+    vec_push(v, str_from("Av"));
+    vec_push(v, str_from("Elul"));
+    return v;
+}
+
+#must_use
+fn hebrewmonth_display(i) {
+    if (hm_disp_done == 0) { hm_disp_vec = build_hm_disp(); hm_disp_done = 1; }
+    return vec_get(hm_disp_vec, i);
+}
+
+# Display impl for HebrewMonth (returns the Display string, e.g. "Adar I").
+#must_use
+fn hebrewmonth_to_str(m) { return hebrewmonth_display(m); }
+
+# ---------------------------------------------------------------------------
+# HebrewDate struct: { year: i64 (Anno Mundi), month: HebrewMonth, day: i64 }
+# Offsets: year(0) month(8) day(16) = 24 bytes.
+# ---------------------------------------------------------------------------
+enum HebDateOff { HD_YEAR = 0; HD_MONTH = 8; HD_DAY = 16; HD_SIZE = 24; }
+
+#must_use
+fn hebrewdate_new(year, month, day) {
+    var p = alloc(HD_SIZE);
+    store64(p + HD_YEAR, year);
+    store64(p + HD_MONTH, month);
+    store64(p + HD_DAY, day);
+    return p;
+}
+
+#must_use
+fn hebdate_year(p) { return load64(p + HD_YEAR); }
+#must_use
+fn hebdate_month(p) { return load64(p + HD_MONTH); }
+#must_use
+fn hebdate_day(p) { return load64(p + HD_DAY); }
+
+# Display impl for HebrewDate: "{day} {month} {year} AM".
+#must_use
+fn hebrewdate_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, hebdate_day(p));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add(sb, hebrewmonth_to_str(hebdate_month(p)));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add_int(sb, hebdate_year(p));
+    str_builder_add_cstr(sb, " AM");
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# Month-order tables (lazy singletons of month discriminants).
+# COMMON_MONTHS [12], LEAP_MONTHS [13].
+# ---------------------------------------------------------------------------
+var common_months_vec = 0;
+var common_months_done = 0;
+
+fn build_common_months() {
+    var v = vec_new();
+    vec_push(v, HM_TISHREI);
+    vec_push(v, HM_CHESHVAN);
+    vec_push(v, HM_KISLEV);
+    vec_push(v, HM_TEVET);
+    vec_push(v, HM_SHEVAT);
+    vec_push(v, HM_ADAR);
+    vec_push(v, HM_NISAN);
+    vec_push(v, HM_IYAR);
+    vec_push(v, HM_SIVAN);
+    vec_push(v, HM_TAMMUZ);
+    vec_push(v, HM_AV);
+    vec_push(v, HM_ELUL);
+    return v;
+}
+
+#must_use
+fn common_months() {
+    if (common_months_done == 0) { common_months_vec = build_common_months(); common_months_done = 1; }
+    return common_months_vec;
+}
+
+var leap_months_vec = 0;
+var leap_months_done = 0;
+
+fn build_leap_months() {
+    var v = vec_new();
+    vec_push(v, HM_TISHREI);
+    vec_push(v, HM_CHESHVAN);
+    vec_push(v, HM_KISLEV);
+    vec_push(v, HM_TEVET);
+    vec_push(v, HM_SHEVAT);
+    vec_push(v, HM_ADAR_I);
+    vec_push(v, HM_ADAR_II);
+    vec_push(v, HM_NISAN);
+    vec_push(v, HM_IYAR);
+    vec_push(v, HM_SIVAN);
+    vec_push(v, HM_TAMMUZ);
+    vec_push(v, HM_AV);
+    vec_push(v, HM_ELUL);
+    return v;
+}
+
+#must_use
+fn leap_months() {
+    if (leap_months_done == 0) { leap_months_vec = build_leap_months(); leap_months_done = 1; }
+    return leap_months_vec;
+}
+
+# ---------------------------------------------------------------------------
+# Leap year and year properties
+# ---------------------------------------------------------------------------
+# Whether a Hebrew year is a leap year (13 months). Arithmetic Metonic rule:
+# ((7*year)+1).rem_euclid(19) < 7.
+#must_use
+fn hebrew_is_leap(year) {
+    var r = rem_euclid(7 * year + 1, 19);
+    if (r < 7) { return 1; }
+    return 0;
+}
+
+# Whether a 1-based position within a 19-year cycle is a leap year.
+#must_use
+fn hebrew_is_leap_in_cycle(pos) {
+    if (pos == 3) { return 1; }
+    if (pos == 6) { return 1; }
+    if (pos == 8) { return 1; }
+    if (pos == 11) { return 1; }
+    if (pos == 14) { return 1; }
+    if (pos == 17) { return 1; }
+    if (pos == 19) { return 1; }
+    return 0;
+}
+
+# Total months elapsed from creation to the start of a Hebrew year.
+#must_use
+fn months_before_year(year) {
+    var y = year - 1;
+    var cycles = div_euclid(y, 19);
+    var remainder = rem_euclid(y, 19);
+    var months = cycles * HEB_MONTHS_PER_CYCLE;
+    for (var i = 0; i < remainder; i = i + 1) {
+        var yr = i + 1;
+        if (hebrew_is_leap_in_cycle(yr) == 1) { months = months + 13; }
+        else { months = months + 12; }
+    }
+    return months;
+}
+
+# Molad (mean new moon) of Tishrei for a given year, in parts (chalakim).
+#must_use
+fn molad_tishrei(year) {
+    var months_elapsed = months_before_year(year);
+    var molad_epoch = HEB_PARTS_PER_DAY + 5 * HEB_PARTS_PER_HOUR + 204;
+    return molad_epoch + months_elapsed * HEB_MONTH_PARTS;
+}
+
+# JDN of 1 Tishrei (Rosh Hashana) for a given year, applying the four dehiyyot.
+#must_use
+fn rosh_hashana_jdn(year) {
+    var molad = molad_tishrei(year);
+    var day = div_euclid(molad, HEB_PARTS_PER_DAY);
+    var parts_in_day = rem_euclid(molad, HEB_PARTS_PER_DAY);
+
+    # Day of week (0=Sunday .. 6=Saturday)
+    var dow = rem_euclid(day, 7);
+
+    # molad day 1 = JDN 347997, so JDN = day + 347996
+    var jdn = day + HEB_JDN_OFFSET;
+
+    # Dehiyya 1 (Lo ADU Rosh): cannot fall on Sunday(0), Wednesday(3), Friday(5).
+    var postpone = 0;
+    if (dow == 0) { postpone = 1; }
+    if (dow == 3) { postpone = 1; }
+    if (dow == 5) { postpone = 1; }
+
+    # Dehiyya 2 (Molad Zaken): molad at or after noon (18h = 18*1080 = 19440).
+    if (parts_in_day >= 18 * HEB_PARTS_PER_HOUR) {
+        postpone = 1;
+        var new_dow = rem_euclid(dow + 1, 7);
+        if (new_dow == 0) { postpone = 2; }
+        if (new_dow == 3) { postpone = 2; }
+        if (new_dow == 5) { postpone = 2; }
+    }
+
+    # Dehiyya 3 (GaTRaD): common year, molad on Tuesday(2) >= 9h204p (9924) -> Thursday.
+    var leap_this = hebrew_is_leap(year);
+    if (leap_this == 0) {
+        if (dow == 2) {
+            if (parts_in_day >= 9 * HEB_PARTS_PER_HOUR + 204) { postpone = 2; }
+        }
+    }
+
+    # Dehiyya 4 (BeTUTeKPaT): year after a leap year, molad on Monday(1) >= 15h589p (16789) -> Tuesday.
+    var leap_prev = hebrew_is_leap(year - 1);
+    if (leap_prev == 1) {
+        if (dow == 1) {
+            if (parts_in_day >= 15 * HEB_PARTS_PER_HOUR + 589) { postpone = 1; }
+        }
+    }
+
+    jdn = jdn + postpone;
+    return jdn;
+}
+
+# Days in a Hebrew year: 353/354/355 (common) or 383/384/385 (leap).
+#must_use
+fn hebrew_year_days(year) {
+    return rosh_hashana_jdn(year + 1) - rosh_hashana_jdn(year);
+}
+
+# Days in a specific Hebrew month for a given year.
+#must_use
+fn hebrew_month_days(year, month) {
+    var year_len = hebrew_year_days(year);
+    if (month == HM_TISHREI) { return 30; }
+    if (month == HM_CHESHVAN) {
+        # 30 in "complete" years (355 or 385), 29 otherwise.
+        if (rem_euclid(year_len, 10) == 5) { return 30; }
+        return 29;
+    }
+    if (month == HM_KISLEV) {
+        # 29 in "deficient" years (353 or 383), 30 otherwise.
+        if (rem_euclid(year_len, 10) == 3) { return 29; }
+        return 30;
+    }
+    if (month == HM_TEVET) { return 29; }
+    if (month == HM_SHEVAT) { return 30; }
+    if (month == HM_ADAR) { return 29; }
+    if (month == HM_ADAR_I) { return 30; }
+    if (month == HM_ADAR_II) { return 29; }
+    if (month == HM_NISAN) { return 30; }
+    if (month == HM_IYAR) { return 29; }
+    if (month == HM_SIVAN) { return 30; }
+    if (month == HM_TAMMUZ) { return 29; }
+    if (month == HM_AV) { return 30; }
+    if (month == HM_ELUL) { return 29; }
+    return 29;
+}
+
+# ---------------------------------------------------------------------------
+# JDN conversions
+# ---------------------------------------------------------------------------
+# Convert a Julian Day Number (f64) to a Hebrew date.
+#must_use
+fn jdn_to_hebrew(jdn) {
+    # (jdn + 0.5).floor() as i64
+    var jdn_int = f64_to(f64_floor(f64_add(jdn, F64_HALF)));
+
+    # trace!(jdn, "JDN to Hebrew")
+    var tv = str_from_int(jdn_int);
+    sakshi_log_kv(SK_TRACE, "JDN to Hebrew", 13, "jdn", 3, str_data(tv), str_len(tv));
+
+    # Estimate year: ((jdn_int - 347996) as f64 / 365.25).floor() as i64 + 1
+    var diff = jdn_int - HEB_JDN_OFFSET;
+    var approx_f = f64_div(f64_from(diff), JULIAN_YEAR_DAYS);
+    var year = f64_to(f64_floor(approx_f)) + 1;
+
+    # Correct: find the year whose Rosh Hashana is <= jdn_int.
+    while (rosh_hashana_jdn(year + 1) <= jdn_int) { year = year + 1; }
+    while (rosh_hashana_jdn(year) > jdn_int) { year = year - 1; }
+
+    var day_of_year = jdn_int - rosh_hashana_jdn(year);
+    var is_leap = hebrew_is_leap(year);
+
+    var months = common_months();
+    if (is_leap == 1) { months = leap_months(); }
+
+    var remaining = day_of_year;
+    var month = vec_get(months, 0);
+    var n = vec_len(months);
+    var stop = 0;
+    for (var i = 0; i < n; i = i + 1) {
+        var m = vec_get(months, i);
+        if (stop == 0) {
+            var md = hebrew_month_days(year, m);
+            if (remaining < md) {
+                month = m;
+                stop = 1;
+            } else {
+                remaining = remaining - md;
+                month = m;
+            }
+        }
+    }
+
+    return hebrewdate_new(year, month, remaining + 1);
+}
+
+# --- error message builders (preserve the exact Rust format! text) ---
+fn _heb_err_common(month, year) {
+    var sb = str_builder_new();
+    str_builder_add(sb, hebrewmonth_to_str(month));
+    str_builder_add_cstr(sb, " is not valid in common year ");
+    str_builder_add_int(sb, year);
+    str_builder_add_cstr(sb, " AM");
+    return sk_fail(SKE_INVALID_DATE, str_builder_build(sb));
+}
+
+fn _heb_err_leap_adar(year) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "Adar is not valid in leap year ");
+    str_builder_add_int(sb, year);
+    str_builder_add_cstr(sb, " AM (use Adar I or Adar II)");
+    return sk_fail(SKE_INVALID_DATE, str_builder_build(sb));
+}
+
+fn _heb_err_day(day, month, year, max_day) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "day ");
+    str_builder_add_int(sb, day);
+    str_builder_add_cstr(sb, " out of range for ");
+    str_builder_add(sb, hebrewmonth_to_str(month));
+    str_builder_add_cstr(sb, " in year ");
+    str_builder_add_int(sb, year);
+    str_builder_add_cstr(sb, " AM (max ");
+    str_builder_add_int(sb, max_day);
+    str_builder_add_cstr(sb, ")");
+    return sk_fail(SKE_INVALID_DATE, str_builder_build(sb));
+}
+
+# Convert a Hebrew date to a Julian Day Number. Returns Ok(f64) or an Err
+# (SKE_INVALID_DATE) if the month is invalid for the year type or the day is
+# out of range.
+#must_use
+fn hebrew_to_jdn(date) {
+    var year = hebdate_year(date);
+    var month = hebdate_month(date);
+    var day = hebdate_day(date);
+
+    # trace!(year, ?month, day, "Hebrew to JDN")
+    var yv = str_from_int(year);
+    sakshi_log_kv(SK_TRACE, "Hebrew to JDN", 13, "year", 4, str_data(yv), str_len(yv));
+
+    var is_leap = hebrew_is_leap(year);
+
+    # Validate month for year type.
+    if (is_leap == 0) {
+        if (month == HM_ADAR_I) { return _heb_err_common(month, year); }
+        if (month == HM_ADAR_II) { return _heb_err_common(month, year); }
+    }
+    if (is_leap == 1) {
+        if (month == HM_ADAR) { return _heb_err_leap_adar(year); }
+    }
+
+    var max_day = hebrew_month_days(year, month);
+    if (day == 0) { return _heb_err_day(day, month, year, max_day); }
+    if (day > max_day) { return _heb_err_day(day, month, year, max_day); }
+
+    var months = common_months();
+    if (is_leap == 1) { months = leap_months(); }
+
+    var day_of_year = day - 1;
+    var n = vec_len(months);
+    var stop = 0;
+    for (var i = 0; i < n; i = i + 1) {
+        var m = vec_get(months, i);
+        if (stop == 0) {
+            if (m == month) { stop = 1; }
+            else { day_of_year = day_of_year + hebrew_month_days(year, m); }
+        }
+    }
+
+    var jdn_int = rosh_hashana_jdn(year) + day_of_year;
+    # Ok(jdn as f64 - 0.5)
+    return Ok(f64_sub(f64_from(jdn_int), F64_HALF));
+}

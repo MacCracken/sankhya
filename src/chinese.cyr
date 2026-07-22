@@ -1,0 +1,624 @@
+# chinese.cyr — Chinese mathematics (was src/chinese.rs).
+#
+# Counting-rod numerals (i64 wrapper with ASCII rod-art Display + wrapping
+# add/sub/mul), the Chinese Remainder Theorem (Sun Tzu's algorithm via extended
+# Euclid modular inverse), magic-square construction (hardcoded Lo Shu 3x3 +
+# Siamese method for odd n) with a verifier, and the 60-year sexagenary cycle
+# (10 Heavenly Stems x 12 Earthly Branches / zodiac animals) from a Gregorian
+# year or a JDN.
+#
+# SELF-CONTAINED: no include lines (the distlib bundler strips them; stdlib +
+# error/util/f64_util/logging/gregorian + varna symbols resolve from the
+# consumer's bundle).
+#
+# Parity notes vs Rust:
+#   * u64/u128/i128 all collapse to i64. The Rust CRT accumulates the product of
+#     moduli in u128 (checked_mul) and does `r*p % product * inv % product` in
+#     u128, with mod_inverse in i128. This port reduces every product modulo
+#     `product` via a Russian-peasant _mulmod, so results are EXACT as long as
+#     the product of all moduli fits below 2^62 (0x3FFFFFFFFFFFFFFF). For the
+#     sexagenary moduli (10*12=120) and every historically meaningful CRT this
+#     holds. Where the moduli product would exceed that bound, this port returns
+#     0 (None) — matching Rust's checked_mul-None on u128 overflow, but at a
+#     smaller threshold than Rust's ~3.4e38.
+#   * unsigned_abs() on RodNumeral::MIN (i64::MIN) would be 2^63 in Rust; the
+#     i64 int_abs here overflows to i64::MIN. Not exercised by any test.
+#   * rem_euclid on (year - 4) reproduces the Rust Euclidean remainder so BCE /
+#     negative years anchor correctly.
+
+# ---------------------------------------------------------------------------
+# Rod numerals — RodNumeral { value: i64 } (8 bytes)
+# ---------------------------------------------------------------------------
+
+enum RodNumOff { ROD_VALUE = 0; ROD_SIZE = 8; }
+
+#must_use
+fn rod_numeral_new(value) {
+    var p = alloc(ROD_SIZE);
+    store64(p + ROD_VALUE, value);
+    return p;
+}
+
+#must_use
+fn rod_value(p) { return load64(p + ROD_VALUE); }
+
+# Add two rod numerals (2's-complement wrapping — matches Rust wrapping_add).
+#must_use
+fn rod_add(a, b) { return rod_numeral_new(rod_value(a) + rod_value(b)); }
+
+# Subtract two rod numerals (wrapping_sub).
+#must_use
+fn rod_subtract(a, b) { return rod_numeral_new(rod_value(a) - rod_value(b)); }
+
+# Multiply two rod numerals (wrapping_mul).
+#must_use
+fn rod_multiply(a, b) { return rod_numeral_new(rod_value(a) * rod_value(b)); }
+
+# Display: ASCII rod-art. Zero -> "[ ]". Otherwise sign + "[" + per-digit rods
+# ("|" in odd places-from-right, "-" in even; "+" prefix for digits > 5) + "]".
+#must_use
+fn rod_numeral_to_str(p) {
+    var value = rod_value(p);
+    if (value == 0) { return str_from("[ ]"); }
+
+    var abs_val = value;
+    if (value < 0) { abs_val = 0 - value; }
+
+    var sb = str_builder_new();
+    if (value < 0) { str_builder_add_cstr(sb, "-"); }
+    str_builder_add_cstr(sb, "[");
+
+    # Collect decimal digits least-significant-first.
+    var digs = vec_new();
+    var n = abs_val;
+    while (n > 0) {
+        vec_push(digs, n % 10);
+        n = n / 10;
+    }
+
+    var dlen = vec_len(digs);
+    var i = 0;
+    while (i < dlen) {
+        var digit = vec_get(digs, dlen - 1 - i);
+        if (i > 0) { str_builder_add_cstr(sb, " "); }
+        var pos_from_right = dlen - 1 - i;
+        var rod_char = 124;
+        if (pos_from_right % 2 != 0) { rod_char = 45; }
+        if (digit == 0) {
+            str_builder_add_cstr(sb, " ");
+        }
+        if (digit != 0) {
+            var cnt = digit;
+            if (cnt > 5) { cnt = 5; }
+            var k = 0;
+            while (k < cnt) { str_builder_add_byte(sb, rod_char); k = k + 1; }
+            if (digit > 5) {
+                str_builder_add_cstr(sb, "+");
+                var extra = digit - 5;
+                var e = 0;
+                while (e < extra) { str_builder_add_byte(sb, rod_char); e = e + 1; }
+            }
+        }
+        i = i + 1;
+    }
+    str_builder_add_cstr(sb, "]");
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# Chinese Remainder Theorem
+# ---------------------------------------------------------------------------
+
+# (a * b) mod m without i64 overflow, via Russian-peasant doubling. Exact for
+# a, b >= 0 and m < 2^62 (so result+x and x+x stay below i64 max).
+#must_use
+fn _mulmod(a, b, m) {
+    var result = 0;
+    var x = a % m;
+    var y = b;
+    while (y > 0) {
+        var bit = y & 1;
+        if (bit == 1) { result = (result + x) % m; }
+        x = (x + x) % m;
+        y = y >> 1;
+    }
+    return result;
+}
+
+# Modular multiplicative inverse of a mod m via extended Euclid. Returns 1 and
+# writes the inverse to *out if gcd(a,m)==1; returns 0 (no inverse) otherwise.
+#must_use
+fn mod_inverse(a, m, out) {
+    if (m == 1) { store64(out, 0); return 1; }
+
+    var old_r = a;
+    var r = m;
+    var old_s = 1;
+    var s = 0;
+    while (r != 0) {
+        var quotient = old_r / r;
+        var tr = r;
+        r = old_r - quotient * r;
+        old_r = tr;
+        var ts = s;
+        s = old_s - quotient * s;
+        old_s = ts;
+    }
+
+    if (old_r != 1) { return 0; }
+
+    # Ensure a non-negative representative (old_s may be negative; truncated %
+    # matches Rust's i128 `((old_s % m) + m) % m`).
+    var res = ((old_s % m) + m) % m;
+    store64(out, res);
+    return 1;
+}
+
+# Solve a system of congruences (Sun Tzu's algorithm).
+# `pairs` is a vec of 16-byte records { remainder(offset 0), modulus(offset 8) }.
+# Returns 1 and writes the smallest non-negative solution to *out when a unique
+# solution mod (product of moduli) exists; returns 0 (None) if the input is
+# empty, any modulus is 0, the moduli are not pairwise coprime, or the product
+# overflows the safe _mulmod bound.
+#must_use
+fn chinese_remainder(pairs, out) {
+    var count = vec_len(pairs);
+    if (count == 0) { return 0; }
+
+    var i = 0;
+    while (i < count) {
+        var pr = vec_get(pairs, i);
+        if (load64(pr + 8) == 0) { return 0; }
+        i = i + 1;
+    }
+
+    # Single congruence: x = r (mod m).
+    if (count == 1) {
+        var p0 = vec_get(pairs, 0);
+        store64(out, load64(p0) % load64(p0 + 8));
+        return 1;
+    }
+
+    # Product of all moduli (checked against the _mulmod safe bound).
+    var product = 1;
+    var MULMOD_LIMIT = 0x3FFFFFFFFFFFFFFF;
+    i = 0;
+    while (i < count) {
+        var pm = load64(vec_get(pairs, i) + 8);
+        if (product > MULMOD_LIMIT / pm) { return 0; }
+        product = product * pm;
+        i = i + 1;
+    }
+
+    var sum = 0;
+    i = 0;
+    while (i < count) {
+        var pr2 = vec_get(pairs, i);
+        var remainder = load64(pr2);
+        var modulus = load64(pr2 + 8);
+        var p = product / modulus;
+
+        var inv = 0;
+        var have_inv = mod_inverse(p % modulus, modulus, &inv);
+        if (have_inv == 0) { return 0; }
+
+        # sum = (sum + r*p % product * inv % product) % product
+        var t1 = _mulmod(remainder, p, product);
+        var t2 = _mulmod(t1, inv, product);
+        sum = (sum + t2) % product;
+        i = i + 1;
+    }
+
+    store64(out, sum);
+    return 1;
+}
+
+# Convenience: build a { remainder, modulus } pair record.
+#must_use
+fn crt_pair(remainder, modulus) {
+    var p = alloc(16);
+    store64(p, remainder);
+    store64(p + 8, modulus);
+    return p;
+}
+
+# ---------------------------------------------------------------------------
+# Magic squares (row-major vec of row-vecs of i64)
+# ---------------------------------------------------------------------------
+
+fn _magic_row3(a, b, c) {
+    var v = vec_new();
+    vec_push(v, a);
+    vec_push(v, b);
+    vec_push(v, c);
+    return v;
+}
+
+# Magic square of order n. Returns a vec of n row-vecs, or 0 (None) for n < 3 or
+# even n. n==3 is the historical Lo Shu; odd n>3 uses the Siamese method.
+#must_use
+fn magic_square(n) {
+    if (n < 3) { return 0; }
+    if (n % 2 == 0) { return 0; }
+
+    if (n == 3) {
+        var lo = vec_new();
+        vec_push(lo, _magic_row3(2, 7, 6));
+        vec_push(lo, _magic_row3(9, 5, 1));
+        vec_push(lo, _magic_row3(4, 3, 8));
+        return lo;
+    }
+
+    # Allocate an n x n grid of zeros.
+    var square = vec_new();
+    var mri = 0;
+    while (mri < n) {
+        var row = vec_new();
+        var mci = 0;
+        while (mci < n) {
+            vec_push(row, 0);
+            mci = mci + 1;
+        }
+        vec_push(square, row);
+        mri = mri + 1;
+    }
+
+    # Siamese method: start top-center, move up-right, drop down when occupied.
+    var row_i = 0;
+    var col_i = n / 2;
+    var num = 1;
+    var total = n * n;
+    while (num <= total) {
+        vec_set(vec_get(square, row_i), col_i, num);
+
+        var new_row = n - 1;
+        if (row_i != 0) { new_row = row_i - 1; }
+        var new_col = (col_i + 1) % n;
+
+        var occ = vec_get(vec_get(square, new_row), new_col);
+        if (occ != 0) {
+            row_i = (row_i + 1) % n;
+        }
+        if (occ == 0) {
+            row_i = new_row;
+            col_i = new_col;
+        }
+        num = num + 1;
+    }
+
+    return square;
+}
+
+# Verify a square (vec of row-vecs) is magic: square, and all rows / columns /
+# both diagonals share one sum. Returns 1 (true) or 0 (false).
+#must_use
+fn is_magic_square(square) {
+    var n = vec_len(square);
+    if (n == 0) { return 0; }
+
+    var ci = 0;
+    while (ci < n) {
+        var row = vec_get(square, ci);
+        if (vec_len(row) != n) { return 0; }
+        ci = ci + 1;
+    }
+
+    var magic_sum = 0;
+    var row0 = vec_get(square, 0);
+    var j = 0;
+    while (j < n) {
+        magic_sum = magic_sum + vec_get(row0, j);
+        j = j + 1;
+    }
+
+    # Rows.
+    var ri = 0;
+    while (ri < n) {
+        var r = vec_get(square, ri);
+        var rs = 0;
+        var k = 0;
+        while (k < n) {
+            rs = rs + vec_get(r, k);
+            k = k + 1;
+        }
+        if (rs != magic_sum) { return 0; }
+        ri = ri + 1;
+    }
+
+    # Columns.
+    var col = 0;
+    while (col < n) {
+        var cs = 0;
+        var rr = 0;
+        while (rr < n) {
+            cs = cs + vec_get(vec_get(square, rr), col);
+            rr = rr + 1;
+        }
+        if (cs != magic_sum) { return 0; }
+        col = col + 1;
+    }
+
+    # Main diagonal.
+    var ds = 0;
+    var di = 0;
+    while (di < n) {
+        ds = ds + vec_get(vec_get(square, di), di);
+        di = di + 1;
+    }
+    if (ds != magic_sum) { return 0; }
+
+    # Anti-diagonal.
+    var anti_s = 0;
+    var ai = 0;
+    while (ai < n) {
+        anti_s = anti_s + vec_get(vec_get(square, ai), n - 1 - ai);
+        ai = ai + 1;
+    }
+    if (anti_s != magic_sum) { return 0; }
+
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# Sexagenary cycle: Heavenly Stems (10) + Earthly Branches (12)
+# ---------------------------------------------------------------------------
+
+enum HeavenlyStem {
+    HS_JIA; HS_YI; HS_BING; HS_DING; HS_WU;
+    HS_JI; HS_GENG; HS_XIN; HS_REN; HS_GUI;
+}
+
+enum EarthlyBranch {
+    EB_ZI; EB_CHOU; EB_YIN; EB_MAO; EB_CHEN; EB_SI;
+    EB_WU; EB_WEI; EB_SHEN; EB_YOU; EB_XU; EB_HAI;
+}
+
+# Display names for the 10 stems: "pinyin (CJK)".
+var _stem_disp = 0;
+var _stem_disp_done = 0;
+fn _build_stem_disp() {
+    var v = vec_new();
+    vec_push(v, str_from("Jiǎ (甲)"));
+    vec_push(v, str_from("Yǐ (乙)"));
+    vec_push(v, str_from("Bǐng (丙)"));
+    vec_push(v, str_from("Dīng (丁)"));
+    vec_push(v, str_from("Wù (戊)"));
+    vec_push(v, str_from("Jǐ (己)"));
+    vec_push(v, str_from("Gēng (庚)"));
+    vec_push(v, str_from("Xīn (辛)"));
+    vec_push(v, str_from("Rén (壬)"));
+    vec_push(v, str_from("Guǐ (癸)"));
+    return v;
+}
+fn _stem_disp_table() {
+    if (_stem_disp_done == 0) {
+        _stem_disp = _build_stem_disp();
+        _stem_disp_done = 1;
+    }
+    return _stem_disp;
+}
+
+# Debug names for the 10 stems ({:?} in Rust): variant identifiers.
+var _stem_dbg = 0;
+var _stem_dbg_done = 0;
+fn _build_stem_dbg() {
+    var v = vec_new();
+    vec_push(v, str_from("Jia"));
+    vec_push(v, str_from("Yi"));
+    vec_push(v, str_from("Bing"));
+    vec_push(v, str_from("Ding"));
+    vec_push(v, str_from("Wu"));
+    vec_push(v, str_from("Ji"));
+    vec_push(v, str_from("Geng"));
+    vec_push(v, str_from("Xin"));
+    vec_push(v, str_from("Ren"));
+    vec_push(v, str_from("Gui"));
+    return v;
+}
+fn _stem_dbg_table() {
+    if (_stem_dbg_done == 0) {
+        _stem_dbg = _build_stem_dbg();
+        _stem_dbg_done = 1;
+    }
+    return _stem_dbg;
+}
+
+# Display names for the 12 branches: "pinyin (CJK)" (animal appended separately).
+var _branch_disp = 0;
+var _branch_disp_done = 0;
+fn _build_branch_disp() {
+    var v = vec_new();
+    vec_push(v, str_from("Zǐ (子)"));
+    vec_push(v, str_from("Chǒu (丑)"));
+    vec_push(v, str_from("Yín (寅)"));
+    vec_push(v, str_from("Mǎo (卯)"));
+    vec_push(v, str_from("Chén (辰)"));
+    vec_push(v, str_from("Sì (巳)"));
+    vec_push(v, str_from("Wǔ (午)"));
+    vec_push(v, str_from("Wèi (未)"));
+    vec_push(v, str_from("Shēn (申)"));
+    vec_push(v, str_from("Yǒu (酉)"));
+    vec_push(v, str_from("Xū (戌)"));
+    vec_push(v, str_from("Hài (亥)"));
+    return v;
+}
+fn _branch_disp_table() {
+    if (_branch_disp_done == 0) {
+        _branch_disp = _build_branch_disp();
+        _branch_disp_done = 1;
+    }
+    return _branch_disp;
+}
+
+# Debug names for the 12 branches ({:?}).
+var _branch_dbg = 0;
+var _branch_dbg_done = 0;
+fn _build_branch_dbg() {
+    var v = vec_new();
+    vec_push(v, str_from("Zi"));
+    vec_push(v, str_from("Chou"));
+    vec_push(v, str_from("Yin"));
+    vec_push(v, str_from("Mao"));
+    vec_push(v, str_from("Chen"));
+    vec_push(v, str_from("Si"));
+    vec_push(v, str_from("Wu"));
+    vec_push(v, str_from("Wei"));
+    vec_push(v, str_from("Shen"));
+    vec_push(v, str_from("You"));
+    vec_push(v, str_from("Xu"));
+    vec_push(v, str_from("Hai"));
+    return v;
+}
+fn _branch_dbg_table() {
+    if (_branch_dbg_done == 0) {
+        _branch_dbg = _build_branch_dbg();
+        _branch_dbg_done = 1;
+    }
+    return _branch_dbg;
+}
+
+# Zodiac animal names for each branch.
+var _zodiac = 0;
+var _zodiac_done = 0;
+fn _build_zodiac() {
+    var v = vec_new();
+    vec_push(v, str_from("Rat"));
+    vec_push(v, str_from("Ox"));
+    vec_push(v, str_from("Tiger"));
+    vec_push(v, str_from("Rabbit"));
+    vec_push(v, str_from("Dragon"));
+    vec_push(v, str_from("Snake"));
+    vec_push(v, str_from("Horse"));
+    vec_push(v, str_from("Goat"));
+    vec_push(v, str_from("Monkey"));
+    vec_push(v, str_from("Rooster"));
+    vec_push(v, str_from("Dog"));
+    vec_push(v, str_from("Pig"));
+    return v;
+}
+fn _zodiac_table() {
+    if (_zodiac_done == 0) {
+        _zodiac = _build_zodiac();
+        _zodiac_done = 1;
+    }
+    return _zodiac;
+}
+
+# Display string for a HeavenlyStem discriminant, e.g. "Jiǎ (甲)".
+#must_use
+fn heavenly_stem_to_str(stem) { return vec_get(_stem_disp_table(), stem); }
+
+# {:?} identifier for a HeavenlyStem discriminant, e.g. "Jia".
+#must_use
+fn heavenly_stem_debug(stem) { return vec_get(_stem_dbg_table(), stem); }
+
+# {:?} identifier for an EarthlyBranch discriminant, e.g. "Chen".
+#must_use
+fn earthly_branch_debug(branch) { return vec_get(_branch_dbg_table(), branch); }
+
+# Zodiac animal name for an EarthlyBranch discriminant, e.g. "Dragon".
+#must_use
+fn zodiac_animal(branch) { return vec_get(_zodiac_table(), branch); }
+
+# Display string for an EarthlyBranch discriminant, e.g. "Chén (辰) — Dragon"
+# (note the em-dash U+2014 with surrounding spaces).
+#must_use
+fn earthly_branch_to_str(branch) {
+    var sb = str_builder_new();
+    str_builder_add(sb, vec_get(_branch_disp_table(), branch));
+    str_builder_add_cstr(sb, " — ");
+    str_builder_add(sb, zodiac_animal(branch));
+    return str_builder_build(sb);
+}
+
+# SexagenaryYear { stem, branch, cycle_position } — 24 bytes.
+enum SexOff { SX_STEM = 0; SX_BRANCH = 8; SX_POS = 16; SX_SIZE = 24; }
+
+#must_use
+fn sexagenary_year_new(stem, branch, cycle_position) {
+    var p = alloc(SX_SIZE);
+    store64(p + SX_STEM, stem);
+    store64(p + SX_BRANCH, branch);
+    store64(p + SX_POS, cycle_position);
+    return p;
+}
+#must_use
+fn sex_stem(p) { return load64(p + SX_STEM); }
+#must_use
+fn sex_branch(p) { return load64(p + SX_BRANCH); }
+#must_use
+fn sex_cycle_position(p) { return load64(p + SX_POS); }
+
+# Display: "{stem:?}-{branch:?} ({animal}, {cycle_position})",
+# e.g. "Jia-Chen (Dragon, 41)".
+#must_use
+fn sexagenary_year_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add(sb, heavenly_stem_debug(sex_stem(p)));
+    str_builder_add_cstr(sb, "-");
+    str_builder_add(sb, earthly_branch_debug(sex_branch(p)));
+    str_builder_add_cstr(sb, " (");
+    str_builder_add(sb, zodiac_animal(sex_branch(p)));
+    str_builder_add_cstr(sb, ", ");
+    str_builder_add_int(sb, sex_cycle_position(p));
+    str_builder_add_cstr(sb, ")");
+    return str_builder_build(sb);
+}
+
+# Sexagenary year for a Gregorian/Julian year. Anchored so 4 CE = Jiǎ-Zǐ
+# (position 1). (year - 4) can be negative → Euclidean remainder is required.
+#must_use
+fn sexagenary_from_year(year) {
+    var offset = rem_euclid(year - 4, 60);
+    var stem_idx = rem_euclid(offset, 10);
+    var branch_idx = rem_euclid(offset, 12);
+    var cycle_position = offset % 60 + 1;
+    return sexagenary_year_new(stem_idx, branch_idx, cycle_position);
+}
+
+# Sexagenary year for a Julian Day Number (via the proleptic Gregorian year).
+#must_use
+fn sexagenary_from_jdn(jdn) {
+    var greg = jdn_to_gregorian(jdn);
+    return sexagenary_from_year(gd_year(greg));
+}
+
+# ---------------------------------------------------------------------------
+# Unicode rod numeral display (varna)
+# ---------------------------------------------------------------------------
+
+# Render a positive n using Unicode counting-rod numerals (U+1D360–U+1D371, the
+# vertical forms 𝍠=1 .. 𝍨=9) via varna. Zero positions render as a space.
+# Returns Ok(Str) or Err(InvalidBase) when n == 0 (rod numerals have no zero
+# glyph — an empty space on the counting board).
+#must_use
+fn to_unicode_rods(n) {
+    if (n == 0) {
+        return sk_fail(SKE_INVALID_BASE, str_from("zero has no rod numeral representation"));
+    }
+
+    var system = numerals_chinese_rod_numerals();
+    var digits = vec_new();
+    var remaining = n;
+    while (remaining > 0) {
+        var d = remaining % 10;
+        if (d == 0) {
+            vec_push(digits, " ");
+        }
+        if (d != 0) {
+            var ch = numerals_char_for(system, d);
+            if (ch != 0) { vec_push(digits, ch); }
+        }
+        remaining = remaining / 10;
+    }
+
+    # digits were pushed least-significant-first; emit reversed and join.
+    var sb = str_builder_new();
+    var m = vec_len(digits);
+    var k = m - 1;
+    while (k >= 0) {
+        str_builder_add_cstr(sb, vec_get(digits, k));
+        k = k - 1;
+    }
+    return Ok(str_builder_build(sb));
+}

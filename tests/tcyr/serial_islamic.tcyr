@@ -1,0 +1,71 @@
+# serial_islamic.tcyr — ports rust-old/src/islamic.rs serde round-trip tests
+# (serde_roundtrip_hijri_date / serde_roundtrip_al_jabr_solution) plus enum
+# variant-name-string parity checks. JSON emit must match serde_json exactly.
+# Run:
+#   cyrius build tests/tcyr/serial_islamic.tcyr build/_s_islamic && ./build/_s_islamic
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/islamic.cyr"
+include "src/serial_islamic.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+    println("=== sankhya serial_islamic test suite ===");
+
+    # ---- serde_roundtrip_hijri_date ----
+    # Rust: jdn_to_hijri(HIJRI_EPOCH_JDN + 1000.0) → 26 Shawwal 3 AH.
+    var jdn = f64_add(HIJRI_EPOCH_JDN, f64_from(1000));
+    var d = jdn_to_hijri(jdn);
+    var djs = hijri_date_to_json(d);
+    # serde: {"year":3,"month":"Shawwal","day":26} — snake_case, enum as variant
+    # name, integer year/day, compact (no spaces).
+    ok(str_contains_cstr(djs, "\"year\":3"), "hijri json year field");
+    ok(str_contains_cstr(djs, "\"month\":\"Shawwal\""), "hijri json month as variant name");
+    ok(str_contains_cstr(djs, "\"day\":26"), "hijri json day field");
+    var d2 = hijri_date_from_json(sk_json_parse(djs));
+    ok(hijri_date_eq(d, d2), "HijriDate serde round-trip");
+
+    # ---- serde_roundtrip_al_jabr_solution ----
+    # Rust: solve_al_jabr(1.0, -5.0, 6.0) → form SquaresAndNumberEqualRoots,
+    # roots [3.0, 2.0], coefficients (1.0, -5.0, 6.0).
+    var r = solve_al_jabr(f64_from(1), f64_neg(f64_from(5)), f64_from(6));
+    ok(is_ok(r), "solve_al_jabr ok");
+    var sol = result_unwrap(r);
+    var sjs = aljabr_sol_to_json(sol);
+    # serde: {"form":"SquaresAndNumberEqualRoots","roots":[3.0,2.0],
+    #         "coefficients":[1.0,-5.0,6.0]} — enum as variant-name string,
+    # f64s with a decimal point, tuple/vec as JSON arrays.
+    ok(str_contains_cstr(sjs, "\"form\":\"SquaresAndNumberEqualRoots\""), "aljabr json form as variant name");
+    ok(str_contains_cstr(sjs, "\"roots\":[3.0,2.0]"), "aljabr json roots f64 array");
+    ok(str_contains_cstr(sjs, "\"coefficients\":[1.0,-5.0,6.0]"), "aljabr json coefficients tuple");
+    var sol2 = aljabr_sol_from_json(sk_json_parse(sjs));
+    ok(aljabr_sol_eq(sol, sol2), "AlJabrSolution serde round-trip");
+
+    # ---- HijriMonth variant-name parity: serde id 'RabiAlAwwal' has NO space
+    # (Display would be "Rabi al-Awwal"). ----
+    var dm = hijri_date_new(1400, HM_RABI_AL_AWWAL, 15);
+    var dmjs = hijri_date_to_json(dm);
+    ok(str_contains_cstr(dmjs, "\"month\":\"RabiAlAwwal\""), "serde id 'RabiAlAwwal' (no space)");
+    var dm2 = hijri_date_from_json(sk_json_parse(dmjs));
+    ok(hijri_date_eq(dm, dm2), "HijriDate RabiAlAwwal round-trip");
+
+    # ---- AlJabrForm / KhayyamCubicType name<->from_name parity ----
+    ok(str_eq_cstr(aljabr_form_name(ALJ_ROOTS_EQUAL_NUMBER), "RootsEqualNumber"), "aljabr_form_name RootsEqualNumber");
+    assert_eq(aljabr_form_from_name(str_from("RootsAndNumberEqualSquares")), ALJ_ROOTS_AND_NUMBER_EQUAL_SQUARES, "aljabr_form_from_name round-trip");
+    ok(str_eq_cstr(khayyam_type_name(KCT_CUBE_EQUAL_NUMBER), "CubeEqualNumber"), "khayyam_type_name CubeEqualNumber");
+    assert_eq(khayyam_type_from_name(str_from("CubeThingNumberEqualSquare")), KCT_CUBE_THING_NUMBER_EQUAL_SQUARE, "khayyam_type_from_name round-trip");
+
+    # ---- from_name miss returns (0 - 1) ----
+    var miss = hijri_month_from_name(str_from("NotAMonth"));
+    assert_eq(miss, 0 - 1, "unknown month name -> -1");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

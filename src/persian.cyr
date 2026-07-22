@@ -1,0 +1,445 @@
+# persian.cyr — Persian (Solar Hijri / Jalaali) arithmetic calendar
+# (was src/persian.rs).
+#
+# Solar Hijri calendar with Julian Day Number conversions, using the arithmetic
+# Jalaali algorithm (jalaali-js breaks-array, 2820-year grand cycle). Delegates
+# Gregorian JDN math to the ported gregorian module. Sources: Dershowitz &
+# Reingold, Calendrical Calculations (4th ed., 2018) ch.15; Birashk; jalaali-js.
+#
+# MODULO NOTE: the 2820-year leap cycle uses TRUNCATED modulo/division
+# INTENTIONALLY (Rust/JS `%` and `/`). Cyrius `%` and `/` are likewise truncated
+# toward zero, so bare `%`/`/` match Rust exactly. Do NOT substitute
+# rem_euclid/div_euclid here — that would shift Nowruz.
+#
+# SELF-CONTAINED: no include lines (the distlib bundler strips them; stdlib +
+# error/util/f64_util/logging/gregorian symbols resolve from the bundle).
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+# JDN of the Persian (Solar Hijri) epoch: 1 Farvardin, Year 1 AP = 22 Mar 622 CE
+# Julian (vernal equinox). = 1_948_320.5 (half-integer, load-bearing). Set by
+# persian_init() (an f64 bit pattern; not a literal).
+var PERSIAN_EPOCH_JDN = 0;
+
+# Public accessor — init-independent (functions never depend on the global).
+#must_use
+fn persian_epoch_jdn() {
+    return f64_add(f64_from(1948320), f64_div(f64_from(1), f64_from(2)));
+}
+
+# Populate the exported PERSIAN_EPOCH_JDN global. Tests call this after
+# alloc_init(); consumers that read the global should call it once at startup.
+fn persian_init() {
+    PERSIAN_EPOCH_JDN = persian_epoch_jdn();
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# Days in each month of a common Persian year, by 0-based index.
+# [31,31,31,31,31,31,30,30,30,30,30,29]. Months 1-6 = 31, 7-11 = 30, 12 = 29
+# (30 in leap years). Built lazily.
+# ---------------------------------------------------------------------------
+
+var _pers_mdays = 0;
+var _pers_mdays_done = 0;
+fn _build_pers_mdays() {
+    var a = alloc(12 * 8);
+    store64(a + 0 * 8, 31);
+    store64(a + 1 * 8, 31);
+    store64(a + 2 * 8, 31);
+    store64(a + 3 * 8, 31);
+    store64(a + 4 * 8, 31);
+    store64(a + 5 * 8, 31);
+    store64(a + 6 * 8, 30);
+    store64(a + 7 * 8, 30);
+    store64(a + 8 * 8, 30);
+    store64(a + 9 * 8, 30);
+    store64(a + 10 * 8, 30);
+    store64(a + 11 * 8, 29);
+    return a;
+}
+#must_use
+fn persian_month_days(idx) {
+    if (_pers_mdays_done == 0) {
+        _pers_mdays = _build_pers_mdays();
+        _pers_mdays_done = 1;
+    }
+    return load64(_pers_mdays + idx * 8);
+}
+
+# ---------------------------------------------------------------------------
+# Month enum (Farvardin=0 .. Esfand=11; the discriminant IS the month index)
+# ---------------------------------------------------------------------------
+
+enum PersianMonth {
+    PM_FARVARDIN;
+    PM_ORDIBEHESHT;
+    PM_KHORDAD;
+    PM_TIR;
+    PM_MORDAD;
+    PM_SHAHRIVAR;
+    PM_MEHR;
+    PM_ABAN;
+    PM_AZAR;
+    PM_DEY;
+    PM_BAHMAN;
+    PM_ESFAND;
+}
+
+# Month name table (serde identifier == Display string; no spaces). Built lazily.
+var _pers_names = 0;
+var _pers_names_done = 0;
+fn _build_pers_names() {
+    var v = vec_new();
+    vec_push(v, str_from("Farvardin"));
+    vec_push(v, str_from("Ordibehesht"));
+    vec_push(v, str_from("Khordad"));
+    vec_push(v, str_from("Tir"));
+    vec_push(v, str_from("Mordad"));
+    vec_push(v, str_from("Shahrivar"));
+    vec_push(v, str_from("Mehr"));
+    vec_push(v, str_from("Aban"));
+    vec_push(v, str_from("Azar"));
+    vec_push(v, str_from("Dey"));
+    vec_push(v, str_from("Bahman"));
+    vec_push(v, str_from("Esfand"));
+    return v;
+}
+#must_use
+fn persian_month_names() {
+    if (_pers_names_done == 0) {
+        _pers_names = _build_pers_names();
+        _pers_names_done = 1;
+    }
+    return _pers_names;
+}
+
+# serde identifier for month index i (0..11).
+#must_use
+fn persian_month_name(i) {
+    return vec_get(persian_month_names(), i);
+}
+
+# Display string for a PersianMonth discriminant (impl Display for month).
+#must_use
+fn persian_month_to_str(m) {
+    return vec_get(persian_month_names(), m);
+}
+
+# ---------------------------------------------------------------------------
+# Date struct: { year: i64, month: PersianMonth, day: i64 } — 24 bytes
+# ---------------------------------------------------------------------------
+
+enum PersDateOff { PD_YEAR = 0; PD_MONTH = 8; PD_DAY = 16; PD_SIZE = 24; }
+
+#must_use
+fn persian_date_new(year, month, day) {
+    var p = alloc(PD_SIZE);
+    store64(p + PD_YEAR, year);
+    store64(p + PD_MONTH, month);
+    store64(p + PD_DAY, day);
+    return p;
+}
+#must_use
+fn pd_year(p) { return load64(p + PD_YEAR); }
+#must_use
+fn pd_month(p) { return load64(p + PD_MONTH); }
+#must_use
+fn pd_day(p) { return load64(p + PD_DAY); }
+
+# Display impl for PersianDate: "{day} {month} {year} AP".
+#must_use
+fn persian_date_to_str(p) {
+    var sb = str_builder_new();
+    str_builder_add_int(sb, pd_day(p));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add(sb, persian_month_to_str(pd_month(p)));
+    str_builder_add_cstr(sb, " ");
+    str_builder_add_int(sb, pd_year(p));
+    str_builder_add_cstr(sb, " AP");
+    return str_builder_build(sb);
+}
+
+# ---------------------------------------------------------------------------
+# Jalaali sub-cycle boundary array BREAKS[i64;20] (jalaali-js). Every value and
+# its order is essential to leap-year correctness. Built lazily. Note BREAKS[0]
+# = -61 (negative literal written as (0 - 61)).
+# ---------------------------------------------------------------------------
+
+var _pers_breaks = 0;
+var _pers_breaks_done = 0;
+fn _build_pers_breaks() {
+    var a = alloc(20 * 8);
+    store64(a + 0 * 8, 0 - 61);
+    store64(a + 1 * 8, 9);
+    store64(a + 2 * 8, 38);
+    store64(a + 3 * 8, 199);
+    store64(a + 4 * 8, 426);
+    store64(a + 5 * 8, 686);
+    store64(a + 6 * 8, 756);
+    store64(a + 7 * 8, 818);
+    store64(a + 8 * 8, 1111);
+    store64(a + 9 * 8, 1181);
+    store64(a + 10 * 8, 1210);
+    store64(a + 11 * 8, 1635);
+    store64(a + 12 * 8, 2060);
+    store64(a + 13 * 8, 2097);
+    store64(a + 14 * 8, 2192);
+    store64(a + 15 * 8, 2262);
+    store64(a + 16 * 8, 2324);
+    store64(a + 17 * 8, 2394);
+    store64(a + 18 * 8, 2456);
+    store64(a + 19 * 8, 2526);
+    return a;
+}
+#must_use
+fn persian_breaks() {
+    if (_pers_breaks_done == 0) {
+        _pers_breaks = _build_pers_breaks();
+        _pers_breaks_done = 1;
+    }
+    return _pers_breaks;
+}
+
+# ---------------------------------------------------------------------------
+# Core Jalaali calendar calculation, direct port of jalaali-js `jalCal`.
+# Writes (leap, leap_j, march) through out-params. `leap` is 0 for leap years,
+# 1/2/3 for years following a leap year.
+#
+# TRUNCATED modulo/division throughout (matches Rust/JS). The
+# `((n + 1) % 33 - 1) % 4` followed by `if leap < 0 { leap + 4 }` relies on
+# truncated remainders producing negatives — do NOT Euclidize.
+# ---------------------------------------------------------------------------
+
+fn jalaali_cal(jy, out_leap, out_leapj, out_march) {
+    var breaks = persian_breaks();
+    var gy = jy + 621;
+    var leap_j = 0 - 14;
+    var jp = load64(breaks + 0 * 8);
+    var jump = 0;
+
+    var i = 1;
+    while (i < 20) {
+        var jm = load64(breaks + i * 8);
+        jump = jm - jp;
+        if (jy < jm) {
+            break;
+        }
+        leap_j = leap_j + (jump / 33) * 8 + (jump % 33) / 4;
+        jp = jm;
+        i = i + 1;
+    }
+
+    var n = jy - jp;
+
+    # Adjust N for the 5-year gap at sub-cycle end.
+    if (jump - n < 6) {
+        n = n - jump + ((jump + 4) / 33) * 33;
+    }
+
+    # leap = ((n + 1) % 33 - 1) % 4, then fix a truncated-negative result.
+    var t1 = (n + 1) % 33;
+    var t2 = t1 - 1;
+    var leap = t2 % 4;
+    if (leap < 0) {
+        leap = leap + 4;
+    }
+
+    # Recompute n for leap count (use original, unadjusted n).
+    var n_orig = jy - jp;
+    leap_j = leap_j + (n_orig / 33) * 8 + (n_orig % 33 + 3) / 4;
+
+    if (jump % 33 == 4) {
+        if (jump - n_orig == 4) {
+            leap_j = leap_j + 1;
+        }
+    }
+
+    # March day of Nowruz (Gregorian).
+    var g1 = gy / 100;
+    var g2 = (g1 + 1) * 3;
+    var g3 = g2 / 4;
+    var leap_g = gy / 4 - g3 - 150;
+    var march = 20 + leap_j - leap_g;
+
+    store64(out_leap, leap);
+    store64(out_leapj, leap_j);
+    store64(out_march, march);
+    return 0;
+}
+
+# ---------------------------------------------------------------------------
+# Leap year (Jalaali algorithm)
+# ---------------------------------------------------------------------------
+
+# Whether a Persian year is a leap year (jalaali_cal(year).0 == 0).
+#must_use
+fn persian_is_leap(year) {
+    var lp = 0;
+    var lj = 0;
+    var mr = 0;
+    jalaali_cal(year, &lp, &lj, &mr);
+    if (lp == 0) {
+        return 1;
+    }
+    return 0;
+}
+
+# Days in a Persian year (365 common, 366 leap).
+#must_use
+fn persian_year_days(year) {
+    if (persian_is_leap(year) == 1) {
+        return 366;
+    }
+    return 365;
+}
+
+# ---------------------------------------------------------------------------
+# JDN conversions
+# ---------------------------------------------------------------------------
+
+# Get the JDN of a specific March day in a Gregorian year.
+fn gregorian_march_jdn(gy, march_day) {
+    var d = gregorian_date_new(gy, GM_MARCH, march_day);
+    var r = gregorian_to_jdn(d);
+    if (is_ok(r) == 1) {
+        return result_unwrap(r);
+    }
+    # Fallback: approximate (dead path for valid march_day 19-22).
+    # GREGORIAN_EPOCH_JDN + (gy as f64 * 365.25) + 78.0
+    var epoch = gregorian_epoch_jdn();
+    var term = f64_mul(f64_from(gy), f64_div(f64_from(1461), f64_from(4)));
+    return f64_add(f64_add(epoch, term), f64_from(78));
+}
+
+# Convert a day-of-year (0-based) to (month_index, day) for the Persian calendar.
+fn month_day_from_doy(doy, is_leap) {
+    var d = doy;
+    var i = 0;
+    while (i < 12) {
+        var md = persian_month_days(i);
+        if (i == 11) {
+            if (is_leap == 1) {
+                md = 30;
+            }
+        }
+        if (d < md) {
+            return (i, d + 1);
+        }
+        d = d - md;
+        i = i + 1;
+    }
+    # Fallback (shouldn't reach here for valid input).
+    return (11, d + 1);
+}
+
+# Convert a Julian Day Number to a Persian (Solar Hijri) date pointer.
+#must_use
+fn jdn_to_persian(jdn) {
+    if (SK_TRACE <= sakshi_get_level()) {
+        var _js = str_from_int(f64_to(jdn));
+        sakshi_log_kv(SK_TRACE, "JDN to Persian", 14, "jdn", 3, str_data(_js), str_len(_js));
+    }
+
+    var gy = jdn_to_gregorian(jdn);
+    var gy_year = gd_year(gy);
+
+    # Estimate Jalaali year.
+    var jy = gy_year - 621;
+    var lp = 0;
+    var lj = 0;
+    var march = 0;
+    jalaali_cal(jy, &lp, &lj, &march);
+
+    # JDN of 1 Farvardin of the estimated year.
+    var nowruz_jdn = gregorian_march_jdn(gy_year, march);
+
+    var day_diff = f64_to(f64_floor(f64_sub(jdn, nowruz_jdn)));
+
+    if (day_diff < 0) {
+        # Before Nowruz of this year — go back one Jalaali year.
+        jy = jy - 1;
+        var lp2 = 0;
+        var lj2 = 0;
+        var march_prev = 0;
+        jalaali_cal(jy, &lp2, &lj2, &march_prev);
+        var nowruz_prev = gregorian_march_jdn(gy_year - 1, march_prev);
+        var doy = f64_to(f64_floor(f64_sub(jdn, nowruz_prev)));
+        var mi1, day1 = month_day_from_doy(doy, persian_is_leap(jy));
+        return persian_date_new(jy, mi1, day1);
+    }
+
+    var yd = persian_year_days(jy);
+    if (day_diff >= yd) {
+        # Past the end of this Jalaali year.
+        var doy2 = day_diff - yd;
+        jy = jy + 1;
+        var mi2, day2 = month_day_from_doy(doy2, persian_is_leap(jy));
+        return persian_date_new(jy, mi2, day2);
+    }
+
+    var mi3, day3 = month_day_from_doy(day_diff, persian_is_leap(jy));
+    return persian_date_new(jy, mi3, day3);
+}
+
+# Convert a Persian (Solar Hijri) date to a Julian Day Number.
+# Returns Ok(jdn_f64) or Err(InvalidDate) when day is out of range for the
+# month/year. (Pattern C: real tagged Result, message preserved.)
+#must_use
+fn persian_to_jdn(date) {
+    if (SK_TRACE <= sakshi_get_level()) {
+        var _ys = str_from_int(pd_year(date));
+        sakshi_log_kv(SK_TRACE, "Persian to JDN", 14, "year", 4, str_data(_ys), str_len(_ys));
+    }
+
+    # month enum discriminant IS the 0-based index (position() over the ordered
+    # PERSIAN_MONTHS array == the discriminant); unwrap_or(0) never triggers.
+    var month_idx = pd_month(date);
+    var year = pd_year(date);
+    var day = pd_day(date);
+
+    var max_day = persian_month_days(month_idx);
+    if (month_idx == 11) {
+        if (persian_is_leap(year) == 1) {
+            max_day = 30;
+        }
+    }
+
+    var bad = 0;
+    if (day == 0) { bad = 1; }
+    if (day > max_day) { bad = 1; }
+    if (bad == 1) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "day ");
+        str_builder_add_int(sb, day);
+        str_builder_add_cstr(sb, " out of range for ");
+        str_builder_add(sb, persian_month_to_str(month_idx));
+        str_builder_add_cstr(sb, " in year ");
+        str_builder_add_int(sb, year);
+        str_builder_add_cstr(sb, " AP (max ");
+        str_builder_add_int(sb, max_day);
+        str_builder_add_cstr(sb, ")");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sb));
+    }
+
+    var lp = 0;
+    var lj = 0;
+    var march = 0;
+    jalaali_cal(year, &lp, &lj, &march);
+    var gy = year + 621;
+
+    # JDN of 1 Farvardin = March `march` of Gregorian year `gy`.
+    var nowruz_jdn = gregorian_march_jdn(gy, march);
+
+    # Day-of-year offset (common-year month lengths for months before month_idx).
+    var day_of_year = day - 1;
+    var k = 0;
+    while (k < month_idx) {
+        day_of_year = day_of_year + persian_month_days(k);
+        k = k + 1;
+    }
+
+    return Ok(f64_add(nowruz_jdn, f64_from(day_of_year)));
+}

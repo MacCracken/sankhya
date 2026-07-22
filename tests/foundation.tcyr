@@ -1,0 +1,58 @@
+# foundation.tcyr — exercises the foundational modules (error/util/f64_util/
+# logging) before the calendar/math ports build on them. Run:
+#   cyrius test tests/foundation.tcyr
+include "src/lib.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+    println("=== sankhya foundation test ===");
+
+    # --- Euclidean integer math (calendars depend on this) ---
+    assert_eq(rem_euclid((0 - 5), 3), 1, "rem_euclid(-5,3)=1");
+    assert_eq(rem_euclid(5, 3), 2, "rem_euclid(5,3)=2");
+    assert_eq(div_euclid((0 - 5), 3), (0 - 2), "div_euclid(-5,3)=-2");
+    assert_eq(div_euclid(5, 3), 1, "div_euclid(5,3)=1");
+    assert_eq(int_abs((0 - 7)), 7, "int_abs(-7)=7");
+
+    # --- string helpers ---
+    ok(sk_str_eq_lower(str_from("ABC"), str_from("abc")), "sk_str_eq_lower ABC/abc");
+    ok(str_eq_cstr(sk_str_upper(str_from("abc")), "ABC"), "sk_str_upper abc=ABC");
+    ok(str_eq_cstr(sk_str_lower(str_from("XyZ")), "xyz"), "sk_str_lower XyZ=xyz");
+
+    # --- f64 helpers ---
+    ok(f64_approx_eq(f64_from(2), f64_from(2), EPSILON_F64), "approx_eq 2==2");
+    var nan = f64_div(f64_from(0), f64_from(0));
+    ok(f64_is_nan(nan), "0/0 is NaN");
+    var inf = f64_div(f64_from(1), f64_from(0));
+    ok(f64_is_inf(inf), "1/0 is Inf");
+    assert_eq(f64_to(f64_tan(f64_from(0))), 0, "tan(0)=0");
+
+    # --- error record + Result parity (code + message) ---
+    var e = sk_err(SKE_INVALID_DATE, str_from("bad day"));
+    assert_eq(sk_err_code(e), SKE_INVALID_DATE, "sk_err_code");
+    ok(str_eq_cstr(sk_err_msg(e), "bad day"), "sk_err_msg");
+    var good = Ok(42);
+    assert_eq(sk_result_code(good), SKE_OK, "Ok->SKE_OK");
+    assert_eq(result_unwrap(good), 42, "unwrap Ok(42)");
+    var bad = sk_fail(SKE_OVERFLOW, str_from("boom"));
+    assert_eq(sk_result_code(bad), SKE_OVERFLOW, "sk_fail->code");
+
+    # --- shared astro constants initialize ---
+    assert_eq(f64_to(J2000_JDN), 2451545, "J2000_JDN=2451545.0");
+    assert_eq(f64_to(JULIAN_YEAR_DAYS), 365, "JULIAN_YEAR_DAYS~365.25");
+
+    # --- varna dep resolves (numeral modules depend on it) ---
+    ok(numerals_chinese_rod_numerals(), "varna: chinese rod numerals system");
+    ok(numerals_egyptian_hieroglyphic(), "varna: egyptian hieroglyphic system");
+
+    # --- logging init does not crash ---
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

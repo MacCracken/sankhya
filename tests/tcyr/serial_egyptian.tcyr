@@ -1,0 +1,63 @@
+# serial_egyptian.tcyr — round-trip serde parity tests for the egyptian module.
+# The Rust egyptian module derives Serialize/Deserialize on Decan but ships no
+# explicit serde round-trip test, so this suite provides the round-trip coverage:
+# build a Decan, emit JSON, assert it matches serde_json's format (Rust field
+# names, bare int number, quoted string name, f64 with decimal point), then parse
+# it back and assert field-by-field equality.
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/egyptian.cyr"
+include "src/serial_egyptian.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+
+    # --- Decan #1 (Kenmet, longitude 0.0) constructed directly ---
+    var k = decan_new(1, str_from("Kenmet"), f64_from(0));
+    var kjs = decan_to_json(k);
+
+    # serde_json format: compact, no spaces, Rust field names.
+    var h1 = str_contains_cstr(kjs, "\"number\":1");
+    ok(h1, "number is bare integer 1");
+    var h2 = str_contains_cstr(kjs, "\"name\":\"Kenmet\"");
+    ok(h2, "name is quoted string Kenmet");
+    # f64 field MUST carry the decimal point (serde/ryu emits 0.0, not 0).
+    var h3 = str_contains_cstr(kjs, "\"ecliptic_longitude\":0.0");
+    ok(h3, "ecliptic_longitude is f64 number 0.0 (with decimal)");
+
+    var kparsed = decan_from_json(sk_json_parse(kjs));
+    ok(decan_eq(k, kparsed), "Decan serde round-trip (Kenmet)");
+
+    # --- Decan #20 (Sopdet, longitude 190.0) from the module's real catalog ---
+    var s = sopdet();
+    var sjs = decan_to_json(s);
+    var hs1 = str_contains_cstr(sjs, "\"number\":20");
+    ok(hs1, "Sopdet number is bare integer 20");
+    var hs2 = str_contains_cstr(sjs, "\"name\":\"Sopdet\"");
+    ok(hs2, "Sopdet name is quoted string Sopdet");
+    var hs3 = str_contains_cstr(sjs, "\"ecliptic_longitude\":190.0");
+    ok(hs3, "Sopdet ecliptic_longitude is f64 number 190.0 (with decimal)");
+
+    var sparsed = decan_from_json(sk_json_parse(sjs));
+    ok(decan_eq(s, sparsed), "Decan serde round-trip (Sopdet, from catalog)");
+
+    # --- Decan with a multi-word name (Khentet Hrt, longitude 10.0) ---
+    var m = decan_new(2, str_from("Khentet Hrt"), f64_from(10));
+    var mjs = decan_to_json(m);
+    var hm1 = str_contains_cstr(mjs, "\"name\":\"Khentet Hrt\"");
+    ok(hm1, "multi-word name preserved");
+    var hm2 = str_contains_cstr(mjs, "\"ecliptic_longitude\":10.0");
+    ok(hm2, "longitude 10.0 emitted with decimal");
+    var mparsed = decan_from_json(sk_json_parse(mjs));
+    ok(decan_eq(m, mparsed), "Decan serde round-trip (Khentet Hrt)");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

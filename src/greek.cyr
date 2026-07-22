@@ -1,0 +1,344 @@
+# greek.cyr — Greek mathematics (was src/greek.rs).
+#
+# Golden ratio (PHI), Fibonacci ratio convergence, Sieve of Eratosthenes,
+# Euclidean GCD/LCM, Archimedes' polygon pi bounds, Greek alphabetic-numeral
+# isopsephy (encode/decode, via varna), and an Antikythera-mechanism gear-ratio
+# catalog.
+#
+# Self-contained: no include lines. stdlib (str/vec/math/result/sakshi),
+# varna (numerals_*), and sibling src modules (error/util/f64_util) are resolved
+# by the build tool / distlib bundler.
+#
+# Parity notes:
+# - Rust `gcd`/`lcm` are renamed `greek_gcd`/`greek_lcm` here because the `math`
+#   stdlib already defines `gcd`/`lcm` (a bare redefinition would be a duplicate
+#   symbol). The bodies replicate the Rust logic exactly (divide-before-multiply
+#   in lcm to limit overflow).
+# - Rust `PHI` const → `greek_phi()` accessor (f64 constants can't be float
+#   literals; parsed once, lazily, via f64_parse).
+# - antikythera_gear_ratios returns a vec of records sorted by name to preserve
+#   the Rust BTreeMap<&str> lexicographic key order (names are ASCII, so a
+#   byte-wise compare matches Rust's str Ord). Look up with antikythera_lookup.
+
+# ---------------------------------------------------------------------------
+# Golden ratio and Fibonacci
+# ---------------------------------------------------------------------------
+
+# PHI = (1 + sqrt(5)) / 2 = 1.618033988749895 (Euclid's "extreme and mean
+# ratio"). Parsed once, lazily, into a global.
+var _greek_phi = 0;
+var _greek_phi_done = 0;
+
+#must_use
+fn greek_phi() {
+    if (_greek_phi_done == 0) {
+        _greek_phi = f64_parse("1.618033988749895");
+        _greek_phi_done = 1;
+    }
+    return _greek_phi;
+}
+
+# F(n+1)/F(n) computed iteratively with f64 accumulators; 1.0 for n=0.
+# Approaches PHI as n grows.
+#must_use
+fn fibonacci_ratio(n) {
+    if (n == 0) {
+        return f64_from(1);
+    }
+    var a = f64_from(1);
+    var b = f64_from(1);
+    var i = 0;
+    while (i < n) {
+        var temp = b;
+        b = f64_add(b, a);
+        a = temp;
+        i = i + 1;
+    }
+    return f64_div(b, a);
+}
+
+# ---------------------------------------------------------------------------
+# Sieve of Eratosthenes
+# ---------------------------------------------------------------------------
+
+# Primes <= limit. Empty vec if limit < 2. Uses a byte flag buffer (1 = prime).
+#must_use
+fn sieve(limit) {
+    var tmsg = "Sieve of Eratosthenes";
+    var tkey = "limit";
+    var tval = str_from_int(limit);
+    sakshi_log_kv(SK_TRACE, tmsg, strlen(tmsg), tkey, strlen(tkey), str_data(tval), str_len(tval));
+
+    if (limit < 2) {
+        return vec_new();
+    }
+
+    var is_prime = alloc(limit + 1);
+    var k = 0;
+    while (k <= limit) {
+        store8(is_prime + k, 1);
+        k = k + 1;
+    }
+    store8(is_prime + 0, 0);
+    store8(is_prime + 1, 0);
+
+    var p = 2;
+    while (p * p <= limit) {
+        if (load8(is_prime + p) == 1) {
+            var multiple = p * p;
+            while (multiple <= limit) {
+                store8(is_prime + multiple, 0);
+                multiple = multiple + p;
+            }
+        }
+        p = p + 1;
+    }
+
+    var result = vec_new();
+    var m = 0;
+    while (m <= limit) {
+        if (load8(is_prime + m) == 1) {
+            vec_push(result, m);
+        }
+        m = m + 1;
+    }
+    return result;
+}
+
+# ---------------------------------------------------------------------------
+# Euclidean algorithm (renamed to avoid the math-stdlib gcd/lcm)
+# ---------------------------------------------------------------------------
+
+# Greatest common divisor via Euclid's algorithm. Returns 0 if both are 0.
+#must_use
+fn greek_gcd(a, b) {
+    while (b != 0) {
+        var t = b;
+        b = a % b;
+        a = t;
+    }
+    return a;
+}
+
+# Least common multiple. Divide before multiply to limit overflow.
+# Returns 0 if either input is 0.
+#must_use
+fn greek_lcm(a, b) {
+    if (a == 0) {
+        return 0;
+    }
+    if (b == 0) {
+        return 0;
+    }
+    return (a / greek_gcd(a, b)) * b;
+}
+
+# ---------------------------------------------------------------------------
+# Archimedes' pi approximation (method of exhaustion)
+# ---------------------------------------------------------------------------
+
+# Bound pi from a hexagon by repeatedly doubling the side count. Returns the
+# 2-tuple (lower_bound, upper_bound).
+#   inner initially 6*sin(pi/6) = 3 ; outer initially 6*tan(pi/6) = 2*sqrt(3)
+#   outer_new = 2 * inner * outer / (inner + outer)   (harmonic mean)
+#   inner_new = sqrt(inner * outer_new)               (geometric mean)
+#must_use
+fn archimedes_pi(iterations) {
+    var inner = f64_from(3);
+    var outer = f64_mul(f64_from(2), f64_sqrt(f64_from(3)));
+    var i = 0;
+    while (i < iterations) {
+        var outer_new = f64_div(f64_mul(f64_mul(f64_from(2), inner), outer), f64_add(inner, outer));
+        var inner_new = f64_sqrt(f64_mul(inner, outer_new));
+        inner = inner_new;
+        outer = outer_new;
+        i = i + 1;
+    }
+    return (inner, outer);
+}
+
+# ---------------------------------------------------------------------------
+# Greek isopsephy (alphabetic numeral values) — via varna
+# ---------------------------------------------------------------------------
+
+# Descending letter values usable for greedy decomposition. Deliberately OMITS
+# 6, 90, 900 (the archaic digamma/koppa/sampi), matching the Rust `available`.
+var _avail = 0;
+var _avail_done = 0;
+
+fn _available() {
+    if (_avail_done == 0) {
+        _avail = alloc(24 * 8);
+        store64(_avail + 0 * 8, 800);
+        store64(_avail + 1 * 8, 700);
+        store64(_avail + 2 * 8, 600);
+        store64(_avail + 3 * 8, 500);
+        store64(_avail + 4 * 8, 400);
+        store64(_avail + 5 * 8, 300);
+        store64(_avail + 6 * 8, 200);
+        store64(_avail + 7 * 8, 100);
+        store64(_avail + 8 * 8, 80);
+        store64(_avail + 9 * 8, 70);
+        store64(_avail + 10 * 8, 60);
+        store64(_avail + 11 * 8, 50);
+        store64(_avail + 12 * 8, 40);
+        store64(_avail + 13 * 8, 30);
+        store64(_avail + 14 * 8, 20);
+        store64(_avail + 15 * 8, 10);
+        store64(_avail + 16 * 8, 9);
+        store64(_avail + 17 * 8, 8);
+        store64(_avail + 18 * 8, 7);
+        store64(_avail + 19 * 8, 5);
+        store64(_avail + 20 * 8, 4);
+        store64(_avail + 21 * 8, 3);
+        store64(_avail + 22 * 8, 2);
+        store64(_avail + 23 * 8, 1);
+        _avail_done = 1;
+    }
+    return _avail;
+}
+
+# Sum of Greek-letter numeral values of a word (cstr input). Errors on an empty
+# string or any character with no isopsephy mapping.
+# Rust: pub fn isopsephy(word: &str) -> Result<u32>
+#must_use
+fn isopsephy(word) {
+    if (strlen(word) == 0) {
+        return sk_fail(SKE_INVALID_BASE, str_from("empty string has no isopsephy value"));
+    }
+    var sys = numerals_greek_isopsephy();
+    var v = numerals_string_value(sys, word);
+    if (v < 0) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "word contains characters with no isopsephy mapping: ");
+        str_builder_add_cstr(sb, word);
+        return sk_fail(SKE_INVALID_BASE, str_builder_build(sb));
+    }
+    return Ok(v);
+}
+
+# Greedy additive decomposition of n into Greek alphabetic numerals. Errors on 0
+# or a non-representable remainder.
+# Rust: pub fn to_greek_numeral(n: u32) -> Result<String>
+#must_use
+fn to_greek_numeral(n) {
+    if (n == 0) {
+        return sk_fail(SKE_INVALID_BASE, str_from("zero has no Greek numeral representation"));
+    }
+    var sys = numerals_greek_isopsephy();
+    var avail = _available();
+    var remainder = n;
+    var sb = str_builder_new();
+    var i = 0;
+    while (i < 24) {
+        var val = load64(avail + i * 8);
+        if (remainder >= val) {
+            var ch = numerals_char_for(sys, val);
+            if (ch != 0) {
+                str_builder_add_cstr(sb, ch);
+                remainder = remainder - val;
+            }
+        }
+        if (remainder == 0) {
+            break;
+        }
+        i = i + 1;
+    }
+
+    if (remainder > 0) {
+        var eb = str_builder_new();
+        str_builder_add_cstr(eb, "cannot represent ");
+        str_builder_add_int(eb, n);
+        str_builder_add_cstr(eb, " in Greek alphabetic numerals (remainder ");
+        str_builder_add_int(eb, remainder);
+        str_builder_add_cstr(eb, ")");
+        return sk_fail(SKE_INVALID_BASE, str_builder_build(eb));
+    }
+
+    return Ok(str_builder_build(sb));
+}
+
+# ---------------------------------------------------------------------------
+# Antikythera mechanism
+# ---------------------------------------------------------------------------
+
+# AntikytheraCycle record: name(Str) period_years(Str) gear_teeth(i64) desc(Str)
+enum AntiOff { ANTI_NAME = 0; ANTI_PERIOD = 8; ANTI_TEETH = 16; ANTI_DESC = 24; ANTI_SIZE = 32; }
+
+#must_use
+fn anti_new(name, period_years, gear_teeth, description) {
+    var p = alloc(ANTI_SIZE);
+    store64(p + ANTI_NAME, name);
+    store64(p + ANTI_PERIOD, period_years);
+    store64(p + ANTI_TEETH, gear_teeth);
+    store64(p + ANTI_DESC, description);
+    return p;
+}
+
+#must_use
+fn anti_name(p) { return load64(p + ANTI_NAME); }
+#must_use
+fn anti_period_years(p) { return load64(p + ANTI_PERIOD); }
+#must_use
+fn anti_gear_teeth(p) { return load64(p + ANTI_TEETH); }
+#must_use
+fn anti_description(p) { return load64(p + ANTI_DESC); }
+
+# Lexicographic byte compare of two Str values: <0, 0, >0.
+fn _str_cmp(a, b) {
+    var la = str_len(a);
+    var lb = str_len(b);
+    var da = str_data(a);
+    var db = str_data(b);
+    var n = la;
+    if (lb < la) { n = lb; }
+    var i = 0;
+    while (i < n) {
+        var ca = load8(da + i) & 0xFF;
+        var cb = load8(db + i) & 0xFF;
+        if (ca != cb) { return ca - cb; }
+        i = i + 1;
+    }
+    return la - lb;
+}
+
+# Comparator over AntikytheraCycle records, by name (for vec_sort).
+fn _anti_name_cmp(a, b) {
+    return _str_cmp(anti_name(a), anti_name(b));
+}
+
+# The known gear ratios of the Antikythera mechanism. Returns a vec of
+# AntikytheraCycle records sorted by name (BTreeMap<&str> key order).
+#must_use
+fn antikythera_gear_ratios() {
+    var v = vec_new();
+    vec_push(v, anti_new(str_from("Metonic"), str_from("19"), 235,
+        str_from("19 tropical years = 235 synodic months (Meton of Athens, 432 BCE)")));
+    vec_push(v, anti_new(str_from("Saros"), str_from("18.03"), 223,
+        str_from("223 synodic months — eclipse repeat cycle")));
+    vec_push(v, anti_new(str_from("Exeligmos"), str_from("54.09"), 669,
+        str_from("3 Saros cycles = 669 synodic months (exact eclipse repeat)")));
+    vec_push(v, anti_new(str_from("Callippic"), str_from("76"), 940,
+        str_from("4 Metonic cycles - 1 day = 940 synodic months (Callippus, 330 BCE)")));
+    vec_push(v, anti_new(str_from("Olympiad"), str_from("4"), 57,
+        str_from("4-year cycle of Panhellenic games (Olympic, Nemean, Isthmian, Pythian)")));
+    vec_push(v, anti_new(str_from("Synodic Month"), str_from("0.0809"), 127,
+        str_from("Lunar month: 29.53059 days — ratio 127/223 encodes month count")));
+    vec_push(v, anti_new(str_from("Sidereal Year"), str_from("1"), 365,
+        str_from("Solar year: 365.25 days — primary input gear")));
+    sk_vec_sort(v, &_anti_name_cmp);
+    return v;
+}
+
+# Look up a cycle by name in a gear-ratio vec. Returns the record ptr or 0.
+#must_use
+fn antikythera_lookup(v, name) {
+    var n = vec_len(v);
+    var i = 0;
+    while (i < n) {
+        var p = vec_get(v, i);
+        if (str_eq_cstr(anti_name(p), name) == 1) { return p; }
+        i = i + 1;
+    }
+    return 0;
+}

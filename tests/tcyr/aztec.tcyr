@@ -1,0 +1,150 @@
+# aztec.tcyr — ports rust-old/src/aztec.rs #[cfg(test)] tests (serde round-trip
+# tests skipped; JSON is a later serial.cyr wave). Run:
+#   cyrius build tests/tcyr/aztec.tcyr build/_v_aztec && ./build/_v_aztec
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/aztec.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# Struct equality helpers (Rust derives PartialEq on both).
+fn ton_eq(a, b) {
+    if (ton_number(a) != ton_number(b)) { return 0; }
+    if (ton_sign(a) != ton_sign(b)) { return 0; }
+    return 1;
+}
+fn xiu_eq(a, b) {
+    if (xiu_day(a) != xiu_day(b)) { return 0; }
+    if (xiu_month(a) != xiu_month(b)) { return 0; }
+    return 1;
+}
+
+# The correlation anchor jdn = 2275855.5, plus a helper to add N whole days.
+var ANCHOR = 0;
+fn anchor_plus(n) { return f64_add(ANCHOR, f64_from(n)); }
+
+fn main() {
+    alloc_init();
+    ANCHOR = f64_add(f64_from(2275855), F64_HALF);
+    println("=== sankhya aztec test suite ===");
+
+    # ---- correlation_date_tonalpohualli: Aug 13 1521 = 1 Coatl ----
+    var t = tonalpohualli_from_jdn(ANCHOR);
+    assert_eq(ton_number(t), 1, "correlation number=1");
+    assert_eq(ton_sign(t), TS_COATL, "correlation sign=Coatl");
+
+    # ---- correlation_date_xiuhpohualli: day 1 of Xocotl Huetzi ----
+    var x = xiuhpohualli_from_jdn(ANCHOR);
+    assert_eq(xiu_month(x), XM_XOCOTLHUETZI, "correlation month=Xocotl Huetzi");
+    assert_eq(xiu_day(x), 1, "correlation day=1");
+
+    # ---- tonalpohualli_260_day_cycle ----
+    var t1 = tonalpohualli_from_jdn(ANCHOR);
+    var t2 = tonalpohualli_from_jdn(anchor_plus(260));
+    ok(ton_eq(t1, t2), "tonalpohualli repeats every 260 days");
+
+    # ---- xiuhpohualli_365_day_cycle ----
+    var x1 = xiuhpohualli_from_jdn(ANCHOR);
+    var x2 = xiuhpohualli_from_jdn(anchor_plus(365));
+    ok(xiu_eq(x1, x2), "xiuhpohualli repeats every 365 days");
+
+    # ---- calendar_round_52_year_cycle: +18980 days ----
+    var crt1, crx1 = aztec_calendar_round(ANCHOR);
+    var crt2, crx2 = aztec_calendar_round(anchor_plus(18980));
+    ok(ton_eq(crt1, crt2), "calendar round tonal repeats @18980");
+    ok(xiu_eq(crx1, crx2), "calendar round xiuh repeats @18980");
+
+    # ---- tonalpohualli_all_signs_cycle: 20 consecutive days -> 20 signs ----
+    var seen = alloc(20 * 8);
+    var si = 0;
+    while (si < 20) { store64(seen + si * 8, 0); si = si + 1; }
+    var i = 0;
+    while (i < 20) {
+        var td = tonalpohualli_from_jdn(anchor_plus(i));
+        store64(seen + ton_sign(td) * 8, 1);
+        i = i + 1;
+    }
+    var distinct = 0;
+    var ci = 0;
+    while (ci < 20) {
+        if (load64(seen + ci * 8) == 1) { distinct = distinct + 1; }
+        ci = ci + 1;
+    }
+    assert_eq(distinct, 20, "all 20 signs appear over 20 days");
+
+    # ---- tonalpohualli_number_range: numbers 1..13 over 260 days ----
+    var range_ok = 1;
+    var ni = 0;
+    while (ni < 260) {
+        var tn = ton_number(tonalpohualli_from_jdn(anchor_plus(ni)));
+        if (tn < 1) { range_ok = 0; }
+        if (tn > 13) { range_ok = 0; }
+        ni = ni + 1;
+    }
+    ok(range_ok, "tonalpohualli number always in 1..13");
+
+    # ---- xiuhpohualli_nemontemi: 5 Nemontemi days, each day 1..5 ----
+    var nemontemi_count = 0;
+    var nem_ok = 1;
+    var mi = 0;
+    while (mi < 365) {
+        var xd = xiuhpohualli_from_jdn(anchor_plus(mi));
+        if (xiu_month(xd) == XM_NEMONTEMI) {
+            nemontemi_count = nemontemi_count + 1;
+            var dd = xiu_day(xd);
+            if (dd < 1) { nem_ok = 0; }
+            if (dd > 5) { nem_ok = 0; }
+        }
+        mi = mi + 1;
+    }
+    assert_eq(nemontemi_count, 5, "Nemontemi has 5 days");
+    ok(nem_ok, "Nemontemi days in 1..5");
+
+    # ---- xiuhpohualli_month_days: 19 month-starts over 365 days ----
+    var starts = 0;
+    var di = 0;
+    while (di < 365) {
+        var xs = xiuhpohualli_from_jdn(anchor_plus(di));
+        if (xiu_day(xs) == 1) { starts = starts + 1; }
+        di = di + 1;
+    }
+    assert_eq(starts, 19, "18 regular months + Nemontemi = 19 starts");
+
+    # ---- display_tonalpohualli: "1 Coatl" ----
+    var dt = tonalpohualli_new(1, TS_COATL);
+    ok(str_eq_cstr(tonalpohualli_to_str(dt), "1 Coatl"), "display '1 Coatl'");
+
+    # ---- display_xiuhpohualli: "1 Xocotl Huetzi" (space in month) ----
+    var dx = xiuhpohualli_new(1, XM_XOCOTLHUETZI);
+    ok(str_eq_cstr(xiuhpohualli_to_str(dx), "1 Xocotl Huetzi"), "display '1 Xocotl Huetzi'");
+
+    # ---- sign_display ----
+    ok(str_eq_cstr(tonalpohualli_sign_to_str(TS_CIPACTLI), "Cipactli"), "sign Cipactli");
+    ok(str_eq_cstr(tonalpohualli_sign_to_str(TS_XOCHITL), "Xochitl"), "sign Xochitl");
+    ok(str_eq_cstr(tonalpohualli_sign_to_str(TS_OCELOTL), "Ocelotl"), "sign Ocelotl");
+
+    # ---- month_display ----
+    ok(str_eq_cstr(xiuhpohuall_month_to_str(XM_ATLCAHUALO), "Atlcahualo"), "month Atlcahualo");
+    ok(str_eq_cstr(xiuhpohuall_month_to_str(XM_NEMONTEMI), "Nemontemi"), "month Nemontemi");
+    ok(str_eq_cstr(xiuhpohuall_month_to_str(XM_TLACAXIPEHUALIZTLI), "Tlacaxipehualiztli"), "month Tlacaxipehualiztli");
+
+    # ---- parity: Display spaces do NOT leak into the serde identifier ----
+    ok(str_eq_cstr(xiuhpohuall_month_to_str(XM_HUEYTOZOZTLI), "Huey Tozoztli"), "display 'Huey Tozoztli'");
+    ok(str_eq_cstr(xiuh_month_name(XM_HUEYTOZOZTLI), "HueyTozoztli"), "serde id 'HueyTozoztli'");
+    ok(str_eq_cstr(xiuh_month_name(XM_HUEYTECUILHUITL), "HueyTecuilhuitl"), "serde id 'HueyTecuilhuitl'");
+    ok(str_eq_cstr(xiuh_month_name(XM_XOCOTLHUETZI), "XocotlHuetzi"), "serde id 'XocotlHuetzi'");
+
+    # ---- public const parity ----
+    assert_eq(AZTEC_CALENDAR_ROUND_DAYS, 18980, "AZTEC_CALENDAR_ROUND_DAYS=18980");
+
+    # ---- logging init does not crash ----
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

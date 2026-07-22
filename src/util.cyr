@@ -1,0 +1,104 @@
+# util.cyr — sankhya utility helpers: Euclidean integer math, string case,
+# case-insensitive compare, comparator sort. None of these are in cyrius stdlib.
+
+# --- Euclidean integer math (CRITICAL for calendars with pre-epoch dates) ---
+# Rust `%` and Cyrius `%` are both TRUNCATED (sign of dividend). Rust's
+# rem_euclid/div_euclid return a non-negative remainder / floored quotient.
+# Calendar arithmetic on pre-epoch JDNs (negative day counts) REQUIRES these.
+
+# Euclidean remainder: always in [0, m) for m > 0.
+#must_use
+fn rem_euclid(a, m) {
+    var r = a % m;
+    if (r < 0) { r = r + m; }
+    return r;
+}
+
+# Euclidean division: floor division toward negative infinity (for m > 0).
+#must_use
+fn div_euclid(a, m) {
+    var q = a / m;
+    var r = a % m;
+    if (r < 0) { q = q - 1; }
+    return q;
+}
+
+# Integer absolute value (no builtin abs for i64; f64_abs is floats only).
+#must_use
+fn int_abs(x) {
+    if (x < 0) { return 0 - x; }
+    return x;
+}
+
+# --- String case conversion (ASCII only, allocates a new Str) ---
+# sk_-prefixed to avoid colliding with the identical helpers in the itihas bundle
+# (which we consume as a dist dependency).
+
+fn sk_str_lower(s) {
+    var slen = str_len(s);
+    var sd = str_data(s);
+    var buf = alloc(slen + 1);
+    var li = 0;
+    while (li < slen) {
+        var c = load8(sd + li);
+        if (c >= 65) { if (c <= 90) { c = c + 32; } }
+        store8(buf + li, c);
+        li = li + 1;
+    }
+    store8(buf + slen, 0);
+    return str_new(buf, slen);
+}
+
+fn sk_str_upper(s) {
+    var slen = str_len(s);
+    var sd = str_data(s);
+    var buf = alloc(slen + 1);
+    var ui = 0;
+    while (ui < slen) {
+        var c = load8(sd + ui);
+        if (c >= 97) { if (c <= 122) { c = c - 32; } }
+        store8(buf + ui, c);
+        ui = ui + 1;
+    }
+    store8(buf + slen, 0);
+    return str_new(buf, slen);
+}
+
+# Case-insensitive Str equality (ASCII).
+fn sk_str_eq_lower(a: Str, b: Str) {
+    var la = str_len(a);
+    var lb = str_len(b);
+    if (la != lb) { return 0; }
+    var da = str_data(a);
+    var db = str_data(b);
+    var ei = 0;
+    while (ei < la) {
+        var ca = load8(da + ei);
+        var cb = load8(db + ei);
+        if (ca >= 65) { if (ca <= 90) { ca = ca + 32; } }
+        if (cb >= 65) { if (cb <= 90) { cb = cb + 32; } }
+        if (ca != cb) { return 0; }
+        ei = ei + 1;
+    }
+    return 1;
+}
+
+# --- In-place insertion sort by comparator function pointer ---
+# cmp(a, b) returns <0 if a<b, 0 if equal, >0 if a>b.
+fn sk_vec_sort(v, cmp) {
+    var len = vec_len(v);
+    var si = 1;
+    while (si < len) {
+        var key = vec_get(v, si);
+        var j = si - 1;
+        while (j >= 0) {
+            var elem = vec_get(v, j);
+            if (fncall2(cmp, elem, key) <= 0) { break; }
+            vec_set(v, j + 1, elem);
+            j = j - 1;
+        }
+        vec_set(v, j + 1, key);
+        si = si + 1;
+    }
+    return 0;
+}

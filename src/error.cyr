@@ -1,0 +1,46 @@
+# error.cyr — sankhya error codes + error record (was SankhyaError, thiserror).
+#
+# Parity note: the Rust `SankhyaError` enum carried a `String` message on every
+# variant (e.g. format!("katun {katun} out of range 0..20")). We preserve BOTH
+# the discriminant (code) AND the message by returning an `Err` whose payload is
+# a small heap record { code, msg }. Callers that only care about the variant
+# read sk_result_code(r); callers that want the text read sk_err_msg(...).
+
+enum SankhyaError {
+    SKE_OK = 0;
+    SKE_INVALID_DATE = 1;
+    SKE_INVALID_BASE = 2;
+    SKE_INVALID_FRACTION = 3;
+    SKE_OVERFLOW = 4;
+    SKE_COMPUTATION = 5;
+}
+
+# SkErr record: { code: i64, msg: Str } — 16 bytes. msg may be 0 (no message).
+enum SkErrOff { SKERR_CODE = 0; SKERR_MSG = 8; SKERR_SIZE = 16; }
+
+#must_use
+fn sk_err(code, msg) {
+    var p = alloc(SKERR_SIZE);
+    store64(p + SKERR_CODE, code);
+    store64(p + SKERR_MSG, msg);
+    return p;
+}
+
+#must_use
+fn sk_err_code(e) { return load64(e + SKERR_CODE); }
+
+#must_use
+fn sk_err_msg(e) { return load64(e + SKERR_MSG); }
+
+# Build an Err(Result) carrying a SkErr{code, msg}.
+# Use as: return sk_fail(SKE_INVALID_DATE, str_from("day out of range"));
+fn sk_fail(code, msg) {
+    return Err(sk_err(code, msg));
+}
+
+# Read the error code out of a Result: SKE_OK if Ok, else the Err's code.
+#must_use
+fn sk_result_code(r) {
+    if (is_ok(r) == 1) { return SKE_OK; }
+    return sk_err_code(err_code_of(r));
+}

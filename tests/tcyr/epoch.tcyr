@@ -1,0 +1,310 @@
+# epoch.tcyr — port of rust-old/src/epoch.rs #[cfg(test)] mod tests.
+#
+# stdlib + the itihas/avatara/varna dist bundles are auto-resolved by the build
+# tool via cyrius.cyml [deps]. lib.cyr pulls in the foundation + all 14 calendar
+# modules; epoch.cyr builds on them. (Duplicate-fn warnings for
+# str_lower/str_upper/vec_sort from the itihas bundle are expected & harmless.)
+include "src/lib.cyr"
+include "src/epoch.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+fn check(a, b, name) { return assert_eq(a, b, name); }
+
+var TOL_001 = 0;
+var TOL_1E10 = 0;
+var TOL_EPS = 0;
+fn tol_init() {
+    TOL_001 = f64_parse("0.01");
+    TOL_1E10 = f64_parse("0.0000000001");
+    TOL_EPS = f64_parse("0.000000001");
+    return 0;
+}
+
+# -- Constants consistency --
+fn test_constants() {
+    var lhs = GREAT_YEAR_DAYS;
+    var rhs = f64_mul(GREAT_YEAR_YEARS, JULIAN_YEAR_DAYS);
+    ok(f64_approx_eq(lhs, rhs, TOL_001), "great_year_days consistent");
+
+    var twelve = f64_mul(PRECESSIONAL_AGE_YEARS, f64_from(12));
+    ok(f64_approx_eq(twelve, GREAT_YEAR_YEARS, TOL_EPS), "twelve ages = great year");
+
+    var expected = f64_sub(f64_from(2451545), f64_mul(f64_from(12800), JULIAN_YEAR_DAYS));
+    ok(f64_approx_eq(YOUNGER_DRYAS_JDN, expected, TOL_001), "younger_dryas_jdn value");
+    return 0;
+}
+
+# -- BP conversion --
+fn test_bp() {
+    var bp = f64_from(12800);
+    var jdn = bp_to_jdn(bp);
+    var back = jdn_to_bp(jdn);
+    ok(f64_approx_eq(back, bp, TOL_1E10), "bp roundtrip");
+
+    var jz = bp_to_jdn(f64_from(0));
+    ok(f64_approx_eq(jz, BP_REFERENCE_JDN, TOL_EPS), "bp zero is 1950");
+    return 0;
+}
+
+# -- Julian year roundtrip over [-3113,-753,0,139,2000,2026] --
+fn test_julian_year() {
+    var years = vec_new();
+    var y0 = 0 - 3113;
+    var y1 = 0 - 753;
+    vec_push(years, y0);
+    vec_push(years, y1);
+    vec_push(years, 0);
+    vec_push(years, 139);
+    vec_push(years, 2000);
+    vec_push(years, 2026);
+    var n = vec_len(years);
+    var i = 0;
+    while (i < n) {
+        var y = vec_get(years, i);
+        var jdn = julian_year_to_jdn(y);
+        var back = jdn_to_julian_year(jdn);
+        ok(f64_approx_eq(back, f64_from(y), TOL_001), "julian year roundtrip");
+        i = i + 1;
+    }
+    return 0;
+}
+
+# -- Precessional ages --
+fn test_ages() {
+    var pos = precessional_age(YOUNGER_DRYAS_JDN);
+    check(ap_age(pos), PA_LEO, "age at YD is Leo");
+    var yia = ap_years(pos);
+    var c1 = f64_lt(yia, f64_from(1));
+    ok(c1, "years_into_age < 1 at YD");
+
+    var j1 = julian_year_to_jdn(1);
+    var pos1 = precessional_age(j1);
+    check(ap_age(pos1), PA_PISCES, "age at ~1 CE is Pisces");
+
+    var ym = 0 - 2499;
+    var jm = julian_year_to_jdn(ym);
+    var posm = precessional_age(jm);
+    check(ap_age(posm), PA_TAURUS, "age at ~2500 BCE is Taurus");
+
+    var pj = precessional_age(J2000_JDN);
+    var fr = ap_fraction(pj);
+    var cf1 = f64_ge(fr, f64_from(0));
+    var cf2 = f64_le(fr, f64_from(1));
+    ok(cf1, "fraction >= 0");
+    ok(cf2, "fraction <= 1");
+
+    var lon = vernal_point_longitude(J2000_JDN);
+    var cl1 = f64_ge(lon, f64_from(0));
+    var cl2 = f64_lt(lon, f64_from(360));
+    ok(cl1, "vernal longitude >= 0");
+    ok(cl2, "vernal longitude < 360");
+
+    var a1 = precessional_age(J2000_JDN);
+    var a2 = precessional_age(f64_add(J2000_JDN, GREAT_YEAR_DAYS));
+    check(ap_age(a1), ap_age(a2), "full precession cycle same age");
+    return 0;
+}
+
+# -- Seven Sages --
+fn test_sages() {
+    var all = all_sages_traditions();
+    check(vec_len(all), 6, "6 sages traditions");
+
+    var ved = sages_tradition(ECIV_VEDIC);
+    ok(ved, "vedic tradition found");
+    ok(str_eq_cstr(sgt_group(ved), "Saptarishi"), "vedic group Saptarishi");
+    check(vec_len(sgt_names(ved)), 7, "vedic 7 names");
+
+    var bab = sages_tradition(ECIV_BABYLONIAN);
+    ok(str_eq_cstr(sgt_group(bab), "Apkallu"), "babylonian group Apkallu");
+    check(vec_len(sgt_names(bab)), 7, "babylonian 7 names");
+
+    var egy = sages_tradition(ECIV_EGYPTIAN);
+    ok(str_eq_cstr(sgt_group(egy), "Shemsu Hor"), "egyptian group Shemsu Hor");
+
+    var sn = vec_len(all);
+    var si = 0;
+    while (si < sn) {
+        var s = vec_get(all, si);
+        var gl = str_len(sgt_group(s));
+        var cg = gl > 0;
+        ok(cg, "group nonempty");
+        var nl = vec_len(sgt_names(s));
+        var cn = nl > 0;
+        ok(cn, "names nonempty");
+        var tl = vec_len(sgt_texts(s));
+        var ct = tl > 0;
+        ok(ct, "texts nonempty");
+        si = si + 1;
+    }
+    return 0;
+}
+
+# -- Cycle infrastructure --
+fn test_cycles() {
+    ok(f64_approx_eq(cycle_period(CN_SAROS), SAROS_DAYS, TOL_EPS), "saros matches babylonian");
+    ok(f64_approx_eq(cycle_period(CN_SOTHIC), f64_from(SOTHIC_CYCLE_DAYS), TOL_EPS), "sothic matches egyptian");
+
+    var cyv = vec_new();
+    vec_push(cyv, CN_METONIC);
+    var metjdn = f64_add(J2000_JDN, f64_mul(JULIAN_YEAR_DAYS, f64_from(19)));
+    var res = cycles_elapsed(metjdn, J2000_JDN, cyv);
+    check(vec_len(res), 1, "cycles_elapsed len 1");
+    var row = vec_get(res, 0);
+    check(ce_complete(row), 1, "1 complete metonic cycle");
+    var rem = ce_remainder(row);
+    var cr = f64_lt(f64_abs(rem), f64_from(1));
+    ok(cr, "metonic remainder < 1 day");
+    return 0;
+}
+
+# -- Correlate --
+fn test_correlate() {
+    var cr1 = correlate(f64_from(EPOCH_JDN));
+    ok(is_ok(cr1), "correlate at creation ok");
+    var d1 = result_unwrap(cr1);
+    var lc = mcd_mayan_lc(d1);
+    ok(lc, "mayan lc present at creation");
+    check(lc_baktun(lc), 0, "baktun 0 at creation");
+    check(lc_katun(lc), 0, "katun 0 at creation");
+    check(lc_kin(lc), 0, "kin 0 at creation");
+
+    var cr2 = correlate(f64_from(0));
+    ok(is_ok(cr2), "correlate before epoch ok");
+    var d2 = result_unwrap(cr2);
+    check(mcd_mayan_lc(d2), 0, "mayan lc none before epoch");
+    check(mcd_tzolkin(d2), 0, "tzolkin none before epoch");
+    check(mcd_haab(d2), 0, "haab none before epoch");
+
+    var cr3 = correlate(YOUNGER_DRYAS_JDN);
+    ok(is_ok(cr3), "correlate at YD ok");
+    var d3 = result_unwrap(cr3);
+    check(ap_age(mcd_age(d3)), PA_LEO, "age Leo at YD");
+    check(mcd_mayan_lc(d3), 0, "mayan none at YD");
+    return 0;
+}
+
+# -- Unified convert() API --
+fn test_convert() {
+    var g1 = gregorian_date_new(2000, GM_JANUARY, 1);
+    var cvt1 = convert(caldate_gregorian(g1));
+    ok(is_ok(cvt1), "convert gregorian ok");
+    var r1 = result_unwrap(cvt1);
+    var rg1 = mcd_gregorian(r1);
+    check(gd_year(rg1), 2000, "greg year 2000");
+    check(gd_month(rg1), GM_JANUARY, "greg month January");
+    check(gd_day(rg1), 1, "greg day 1");
+    var jexp = f64_add(f64_from(2451544), F64_HALF);
+    ok(f64_approx_eq(mcd_jdn(r1), jexp, TOL_EPS), "jdn = 2451544.5");
+
+    var h1 = hijri_date_new(1, HM_MUHARRAM, 1);
+    var cvt2 = convert(caldate_hijri(h1));
+    ok(is_ok(cvt2), "convert hijri ok");
+    var r2 = result_unwrap(cvt2);
+    check(gd_year(mcd_gregorian(r2)), 622, "hijri 1 AH -> greg 622");
+
+    var jd = f64_add(f64_from(2451544), F64_HALF);
+    var cvt3 = convert(caldate_jdn(jd));
+    ok(is_ok(cvt3), "convert jdn ok");
+    var r3 = result_unwrap(cvt3);
+    var rg3 = mcd_gregorian(r3);
+    check(gd_year(rg3), 2000, "jdn greg year 2000");
+    check(gd_month(rg3), GM_JANUARY, "jdn greg month January");
+    check(gd_day(rg3), 1, "jdn greg day 1");
+
+    var lcr = long_count_from_days(1872000);
+    ok(is_ok(lcr), "long_count_from_days ok");
+    var lc4 = result_unwrap(lcr);
+    var cvt4 = convert(caldate_mayan_long_count(lc4));
+    ok(is_ok(cvt4), "convert mayan ok");
+    var r4 = result_unwrap(cvt4);
+    var rg4 = mcd_gregorian(r4);
+    check(gd_year(rg4), 2012, "mayan greg year 2012");
+    check(gd_month(rg4), GM_DECEMBER, "mayan greg month December");
+    check(gd_day(rg4), 21, "mayan greg day 21");
+
+    var g5 = gregorian_date_new(2025, GM_JANUARY, 1);
+    var cvt5 = convert(caldate_gregorian(g5));
+    ok(is_ok(cvt5), "convert 2025 ok");
+    var r5 = result_unwrap(cvt5);
+    var jorig = mcd_jdn(r5);
+    var hj = calendar_to_jdn(caldate_hebrew(mcd_hebrew(r5)));
+    ok(is_ok(hj), "hebrew back ok");
+    ok(f64_approx_eq(result_unwrap(hj), jorig, TOL_EPS), "hebrew roundtrip jdn");
+    var cj = calendar_to_jdn(caldate_coptic(mcd_coptic(r5)));
+    ok(is_ok(cj), "coptic back ok");
+    ok(f64_approx_eq(result_unwrap(cj), jorig, TOL_EPS), "coptic roundtrip jdn");
+    var pj = calendar_to_jdn(caldate_persian(mcd_persian(r5)));
+    ok(is_ok(pj), "persian back ok");
+    ok(f64_approx_eq(result_unwrap(pj), jorig, TOL_EPS), "persian roundtrip jdn");
+
+    var gbad = gregorian_date_new(2025, GM_FEBRUARY, 30);
+    var cvtbad = convert(caldate_gregorian(gbad));
+    var iok = is_ok(cvtbad);
+    check(iok, 0, "invalid date convert errors");
+    return 0;
+}
+
+# -- EpochContext population (itihas eras/civilizations/events + avatara
+#    saptarishi profiles) at 30 CE — always-on, full parity. --
+fn test_context() {
+    var jctx = julian_year_to_jdn(30);
+    var crc = correlate(jctx);
+    ok(is_ok(crc), "correlate 30 CE ok");
+    var ctx = result_unwrap(crc);
+
+    var ne = vec_len(mcd_eras(ctx));
+    var ce = ne > 0;
+    ok(ce, "eras non-empty at 30 CE");
+
+    var ncv = vec_len(mcd_civs(ctx));
+    var ccv = ncv > 0;
+    ok(ccv, "civilizations non-empty at 30 CE");
+
+    var nev = vec_len(mcd_events(ctx));
+    var cev = nev > 0;
+    ok(cev, "events non-empty at 30 CE");
+
+    var nsap = vec_len(mcd_saptarishi(ctx));
+    check(nsap, 7, "saptarishi 7 profiles");
+
+    var firstprof = vec_get(mcd_saptarishi(ctx), 0);
+    var pn = sap_name(firstprof);
+    var cpn = str_len(pn) > 0;
+    ok(cpn, "first saptarishi name nonempty");
+    ok(sap_profile(firstprof), "first saptarishi profile ptr set");
+    return 0;
+}
+
+fn main() {
+    alloc_init();
+    gregorian_init();
+    babylonian_init();
+    coptic_init();
+    persian_init();
+    hebrew_init();
+    egyptian_init();
+    epoch_init();
+    tol_init();
+
+    println("=== epoch test suite ===");
+
+    test_constants();
+    test_bp();
+    test_julian_year();
+    test_ages();
+    test_sages();
+    test_cycles();
+    test_correlate();
+    test_convert();
+    test_context();
+
+    # logging init doesn't crash
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

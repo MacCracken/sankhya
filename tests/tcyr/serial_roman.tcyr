@@ -1,0 +1,55 @@
+# serial_roman.tcyr — serde round-trip parity for the roman module.
+# Ports rust-old/src/roman.rs's #[test] fn serde_roundtrip:
+#   let n = RomanNumeral::from_value(1776).unwrap();
+#   let json = serde_json::to_string(&n).unwrap();
+#   let back: RomanNumeral = serde_json::from_str(&json).unwrap();
+#   assert_eq!(n, back);
+# Additionally asserts the emitted JSON matches serde_json's exact byte shape
+# (correct field names + order, integer value, string text).
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/roman.cyr"
+include "src/serial_roman.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+    println("=== sankhya serial_roman test suite ===");
+
+    # ---- serde_roundtrip: RomanNumeral(1776) = "MDCCLXXVI" ----
+    var r = romannum_from_value(1776);
+    ok(is_ok(r), "from_value(1776) ok");
+    var n = result_unwrap(r);
+
+    var js = romannum_to_json(n);
+
+    # serde_json compact shape: {"value":1776,"text":"MDCCLXXVI"}
+    ok(str_contains_cstr(js, "\"value\":1776"), "json has value:1776");
+    ok(str_contains_cstr(js, "\"text\":\"MDCCLXXVI\""), "json has text:MDCCLXXVI");
+    ok(str_eq_cstr(js, "{\"value\":1776,\"text\":\"MDCCLXXVI\"}"), "json exact serde shape");
+
+    # parse back + field-by-field compare
+    var v = sk_json_parse(js);
+    ok(v, "parse ok");
+    var parsed = romannum_from_json(v);
+    ok(romannum_eq(n, parsed), "RomanNumeral serde round-trip");
+
+    # ---- a second value to exercise a different text (parse path) ----
+    var r2 = romannum_parse(str_from("XIV"));
+    ok(is_ok(r2), "parse(XIV) ok");
+    var n2 = result_unwrap(r2);
+    var js2 = romannum_to_json(n2);
+    ok(str_eq_cstr(js2, "{\"value\":14,\"text\":\"XIV\"}"), "XIV exact serde shape");
+    var v2 = sk_json_parse(js2);
+    var parsed2 = romannum_from_json(v2);
+    ok(romannum_eq(n2, parsed2), "RomanNumeral(14) round-trip");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

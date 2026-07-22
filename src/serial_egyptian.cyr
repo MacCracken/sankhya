@@ -1,0 +1,67 @@
+# serial_egyptian.cyr — JSON (de)serialization for the egyptian module, matching
+# Rust serde_json exactly for full round-trip parity.
+#
+# Self-contained: no include lines. Uses the shared sk_json_* helpers from
+# src/serial_util.cyr, the bayan value-tree API (folded stdlib), and the
+# egyptian module's decan_new / decan_* accessors.
+#
+# Serde types in egyptian:
+#   Decan — struct { number: u8, name: &'static str, ecliptic_longitude: f64 }
+#     serde JSON: {"number":1,"name":"Kenmet","ecliptic_longitude":0.0}
+#     number is a bare integer; name is a quoted string; ecliptic_longitude is a
+#     JSON number that ALWAYS carries a decimal point (serde/ryu emits 0.0, 10.0,
+#     190.0 — never a bare 0/10/190). The decan longitudes are whole numbers
+#     (0.0..350.0 in 10-degree steps), but they are still f64 in Rust, so the
+#     serialized form must match ryu's "N.0" shape — emitted here via the bayan
+#     value-tree float path (bayan_json_v_float_new + bayan_json_v_build), whose
+#     Grisu2 formatter produces the identical "N.0" text.
+#
+# No enums in egyptian, so no <Enum>_name / <Enum>_from_name are needed.
+
+# ---------------------------------------------------------------------------
+# Decan
+# ---------------------------------------------------------------------------
+
+# Serialize a Decan record to a JSON object string, byte-for-byte matching
+# serde_json (compact, no spaces, Rust field names, f64 with a decimal point).
+#must_use
+fn decan_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    sk_json_int(sb, "number", decan_number(p));
+    sk_json_sep(sb);
+    sk_json_str(sb, "name", decan_name(p));
+    sk_json_sep(sb);
+    # ecliptic_longitude is f64 → emit via the bayan value tree so the number
+    # keeps its decimal point (0.0 / 10.0 / 190.0), matching serde_json/ryu.
+    sk_json_key(sb, "ecliptic_longitude");
+    var fv = bayan_json_v_float_new(decan_longitude(p));
+    var fjs = bayan_json_v_build(fv);
+    str_builder_add(sb, fjs);
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Deserialize a bayan value-tree node (from sk_json_parse) back into a Decan
+# record via decan_new. number via bayan_json_v_int, name via bayan_json_v_str,
+# ecliptic_longitude via bayan_json_v_float (returns the f64 bit pattern).
+#must_use
+fn decan_from_json(v) {
+    var number = bayan_json_v_int(bayan_json_v_obj_get(v, "number"));
+    var name = bayan_json_v_str(bayan_json_v_obj_get(v, "name"));
+    var lon = bayan_json_v_float(bayan_json_v_obj_get(v, "ecliptic_longitude"));
+    return decan_new(number, name, lon);
+}
+
+# Field-by-field equality of two Decan records (for round-trip testing). number
+# via ==, name via str_eq (content), ecliptic_longitude via f64_eq (value).
+#must_use
+fn decan_eq(a, b) {
+    var same = 1;
+    if (decan_number(a) != decan_number(b)) { same = 0; }
+    var neq = str_eq(decan_name(a), decan_name(b));
+    if (neq == 0) { same = 0; }
+    var feq = f64_eq(decan_longitude(a), decan_longitude(b));
+    if (feq == 0) { same = 0; }
+    return same;
+}

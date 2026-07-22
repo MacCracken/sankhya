@@ -1,0 +1,167 @@
+# gregorian.tcyr — port of the #[cfg(test)] suite in rust-old/src/gregorian.rs.
+# Run: cyrius build tests/tcyr/gregorian.tcyr build/_v_gregorian && ./build/_v_gregorian
+# Every non-serde Rust test is ported (serde_roundtrip is skipped — JSON is a
+# later serial.cyr wave).
+
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/gregorian.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# 0.5 and (n + 0.5) as f64 bit patterns.
+fn half() { return f64_div(f64_from(1), f64_from(2)); }
+fn jdnp5(n) { return f64_add(f64_from(n), half()); }
+
+var TOL = 0;
+
+fn main() {
+    alloc_init();
+    gregorian_init();
+    TOL = f64_parse("0.0000001");
+
+    # ---- epoch_roundtrip ----
+    var d0 = jdn_to_gregorian(GREGORIAN_EPOCH_JDN);
+    assert_eq(gd_year(d0), 1, "epoch year=1");
+    assert_eq(gd_month(d0), GM_JANUARY, "epoch month=January");
+    assert_eq(gd_day(d0), 1, "epoch day=1");
+    var r0 = gregorian_to_jdn(d0);
+    ok(is_ok(r0), "epoch to_jdn ok");
+    var j0 = result_unwrap(r0);
+    ok(f64_approx_eq(j0, GREGORIAN_EPOCH_JDN, TOL), "epoch jdn round-trips");
+
+    # ---- known_date_j2000: 2451545.0 -> 2000-01-01 ----
+    var dj = jdn_to_gregorian(f64_from(2451545));
+    assert_eq(gd_year(dj), 2000, "j2000 year=2000");
+    assert_eq(gd_month(dj), GM_JANUARY, "j2000 month=January");
+    assert_eq(gd_day(dj), 1, "j2000 day=1");
+
+    # ---- known_date_mayan_end: 2456282.5 -> 2012-12-21 ----
+    var dm = jdn_to_gregorian(jdnp5(2456282));
+    assert_eq(gd_year(dm), 2012, "mayan year=2012");
+    assert_eq(gd_month(dm), GM_DECEMBER, "mayan month=December");
+    assert_eq(gd_day(dm), 21, "mayan day=21");
+
+    # ---- known_date_gregorian_reform: 2299160.5 -> 1582-10-15 ----
+    var dr = jdn_to_gregorian(jdnp5(2299160));
+    assert_eq(gd_year(dr), 1582, "reform year=1582");
+    assert_eq(gd_month(dr), GM_OCTOBER, "reform month=October");
+    assert_eq(gd_day(dr), 15, "reform day=15");
+
+    # ---- leap_year_rules ----
+    assert_eq(gregorian_is_leap(2000), 1, "2000 leap");
+    assert_eq(gregorian_is_leap(1900), 0, "1900 not leap");
+    assert_eq(gregorian_is_leap(2024), 1, "2024 leap");
+    assert_eq(gregorian_is_leap(1600), 1, "1600 leap");
+    assert_eq(gregorian_is_leap(2023), 0, "2023 not leap");
+    assert_eq(gregorian_is_leap(0), 1, "year 0 leap");
+    assert_eq(gregorian_is_leap(0 - 1), 0, "year -1 not leap");
+
+    # ---- year_days ----
+    assert_eq(gregorian_year_days(2024), 366, "2024 -> 366");
+    assert_eq(gregorian_year_days(2023), 365, "2023 -> 365");
+    assert_eq(gregorian_year_days(2000), 366, "2000 -> 366");
+    assert_eq(gregorian_year_days(1900), 365, "1900 -> 365");
+
+    # ---- roundtrip_modern_dates ----
+    var mods = vec_new();
+    vec_push(mods, jdnp5(2451544));
+    vec_push(mods, jdnp5(2456282));
+    vec_push(mods, jdnp5(2460676));
+    vec_push(mods, jdnp5(2299160));
+    var mfail = 0;
+    var mi = 0;
+    while (mi < vec_len(mods)) {
+        var jm = vec_get(mods, mi);
+        var dmm = jdn_to_gregorian(jm);
+        var rmm = gregorian_to_jdn(dmm);
+        if (is_ok(rmm) == 0) { mfail = mfail + 1; }
+        if (is_ok(rmm) == 1) {
+            var bm = result_unwrap(rmm);
+            if (f64_approx_eq(bm, jm, TOL) == 0) { mfail = mfail + 1; }
+        }
+        mi = mi + 1;
+    }
+    var modok = mfail == 0;
+    ok(modok, "roundtrip_modern_dates");
+
+    # ---- roundtrip_ancient_dates: 0..3_000_000 step 10_000 ----
+    var afail = 0;
+    var ai = 0;
+    while (ai < 3000000) {
+        var ja = jdnp5(ai);
+        var da = jdn_to_gregorian(ja);
+        var ra = gregorian_to_jdn(da);
+        if (is_ok(ra) == 0) { afail = afail + 1; }
+        if (is_ok(ra) == 1) {
+            var ba = result_unwrap(ra);
+            if (f64_approx_eq(ba, ja, TOL) == 0) { afail = afail + 1; }
+        }
+        ai = ai + 10000;
+    }
+    var anok = afail == 0;
+    ok(anok, "roundtrip_ancient_dates");
+
+    # ---- roundtrip_sequential_days: 1000 consecutive days around J2000 ----
+    var sfail = 0;
+    var si = 0;
+    while (si < 1000) {
+        var js = f64_add(jdnp5(2451544), f64_from(si));
+        var ds = jdn_to_gregorian(js);
+        var rs = gregorian_to_jdn(ds);
+        if (is_ok(rs) == 0) { sfail = sfail + 1; }
+        if (is_ok(rs) == 1) {
+            var bs = result_unwrap(rs);
+            if (f64_approx_eq(bs, js, TOL) == 0) { sfail = sfail + 1; }
+        }
+        si = si + 1;
+    }
+    var seqok = sfail == 0;
+    ok(seqok, "roundtrip_sequential_days");
+
+    # ---- leap_feb_29: 2024-02-29 valid ----
+    var lf = gregorian_date_new(2024, GM_FEBRUARY, 29);
+    var rlf = gregorian_to_jdn(lf);
+    ok(is_ok(rlf), "2024-02-29 ok");
+
+    # ---- non_leap_feb_29_errors: 2023-02-29 invalid ----
+    var nf = gregorian_date_new(2023, GM_FEBRUARY, 29);
+    var rnf = gregorian_to_jdn(nf);
+    ok(is_err_result(rnf), "2023-02-29 err");
+    assert_eq(sk_result_code(rnf), SKE_INVALID_DATE, "2023-02-29 InvalidDate code");
+
+    # ---- invalid_day_zero: 2000-01-00 invalid ----
+    var dz = gregorian_date_new(2000, GM_JANUARY, 0);
+    var rdz = gregorian_to_jdn(dz);
+    ok(is_err_result(rdz), "day 0 err");
+
+    # ---- invalid_day_32: 2000-01-32 invalid, exact message ----
+    var d32 = gregorian_date_new(2000, GM_JANUARY, 32);
+    var rd32 = gregorian_to_jdn(d32);
+    ok(is_err_result(rd32), "day 32 err");
+    var msg32 = sk_err_msg(err_code_of(rd32));
+    ok(str_eq_cstr(msg32, "day 32 out of range for January 2000 (max 31)"), "day 32 error message");
+
+    # ---- display_ce: 2025 April 1 -> "1 April 2025 CE" ----
+    var dce = gregorian_date_new(2025, GM_APRIL, 1);
+    ok(str_eq_cstr(gregorian_date_to_str(dce), "1 April 2025 CE"), "display CE");
+
+    # ---- display_bce: year -43 March 15 -> "15 March 44 BCE" ----
+    var dbce = gregorian_date_new(0 - 43, GM_MARCH, 15);
+    ok(str_eq_cstr(gregorian_date_to_str(dbce), "15 March 44 BCE"), "display BCE");
+
+    # ---- extra: month name table + epoch accessor ----
+    ok(str_eq_cstr(gregorian_month_name(GM_SEPTEMBER), "September"), "month name September");
+    ok(f64_approx_eq(gregorian_epoch_jdn(), GREGORIAN_EPOCH_JDN, TOL), "epoch accessor matches global");
+
+    # ---- logging init doesn't crash ----
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

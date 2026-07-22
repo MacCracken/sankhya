@@ -1,0 +1,98 @@
+# serial_astro.tcyr — serde round-trip parity for src/serial_astro.cyr.
+# Ports the three Rust #[cfg(test)] serde tests from rust-old/src/astro.rs
+# (serde_roundtrip_celestial_coord / _star_name / _alignment_result) plus extra
+# coverage for every other serde type (Star, EclipticCoord, HorizontalCoord,
+# HeliacalEvent, HeliacalEventType, and the AlignmentTarget StarRising path).
+# Build:  cyrius build tests/tcyr/serial_astro.tcyr build/_s_astro
+# Run:    ./build/_s_astro   (directly — exit code = failure count)
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/serial_util.cyr"
+include "src/astro.cyr"
+include "src/serial_astro.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+fn main() {
+    alloc_init();
+    println("=== sankhya serial_astro test suite ===");
+
+    # -- Rust: serde_roundtrip_celestial_coord --
+    var c = star_j2000(SN_SIRIUS);
+    var cjs = celestial_coord_to_json(c);
+    ok(str_contains_cstr(cjs, "\"ra_hours\":"), "cc field ra_hours");
+    ok(str_contains_cstr(cjs, "\"dec_degrees\":"), "cc field dec_degrees");
+    var cparsed = celestial_coord_from_json(sk_json_parse(cjs));
+    ok(celestial_coord_eq(c, cparsed), "CelestialCoord serde roundtrip");
+
+    # -- Rust: serde_roundtrip_star_name --
+    var snjs = starname_to_json(SN_VEGA);
+    ok(str_contains_cstr(snjs, "\"Vega\""), "starname json is \"Vega\"");
+    var snparsed = starname_from_json(sk_json_parse(snjs));
+    ok(starname_eq(SN_VEGA, snparsed), "StarName serde roundtrip");
+
+    # -- Rust: serde_roundtrip_alignment_result (unit-variant target) --
+    var no_star = 0 - 1;
+    var ar = alignment_result_new(AT_SUMMER_SOLSTICE_SUNRISE, no_star, f64_from(51), f64_parse("0.5"));
+    var arjs = alignment_result_to_json(ar);
+    ok(str_contains_cstr(arjs, "\"target\":\"SummerSolsticeSunrise\""), "ar target unit-variant string");
+    ok(str_contains_cstr(arjs, "\"azimuth\":"), "ar field azimuth");
+    ok(str_contains_cstr(arjs, "\"deviation\":"), "ar field deviation");
+    var arparsed = alignment_result_from_json(sk_json_parse(arjs));
+    ok(alignment_result_eq(ar, arparsed), "AlignmentResult serde roundtrip");
+
+    # -- Extra: Star (3 strings + 3 floats) --
+    var st = star(SN_SIRIUS);
+    var stjs = star_to_json(st);
+    ok(str_contains_cstr(stjs, "\"name\":\"Sirius\""), "star field name Sirius");
+    ok(str_contains_cstr(stjs, "\"bayer\":"), "star field bayer");
+    ok(str_contains_cstr(stjs, "\"constellation\":"), "star field constellation");
+    ok(str_contains_cstr(stjs, "\"visual_magnitude\":"), "star field visual_magnitude");
+    var stparsed = star_from_json(sk_json_parse(stjs));
+    ok(star_eq(st, stparsed), "Star serde roundtrip");
+
+    # -- Extra: EclipticCoord --
+    var ecl = ecliptic_new(f64_parse("123.456"), f64_parse("-12.5"));
+    var ecljs = ecliptic_coord_to_json(ecl);
+    ok(str_contains_cstr(ecljs, "\"longitude\":"), "ecl field longitude");
+    ok(str_contains_cstr(ecljs, "\"latitude\":"), "ecl field latitude");
+    var eclparsed = ecliptic_coord_from_json(sk_json_parse(ecljs));
+    ok(ecliptic_coord_eq(ecl, eclparsed), "EclipticCoord serde roundtrip");
+
+    # -- Extra: HorizontalCoord --
+    var hz = horizontal_new(f64_parse("51.0"), f64_parse("23.44"));
+    var hzjs = horizontal_coord_to_json(hz);
+    ok(str_contains_cstr(hzjs, "\"azimuth\":"), "hz field azimuth");
+    ok(str_contains_cstr(hzjs, "\"altitude\":"), "hz field altitude");
+    var hzparsed = horizontal_coord_from_json(sk_json_parse(hzjs));
+    ok(horizontal_coord_eq(hz, hzparsed), "HorizontalCoord serde roundtrip");
+
+    # -- Extra: HeliacalEvent (float + two enum-as-string fields) --
+    var he = heliacal_event_new(f64_from(2451545), SN_SIRIUS, HET_RISING);
+    var hejs = heliacal_event_to_json(he);
+    ok(str_contains_cstr(hejs, "\"jdn\":"), "he field jdn");
+    ok(str_contains_cstr(hejs, "\"star\":\"Sirius\""), "he field star Sirius");
+    ok(str_contains_cstr(hejs, "\"event_type\":\"Rising\""), "he field event_type Rising");
+    var heparsed = heliacal_event_from_json(sk_json_parse(hejs));
+    ok(heliacal_event_eq(he, heparsed), "HeliacalEvent serde roundtrip");
+
+    # -- Extra: HeliacalEventType standalone enum --
+    var etjs = heltype_to_json(HET_SETTING);
+    ok(str_contains_cstr(etjs, "\"Setting\""), "heltype json is \"Setting\"");
+    var etparsed = heltype_from_json(sk_json_parse(etjs));
+    ok(heltype_eq(HET_SETTING, etparsed), "HeliacalEventType serde roundtrip");
+
+    # -- Extra: AlignmentResult with StarRising(StarName) target (nested object) --
+    var ar2 = alignment_result_new(AT_STAR_RISING, SN_VEGA, f64_parse("70.0"), f64_parse("1.5"));
+    var ar2js = alignment_result_to_json(ar2);
+    ok(str_contains_cstr(ar2js, "\"target\":{\"StarRising\":\"Vega\"}"), "ar StarRising nested object");
+    var ar2parsed = alignment_result_from_json(sk_json_parse(ar2js));
+    ok(alignment_result_eq(ar2, ar2parsed), "AlignmentResult StarRising serde roundtrip");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

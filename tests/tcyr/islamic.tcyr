@@ -1,0 +1,161 @@
+# islamic.tcyr — ports rust-old/src/islamic.rs #[cfg(test)] tests (non-serde).
+include "src/error.cyr"
+include "src/util.cyr"
+include "src/f64_util.cyr"
+include "src/logging.cyr"
+include "src/islamic.cyr"
+
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# Does the roots vec contain a value within tol of target?
+fn roots_contains(v, target, tol) {
+    var n = vec_len(v);
+    var i = 0;
+    while (i < n) {
+        var rv = vec_get(v, i);
+        var close = f64_approx_eq(rv, target, tol);
+        if (close == 1) { return 1; }
+        i = i + 1;
+    }
+    return 0;
+}
+
+var TOL_1E10 = 0;
+var TOL_1E6 = 0;
+var TOL_HALF = 0;
+
+fn main() {
+    alloc_init();
+    TOL_1E10 = f64_parse("0.0000000001");
+    TOL_1E6 = f64_parse("0.000001");
+    TOL_HALF = f64_parse("0.5");
+    println("=== sankhya islamic test suite ===");
+
+    # -- Al-Jabr --
+
+    # al_jabr_linear: 2x - 6 = 0 -> x = 3
+    var r_lin = solve_al_jabr(f64_from(0), f64_from(2), f64_neg(f64_from(6)));
+    ok(is_ok(r_lin), "al_jabr_linear ok");
+    var sol_lin = result_unwrap(r_lin);
+    var roots_lin = aljabr_sol_roots(sol_lin);
+    assert_eq(vec_len(roots_lin), 1, "al_jabr_linear one root");
+    ok(f64_approx_eq(vec_get(roots_lin, 0), f64_from(3), TOL_1E10), "al_jabr_linear root=3");
+
+    # al_jabr_squares_and_roots_equal_number: x^2 + 10x - 39 = 0 -> x = 3
+    var r_sar = solve_al_jabr(f64_from(1), f64_from(10), f64_neg(f64_from(39)));
+    var sol_sar = result_unwrap(r_sar);
+    var roots_sar = aljabr_sol_roots(sol_sar);
+    ok(roots_contains(roots_sar, f64_from(3), TOL_1E10), "al_jabr x^2+10x-39 -> 3");
+
+    # al_jabr_two_positive_roots: x^2 - 5x + 6 = 0 -> x = 2, 3
+    var r_two = solve_al_jabr(f64_from(1), f64_neg(f64_from(5)), f64_from(6));
+    var sol_two = result_unwrap(r_two);
+    var roots_two = aljabr_sol_roots(sol_two);
+    assert_eq(vec_len(roots_two), 2, "al_jabr_two_positive_roots count=2");
+    ok(roots_contains(roots_two, f64_from(2), TOL_1E10), "al_jabr two roots contains 2");
+    ok(roots_contains(roots_two, f64_from(3), TOL_1E10), "al_jabr two roots contains 3");
+
+    # al_jabr_no_positive_roots: x^2 + x + 1 = 0 -> empty
+    var r_no = solve_al_jabr(f64_from(1), f64_from(1), f64_from(1));
+    var sol_no = result_unwrap(r_no);
+    assert_eq(vec_len(aljabr_sol_roots(sol_no)), 0, "al_jabr_no_positive_roots empty");
+
+    # al_jabr_all_zero_errors
+    var r_zero = solve_al_jabr(f64_from(0), f64_from(0), f64_from(0));
+    ok(is_err_result(r_zero), "al_jabr_all_zero_errors");
+
+    # -- Complete the square --
+
+    # complete_square_al_khwarizmi_example: x^2 + 10x = 39 -> x = 3
+    var r_cs = complete_the_square(f64_from(10), f64_from(39));
+    ok(is_ok(r_cs), "complete_the_square ok");
+    var csq = result_unwrap(r_cs);
+    ok(f64_approx_eq(csq_x(csq), f64_from(3), TOL_1E10), "complete_square x=3");
+
+    # complete_square_negative_errors
+    var r_csn1 = complete_the_square(f64_neg(f64_from(1)), f64_from(5));
+    ok(is_err_result(r_csn1), "complete_square b<=0 errors");
+    var r_csn2 = complete_the_square(f64_from(1), f64_neg(f64_from(5)));
+    ok(is_err_result(r_csn2), "complete_square c<=0 errors");
+
+    # -- Khayyam cubic --
+
+    # khayyam_cube_equal_number: x^3 - 8 = 0 -> x = 2, type CubeEqualNumber
+    var r_ken = classify_khayyam_cubic(f64_from(1), f64_from(0), f64_from(0), f64_neg(f64_from(8)));
+    ok(is_ok(r_ken), "khayyam cube equal number ok");
+    var kh_ken = result_unwrap(r_ken);
+    assert_eq(khres_type(kh_ken), KCT_CUBE_EQUAL_NUMBER, "khayyam type CubeEqualNumber");
+    ok(roots_contains(khres_roots(kh_ken), f64_from(2), TOL_1E6), "khayyam cube=8 root 2");
+
+    # khayyam_cube_and_thing: x^3 + 6x - 20 = 0 -> x = 2
+    var r_kct = classify_khayyam_cubic(f64_from(1), f64_from(0), f64_from(6), f64_neg(f64_from(20)));
+    var kh_kct = result_unwrap(r_kct);
+    ok(roots_contains(khres_roots(kh_kct), f64_from(2), TOL_1E6), "khayyam cube+thing root 2");
+
+    # khayyam_not_cubic_errors: leading coeff 0
+    var r_knc = classify_khayyam_cubic(f64_from(0), f64_from(1), f64_from(2), f64_from(3));
+    ok(is_err_result(r_knc), "khayyam_not_cubic_errors");
+
+    # -- Hijri calendar --
+
+    # hijri_leap_years
+    ok(hijri_is_leap(2), "hijri_is_leap(2)");
+    ok(hijri_is_leap(5), "hijri_is_leap(5)");
+    ok(hijri_is_leap(29), "hijri_is_leap(29)");
+    assert_eq(hijri_is_leap(1), 0, "hijri not leap 1");
+    assert_eq(hijri_is_leap(3), 0, "hijri not leap 3");
+    assert_eq(hijri_is_leap(30), 0, "hijri not leap 30");
+
+    # hijri_year_length
+    assert_eq(hijri_year_days(1), 354, "hijri_year_days(1)=354");
+    assert_eq(hijri_year_days(2), 355, "hijri_year_days(2)=355");
+
+    # hijri_epoch_roundtrip
+    var d_ep = jdn_to_hijri(HIJRI_EPOCH_JDN);
+    assert_eq(hijri_date_year(d_ep), 1, "epoch year=1");
+    assert_eq(hijri_date_month(d_ep), HM_MUHARRAM, "epoch month=Muharram");
+    assert_eq(hijri_date_day(d_ep), 1, "epoch day=1");
+    var r_ep = hijri_to_jdn(d_ep);
+    ok(is_ok(r_ep), "epoch to_jdn ok");
+    var jdn_ep = result_unwrap(r_ep);
+    var diff_ep = f64_abs(f64_sub(jdn_ep, HIJRI_EPOCH_JDN));
+    ok(f64_lt(diff_ep, TOL_HALF), "epoch roundtrip within 0.5");
+
+    # hijri_known_date: 1 Ramadan 1 AH at epoch + 236 days
+    var jdn_kd = f64_add(HIJRI_EPOCH_JDN, f64_from(236));
+    var d_kd = jdn_to_hijri(jdn_kd);
+    assert_eq(hijri_date_month(d_kd), HM_RAMADAN, "known date month=Ramadan");
+    assert_eq(hijri_date_day(d_kd), 1, "known date day=1");
+
+    # hijri_to_jdn_invalid_day: Muharram has 30 days, day 31 invalid
+    var d_inv = hijri_date_new(1, HM_MUHARRAM, 31);
+    var r_inv = hijri_to_jdn(d_inv);
+    ok(is_err_result(r_inv), "hijri_to_jdn_invalid_day errors");
+    var msg_inv = sk_err_msg(err_code_of(r_inv));
+    ok(str_eq_cstr(msg_inv, "day 31 out of range for Muharram (max 30)"), "invalid-day message parity");
+
+    # hijri_30_year_cycle_consistent
+    var total = 0;
+    var yc = 1;
+    while (yc <= 30) {
+        total = total + hijri_year_days(yc);
+        yc = yc + 1;
+    }
+    assert_eq(total, HIJRI_30_YEAR_CYCLE_DAYS, "30-year cycle = 10631");
+
+    # -- Display parity --
+    var s_disp = hijri_date_to_str(d_ep);
+    ok(str_eq_cstr(s_disp, "1 Muharram 1 AH"), "HijriDate Display");
+    ok(str_eq_cstr(hijri_month_name(HM_RABI_AL_AWWAL), "RabiAlAwwal"), "month serde name");
+    ok(str_eq_cstr(hijri_month_to_str(HM_RABI_AL_AWWAL), "Rabi al-Awwal"), "month Display");
+    ok(str_eq_cstr(hijri_month_display(HM_DHUL_QADAH), "Dhul Qa'dah"), "DhulQadah Display");
+
+    # -- logging init does not crash --
+    sankhya_log_init();
+    ok(1, "log init ok");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

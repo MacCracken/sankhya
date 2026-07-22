@@ -1,0 +1,139 @@
+# serial_vedic.cyr — JSON (de)serialization for the vedic module, full serde
+# round-trip parity with Rust serde_json.
+#
+# IMPORTANT PARITY NOTE: rust-old/src/vedic.rs derives Serialize/Deserialize on
+# NO type — it declares no structs and no enums. Its only compound values are
+# plain return payloads:
+#   * vedic_multiply_nikhilam -> Result<(u64,u64,u64,u64,u64)>   (a 5-tuple)
+#   * meru_prastara           -> Result<Vec<Vec<u64>>>            (nested vecs)
+# serde_json serializes a Rust tuple as a JSON ARRAY (no field names) and a
+# Vec<Vec<u64>> as an array-of-arrays. Those two array forms are therefore the
+# authoritative "Rust serde format" for this module, and this file reproduces
+# them exactly (compact, no spaces — matching serde_json::to_string).
+#
+# The Cyrius port models the 5-tuple as the NikhilamSteps record (NkOff offsets,
+# nikhilam_new, nk_base/nk_da/nk_db/nk_cross/nk_product in src/vedic.cyr); we
+# emit/parse it as the 5-element array serde would produce for the tuple.
+#
+# Self-contained: NO include lines. Resolves stdlib (str_builder_*, vec_*,
+# bayan_json_v_*) and the vedic module accessors from the consumer's [deps].
+
+# ---------------------------------------------------------------------------
+# NikhilamSteps  <->  serde tuple  (u64,u64,u64,u64,u64)  ->  [b,da,db,cr,pr]
+# ---------------------------------------------------------------------------
+
+# Serialize the NikhilamSteps record as the JSON array serde_json emits for the
+# tuple return of vedic_multiply_nikhilam: e.g. [100,3,4,93,9312].
+#must_use
+fn nikhilam_to_json(p) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "[");
+    str_builder_add_int(sb, nk_base(p));
+    str_builder_add_cstr(sb, ",");
+    str_builder_add_int(sb, nk_da(p));
+    str_builder_add_cstr(sb, ",");
+    str_builder_add_int(sb, nk_db(p));
+    str_builder_add_cstr(sb, ",");
+    str_builder_add_int(sb, nk_cross(p));
+    str_builder_add_cstr(sb, ",");
+    str_builder_add_int(sb, nk_product(p));
+    str_builder_add_cstr(sb, "]");
+    return str_builder_build(sb);
+}
+
+# Reconstruct a NikhilamSteps record from a parsed bayan array node
+# (v = the [b,da,db,cr,pr] array value from sk_json_parse).
+#must_use
+fn nikhilam_from_json(v) {
+    var b = bayan_json_v_int(bayan_json_v_arr_get(v, 0));
+    var da = bayan_json_v_int(bayan_json_v_arr_get(v, 1));
+    var db = bayan_json_v_int(bayan_json_v_arr_get(v, 2));
+    var cr = bayan_json_v_int(bayan_json_v_arr_get(v, 3));
+    var pr = bayan_json_v_int(bayan_json_v_arr_get(v, 4));
+    return nikhilam_new(b, da, db, cr, pr);
+}
+
+# Field-by-field equality for the round-trip test. Returns 1 if equal, else 0.
+#must_use
+fn nikhilam_eq(a, b) {
+    if (nk_base(a) != nk_base(b)) { return 0; }
+    if (nk_da(a) != nk_da(b)) { return 0; }
+    if (nk_db(a) != nk_db(b)) { return 0; }
+    if (nk_cross(a) != nk_cross(b)) { return 0; }
+    if (nk_product(a) != nk_product(b)) { return 0; }
+    return 1;
+}
+
+# ---------------------------------------------------------------------------
+# Meru Prastara  <->  serde Vec<Vec<u64>>  ->  array-of-arrays [[1],[1,1],...]
+# ---------------------------------------------------------------------------
+
+# Serialize a vec-of-vecs (as produced by meru_prastara) as the nested JSON
+# array serde_json emits, e.g. [[1],[1,1],[1,2,1],[1,3,3,1],[1,4,6,4,1]].
+#must_use
+fn meru_to_json(tri) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "[");
+    var n = vec_len(tri);
+    var i = 0;
+    while (i < n) {
+        if (i > 0) { str_builder_add_cstr(sb, ","); }
+        var row = vec_get(tri, i);
+        str_builder_add_cstr(sb, "[");
+        var m = vec_len(row);
+        var j = 0;
+        while (j < m) {
+            if (j > 0) { str_builder_add_cstr(sb, ","); }
+            str_builder_add_int(sb, vec_get(row, j));
+            j = j + 1;
+        }
+        str_builder_add_cstr(sb, "]");
+        i = i + 1;
+    }
+    str_builder_add_cstr(sb, "]");
+    return str_builder_build(sb);
+}
+
+# Reconstruct a vec-of-vecs from a parsed bayan array-of-arrays node.
+#must_use
+fn meru_from_json(v) {
+    var tri = vec_new();
+    var n = bayan_json_v_arr_len(v);
+    var i = 0;
+    while (i < n) {
+        var rowv = bayan_json_v_arr_get(v, i);
+        var row = vec_new();
+        var m = bayan_json_v_arr_len(rowv);
+        var j = 0;
+        while (j < m) {
+            vec_push(row, bayan_json_v_int(bayan_json_v_arr_get(rowv, j)));
+            j = j + 1;
+        }
+        vec_push(tri, row);
+        i = i + 1;
+    }
+    return tri;
+}
+
+# Deep equality over the vec-of-vecs. Returns 1 if equal, else 0.
+#must_use
+fn meru_eq(a, b) {
+    var na = vec_len(a);
+    var nb = vec_len(b);
+    if (na != nb) { return 0; }
+    var i = 0;
+    while (i < na) {
+        var ra = vec_get(a, i);
+        var rb = vec_get(b, i);
+        var ma = vec_len(ra);
+        var mb = vec_len(rb);
+        if (ma != mb) { return 0; }
+        var j = 0;
+        while (j < ma) {
+            if (vec_get(ra, j) != vec_get(rb, j)) { return 0; }
+            j = j + 1;
+        }
+        i = i + 1;
+    }
+    return 1;
+}

@@ -78,7 +78,13 @@ jobs:
       - name: Benchmarks
         # Build + run the suite to catch performance regressions / build breakage.
         run: |
-          CYRIUS_DCE=1 cyrius build tests/sankhya.bcyr build/sankhya_bench
+          # ⚠ NO CYRIUS_DCE=1 HERE — deliberate, temporary workaround.
+          # cycc 6.6.2 mis-eliminates a live body in this translation unit: the DCE
+          # build segfaults immediately (rc=139, zero output) while the identical
+          # source without DCE runs clean. Filed upstream as
+          # cyrius docs/development/issues/sankhya-dce-bench-segfault.md.
+          # RESTORE `CYRIUS_DCE=1` the moment that lands.
+          cyrius build tests/sankhya.bcyr build/sankhya_bench
           ./build/sankhya_bench
 
       - name: Verify dist bundle is current

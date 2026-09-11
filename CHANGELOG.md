@@ -7,6 +7,77 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.1] — 2026-09-11
+
+**Migrated to the cyrius 6.6.x value form.** 34/34 test files, 0 failures.
+
+### Changed — cyrius pin 6.4.69 → **6.6.2**
+
+cyrius 6.6.0 flipped `Result` / `Option` / `Either` declared `: stack` to a value form — a payload
+variant returns a `(tag, payload)` REGISTER PAIR and allocates nothing; `payload()` is gone. 6.6.2
+is the repair release.
+
+⚠ **Almost the entire migration surface lived in the test tree, not the build.** `src/main.cyr`
+includes none of sankhya's 37 source files — the library is only ever compiled *through* its tests.
+So `cyrius build` reported **zero errors** while 33 of 34 test files would not compile. Anyone
+checking the build alone would have called this repo already migrated.
+
+- `src/` — 9 declarations, **7 of them the propagation trap**: `if (is_err_result(r) == 1)
+  { return r; }` returns the payload alone under the value form, so `Err` arrives as
+  `is_err_result == 0` — an error that reads as SUCCESS. Highest trap density of the sweep.
+  Affected `astro`, `babylonian`, `egyptian`, `epoch`, `persian`, `roman`.
+- `tests/` — **209** declarations across 36 files.
+- `tests/sankhya.bcyr` — the warm block reassigned `warm = correlate(...)` with no `var`. There is
+  no `t, v = f();` reassignment form, so each pair-returning warm call now takes its own bind.
+
+### ⚠ BREAKING — Result-taking functions take both halves
+
+A `Result` passed as a *parameter* is two registers now:
+
+```
+- fn sk_result_code(r)              + fn sk_result_code(r_tag, r)
+```
+
+21 in-repo callers updated; **zero external consumers**, so nothing downstream moves. Three test
+helpers changed the same way — `err_or_finite`, `roots_all_finite`, `khroots_all_finite`.
+
+### Fixed — `char_value` collided with varna
+
+sankhya's `char_value(ch)` (Roman numeral → value) and varna's
+`char_value(script_code, system, ch)` (gematria) are different functions sharing a name. Both were
+in scope; before 6.6.2 that was a silent "last definition wins", so calls to whichever lost
+mis-bound their arguments. It surfaced when `varna` moved 2.1.0 → 2.4.1, because 6.6.2 makes a
+same-name different-arity duplicate a hard error. sankhya's side moved to `roman_char_value` —
+2 callers here, none elsewhere in the ecosystem.
+
+### Changed — dependency pins
+
+| dep | from | to |
+|---|---|---|
+| `varna` | 2.1.0 | **2.4.1** |
+| `itihas` | 2.4.0 | **2.5.0** |
+| `avatara` | 2.9.0 | **2.14.8** |
+
+### Worked around — `CYRIUS_DCE=1` segfaults the benchmark binary
+
+`CYRIUS_DCE=1 cyrius build tests/sankhya.bcyr` produces a binary that segfaults immediately
+(`rc=139`, zero output). The identical source built without DCE runs clean; DCE removes ~74 % of
+that binary. sankhya's **main** binary is built with `CYRIUS_DCE=1` and is unaffected — this is
+specific to the bench translation unit.
+
+This is a **cyrius defect, not a sankhya one**, filed upstream as
+`docs/development/issues/sankhya-dce-bench-segfault.md`.
+
+**Workaround applied:** the CI Benchmarks step drops `CYRIUS_DCE=1` and builds the bench plainly.
+The step is green again and the benchmark numbers are unaffected — DCE is a size optimisation, not
+a timing one. The flag is to be **restored** once the upstream fix lands; the workaround carries an
+inline comment saying so, and cyrius's roadmap backlog carries the matching follow-up.
+
+⚠ Ruled out during diagnosis, recorded so it is not re-chased: the `itihas` 2.4.0 → 2.5.0 bump
+introduced a genuine new `xalloc` duplicate against `avatara`'s (same arity, "last definition
+wins"). Pinning `itihas` back removes the warning entirely and the DCE build **still** segfaults,
+so the collision is not the cause.
+
 ## [3.0.0] — 2026-07-21
 
 Full language port — the entire crate is rewritten from Rust v2.0.0 to Cyrius

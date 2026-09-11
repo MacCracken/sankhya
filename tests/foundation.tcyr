@@ -33,11 +33,11 @@ fn main() {
     var e = sk_err(SKE_INVALID_DATE, str_from("bad day"));
     assert_eq(sk_err_code(e), SKE_INVALID_DATE, "sk_err_code");
     ok(str_eq_cstr(sk_err_msg(e), "bad day"), "sk_err_msg");
-    var good = Ok(42);
-    assert_eq(sk_result_code(good), SKE_OK, "Ok->SKE_OK");
-    assert_eq(result_unwrap(good), 42, "unwrap Ok(42)");
-    var bad = sk_fail(SKE_OVERFLOW, str_from("boom"));
-    assert_eq(sk_result_code(bad), SKE_OVERFLOW, "sk_fail->code");
+    var good_t, good_v = Ok(42);
+    assert_eq(sk_result_code(good_t, good_v), SKE_OK, "Ok->SKE_OK");
+    assert_eq(result_unwrap(good_t, good_v), 42, "unwrap Ok(42)");
+    var bad_t, bad_v = sk_fail(SKE_OVERFLOW, str_from("boom"));
+    assert_eq(sk_result_code(bad_t, bad_v), SKE_OVERFLOW, "sk_fail->code");
 
     # --- shared astro constants initialize ---
     assert_eq(f64_to(J2000_JDN), 2451545, "J2000_JDN=2451545.0");

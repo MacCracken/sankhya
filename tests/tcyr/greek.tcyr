@@ -80,44 +80,45 @@ fn main() {
     ok(per, "Metonic period_years 19");
 
     # ---- isopsephy (varna) ----
-    var ia = isopsephy("α");
-    var iaok = is_ok(ia);
+    var ia_t, ia_v = isopsephy("α");
+    var iaok = is_ok(ia_t);
     ok(iaok, "isopsephy(α) ok");
-    assert_eq(result_unwrap(ia), 1, "α = 1");
-    var iw = isopsephy("ω");
-    assert_eq(result_unwrap(iw), 800, "ω = 800");
-    var ipi = isopsephy("πι");
-    assert_eq(result_unwrap(ipi), 90, "πι = 90");
-    var iaw = isopsephy("αω");
-    assert_eq(result_unwrap(iaw), 801, "αω = 801");
-    var iem = isopsephy("");
-    var iemerr = is_err_result(iem);
+    assert_eq(result_unwrap(ia_t, ia_v), 1, "α = 1");
+    var iw_t, iw_v = isopsephy("ω");
+    assert_eq(result_unwrap(iw_t, iw_v), 800, "ω = 800");
+    var ipi_t, ipi_v = isopsephy("πι");
+    assert_eq(result_unwrap(ipi_t, ipi_v), 90, "πι = 90");
+    var iaw_t, iaw_v = isopsephy("αω");
+    assert_eq(result_unwrap(iaw_t, iaw_v), 801, "αω = 801");
+    var iem_t, iem_v = isopsephy("");
+    var iemerr = is_err_result(iem_t);
     ok(iemerr, "isopsephy(empty) errors");
-    var ihe = isopsephy("hello");
-    var iheerr = is_err_result(ihe);
+    var ihe_t, ihe_v = isopsephy("hello");
+    var iheerr = is_err_result(ihe_t);
     ok(iheerr, "isopsephy(hello) errors");
 
     # ---- to_greek_numeral (varna) ----
-    var g1 = to_greek_numeral(1);
-    var g1s = str_eq_cstr(result_unwrap(g1), "α");
+    var g1_t, g1_v = to_greek_numeral(1);
+    var g1s = str_eq_cstr(result_unwrap(g1_t, g1_v), "α");
     ok(g1s, "1 -> α");
-    var g10 = to_greek_numeral(10);
-    var g10s = str_eq_cstr(result_unwrap(g10), "ι");
+    var g10_t, g10_v = to_greek_numeral(10);
+    var g10s = str_eq_cstr(result_unwrap(g10_t, g10_v), "ι");
     ok(g10s, "10 -> ι");
-    var g100 = to_greek_numeral(100);
-    var g100s = str_eq_cstr(result_unwrap(g100), "ρ");
+    var g100_t, g100_v = to_greek_numeral(100);
+    var g100s = str_eq_cstr(result_unwrap(g100_t, g100_v), "ρ");
     ok(g100s, "100 -> ρ");
-    var g358 = to_greek_numeral(358);
-    var g358s = str_eq_cstr(result_unwrap(g358), "τνη");
+    var g358_t, g358_v = to_greek_numeral(358);
+    var g358s = str_eq_cstr(result_unwrap(g358_t, g358_v), "τνη");
     ok(g358s, "358 -> τνη");
 
     # roundtrip: encode 358 then isopsephy back to 358
-    var num = result_unwrap(to_greek_numeral(358));
-    var back = isopsephy(str_data(num));
-    assert_eq(result_unwrap(back), 358, "roundtrip 358");
+    var _g_t, _g_v = to_greek_numeral(358);
+    var num = result_unwrap(_g_t, _g_v);
+    var back_t, back_v = isopsephy(str_data(num));
+    assert_eq(result_unwrap(back_t, back_v), 358, "roundtrip 358");
 
-    var g0 = to_greek_numeral(0);
-    var g0err = is_err_result(g0);
+    var g0_t, g0_v = to_greek_numeral(0);
+    var g0err = is_err_result(g0_t);
     ok(g0err, "to_greek_numeral(0) errors");
 
     # ---- logging init does not crash ----

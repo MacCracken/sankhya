@@ -18,9 +18,9 @@ fn main() {
     alloc_init();
 
     # ---- NikhilamSteps: tuple -> JSON array round-trip ----
-    var r = vedic_multiply_nikhilam(97, 96);
-    ok(is_ok(r), "nikhilam(97,96) ok");
-    var steps = result_unwrap(r);
+    var r_t, r_v = vedic_multiply_nikhilam(97, 96);
+    ok(is_ok(r_t), "nikhilam(97,96) ok");
+    var steps = result_unwrap(r_t, r_v);
 
     var js = nikhilam_to_json(steps);
     # serde_json of (100,3,4,93,9312) is exactly "[100,3,4,93,9312]"
@@ -32,9 +32,9 @@ fn main() {
     ok(nikhilam_eq(steps, steps2), "nikhilam serde round-trip");
 
     # ---- Meru Prastara: Vec<Vec<u64>> -> nested JSON array round-trip ----
-    var mr = meru_prastara(5);
-    ok(is_ok(mr), "meru_prastara(5) ok");
-    var tri = result_unwrap(mr);
+    var mr_t, mr_v = meru_prastara(5);
+    ok(is_ok(mr_t), "meru_prastara(5) ok");
+    var tri = result_unwrap(mr_t, mr_v);
 
     var mjs = meru_to_json(tri);
     # serde_json of the 5-row Pingala triangle, compact.
@@ -46,9 +46,9 @@ fn main() {
     ok(meru_eq(tri, tri2), "meru serde round-trip");
 
     # empty Meru round-trips to "[]"
-    var mr0 = meru_prastara(0);
-    ok(is_ok(mr0), "meru_prastara(0) ok");
-    var tri0 = result_unwrap(mr0);
+    var mr0_t, mr0_v = meru_prastara(0);
+    ok(is_ok(mr0_t), "meru_prastara(0) ok");
+    var tri0 = result_unwrap(mr0_t, mr0_v);
     var mjs0 = meru_to_json(tri0);
     ok(str_eq_cstr(mjs0, "[]"), "empty meru json = []");
     var tri0b = meru_from_json(sk_json_parse(mjs0));

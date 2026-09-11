@@ -303,9 +303,9 @@ fn persian_year_days(year) {
 # Get the JDN of a specific March day in a Gregorian year.
 fn gregorian_march_jdn(gy, march_day) {
     var d = gregorian_date_new(gy, GM_MARCH, march_day);
-    var r = gregorian_to_jdn(d);
-    if (is_ok(r) == 1) {
-        return result_unwrap(r);
+    var r_t, r_v = gregorian_to_jdn(d);
+    if (is_ok(r_t) == 1) {
+        return result_unwrap(r_t, r_v);
     }
     # Fallback: approximate (dead path for valid march_day 19-22).
     # GREGORIAN_EPOCH_JDN + (gy as f64 * 365.25) + 78.0

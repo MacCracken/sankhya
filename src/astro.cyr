@@ -686,9 +686,9 @@ fn monument_alignment(observer_lat, azimuth, jdn, tolerance_degrees) {
     var si = 0;
     while (si < n) {
         var sn = vec_get(astro_align_stars, si);
-        var r = star_rise_azimuth(sn, observer_lat, jdn);
-        if (is_ok(r) == 1) {
-            var star_az = result_unwrap(r);
+        var r_t, r_v = star_rise_azimuth(sn, observer_lat, jdn);
+        if (is_ok(r_t) == 1) {
+            var star_az = result_unwrap(r_t, r_v);
             var dev = angle_deviation(azimuth, star_az);
             if (f64_le(dev, tolerance_degrees) == 1) {
                 vec_push(results, alignment_result_new(AT_STAR_RISING, sn, star_az, dev));

@@ -18,9 +18,9 @@ var HALF = 0;
 # One sexagesimal round-trip: from_sexagesimal(to_sexagesimal(n)) == n.
 fn roundtrip_ok(n) {
     var d = to_sexagesimal(n);
-    var r = from_sexagesimal(d);
-    if (is_ok(r) == 0) { return 0; }
-    var v = result_unwrap(r);
+    var r_t, r_v = from_sexagesimal(d);
+    if (is_ok(r_t) == 0) { return 0; }
+    var v = result_unwrap(r_t, r_v);
     if (v == n) { return 1; }
     return 0;
 }
@@ -37,9 +37,9 @@ fn main() {
     var z = to_sexagesimal(0);
     assert_eq(vec_len(z), 1, "to_sexagesimal(0) len 1");
     assert_eq(vec_get(z, 0), 0, "to_sexagesimal(0)[0]=0");
-    var rz = from_sexagesimal(z);
-    ok(is_ok(rz), "from_sexagesimal([0]) ok");
-    assert_eq(result_unwrap(rz), 0, "from_sexagesimal([0])=0");
+    var rz_t, rz_v = from_sexagesimal(z);
+    ok(is_ok(rz_t), "from_sexagesimal([0]) ok");
+    assert_eq(result_unwrap(rz_t, rz_v), 0, "from_sexagesimal([0])=0");
 
     # ---- sexagesimal_roundtrip ----
     ok(roundtrip_ok(1), "roundtrip 1");
@@ -51,16 +51,16 @@ fn main() {
     ok(roundtrip_ok(1000000), "roundtrip 1000000");
 
     # ---- babylonian_numeral_value ----
-    var rn = babnum_from_value(42);
-    ok(is_ok(rn), "from_value(42) ok");
-    var num = result_unwrap(rn);
+    var rn_t, rn_v = babnum_from_value(42);
+    ok(is_ok(rn_t), "from_value(42) ok");
+    var num = result_unwrap(rn_t, rn_v);
     assert_eq(babnum_tens(num), 4, "numeral 42 tens=4");
     assert_eq(babnum_units(num), 2, "numeral 42 units=2");
     assert_eq(babnum_value(num), 42, "numeral 42 value=42");
 
     # ---- from_value out of range ----
-    var rbadnum = babnum_from_value(60);
-    ok(is_err_result(rbadnum), "from_value(60) err");
+    var rbadnum_t, rbadnum_v = babnum_from_value(60);
+    ok(is_err_result(rbadnum_t), "from_value(60) err");
 
     # ---- plimpton_triples_valid ----
     var tr = generate_plimpton_triples();
@@ -80,20 +80,20 @@ fn main() {
     ok(allvalid, "all plimpton triples satisfy a^2+b^2=c^2");
 
     # ---- sqrt_2_accuracy ----
-    var r2 = babylonian_sqrt(f64_from(2), 10);
-    ok(is_ok(r2), "sqrt(2) ok");
-    var s = result_unwrap(r2);
+    var r2_t, r2_v = babylonian_sqrt(f64_from(2), 10);
+    ok(is_ok(r2_t), "sqrt(2) ok");
+    var s = result_unwrap(r2_t, r2_v);
     var sqrt2 = f64_parse("1.4142135623730951");
     ok(f64_approx_eq(s, sqrt2, TOL_1E15), "sqrt(2) within 1e-15");
 
     # ---- babylonian_sqrt error paths ----
-    var rneg = babylonian_sqrt(f64_neg(f64_from(4)), 10);
-    ok(is_err_result(rneg), "sqrt(-4) err");
-    var r0iter = babylonian_sqrt(f64_from(4), 0);
-    ok(is_err_result(r0iter), "sqrt with 0 iterations err");
-    var rzero = babylonian_sqrt(f64_from(0), 10);
-    ok(is_ok(rzero), "sqrt(0) ok");
-    assert_eq(f64_to(result_unwrap(rzero)), 0, "sqrt(0)=0");
+    var rneg_t, rneg_v = babylonian_sqrt(f64_neg(f64_from(4)), 10);
+    ok(is_err_result(rneg_t), "sqrt(-4) err");
+    var r0iter_t, r0iter_v = babylonian_sqrt(f64_from(4), 0);
+    ok(is_err_result(r0iter_t), "sqrt with 0 iterations err");
+    var rzero_t, rzero_v = babylonian_sqrt(f64_from(0), 10);
+    ok(is_ok(rzero_t), "sqrt(0) ok");
+    assert_eq(f64_to(result_unwrap(rzero_t, rzero_v)), 0, "sqrt(0)=0");
 
     # ---- saros_cycle_test ----
     var j2000 = f64_from(2451545);
@@ -106,9 +106,9 @@ fn main() {
     assert_eq(babdate_year(date), 1, "epoch year=1");
     assert_eq(babdate_month(date), BM_NISANNU, "epoch month=Nisannu");
     assert_eq(babdate_day(date), 1, "epoch day=1");
-    var rj = babylonian_to_jdn(date);
-    ok(is_ok(rj), "babylonian_to_jdn(epoch) ok");
-    var jdn = result_unwrap(rj);
+    var rj_t, rj_v = babylonian_to_jdn(date);
+    ok(is_ok(rj_t), "babylonian_to_jdn(epoch) ok");
+    var jdn = result_unwrap(rj_t, rj_v);
     var ediff = f64_abs(f64_sub(jdn, BABYLONIAN_EPOCH_JDN));
     var within = f64_lt(ediff, HALF);
     ok(within, "epoch jdn within 0.5");
@@ -137,9 +137,9 @@ fn main() {
 
     # ---- babylonian_to_jdn_invalid_day ----
     var baddate = babdate_new(1, BM_AYARU, 30);
-    var rbad = babylonian_to_jdn(baddate);
-    ok(is_err_result(rbad), "day 30 in Ayaru (29-day) is err");
-    assert_eq(sk_result_code(rbad), SKE_INVALID_DATE, "invalid day -> SKE_INVALID_DATE");
+    var rbad_t, rbad_v = babylonian_to_jdn(baddate);
+    ok(is_err_result(rbad_t), "day 30 in Ayaru (29-day) is err");
+    assert_eq(sk_result_code(rbad_t, rbad_v), SKE_INVALID_DATE, "invalid day -> SKE_INVALID_DATE");
 
     # ---- synodic_months_one_year ----
     var months, srem = synodic_months_between(f64_from(0), f64_parse("365.25"));
@@ -166,36 +166,36 @@ fn main() {
     assert_eq(recipmiss, 0, "reciprocal_lookup(7) not found");
 
     # ---- cuneiform_digit_units ----
-    var c1 = cuneiform_digit(1);
-    ok(is_ok(c1), "cuneiform_digit(1) ok");
-    ok(str_eq_cstr(result_unwrap(c1), "𒐕"), "cuneiform(1)=U+12415");
-    var c9 = cuneiform_digit(9);
-    ok(str_eq_cstr(result_unwrap(c9), "𒐝"), "cuneiform(9)=U+1241D");
+    var c1_t, c1_v = cuneiform_digit(1);
+    ok(is_ok(c1_t), "cuneiform_digit(1) ok");
+    ok(str_eq_cstr(result_unwrap(c1_t, c1_v), "𒐕"), "cuneiform(1)=U+12415");
+    var c9_t, c9_v = cuneiform_digit(9);
+    ok(str_eq_cstr(result_unwrap(c9_t, c9_v), "𒐝"), "cuneiform(9)=U+1241D");
 
     # ---- cuneiform_digit_tens ----
-    var c10 = cuneiform_digit(10);
-    ok(str_eq_cstr(result_unwrap(c10), "𒌋"), "cuneiform(10)=U+1230B");
-    var c30 = cuneiform_digit(30);
-    ok(str_eq_cstr(result_unwrap(c30), "𒌍"), "cuneiform(30)=U+1230D");
+    var c10_t, c10_v = cuneiform_digit(10);
+    ok(str_eq_cstr(result_unwrap(c10_t, c10_v), "𒌋"), "cuneiform(10)=U+1230B");
+    var c30_t, c30_v = cuneiform_digit(30);
+    ok(str_eq_cstr(result_unwrap(c30_t, c30_v), "𒌍"), "cuneiform(30)=U+1230D");
 
     # ---- cuneiform_digit_composite (42 = 30 + 10 + 2) ----
-    var c42 = cuneiform_digit(42);
-    var s42 = result_unwrap(c42);
+    var c42_t, c42_v = cuneiform_digit(42);
+    var s42 = result_unwrap(c42_t, c42_v);
     ok(str_contains_cstr(s42, "𒌍"), "cuneiform(42) contains 30");
     ok(str_contains_cstr(s42, "𒐖"), "cuneiform(42) contains 2");
 
     # ---- cuneiform_digit_zero ----
-    var c0 = cuneiform_digit(0);
-    ok(str_eq_cstr(result_unwrap(c0), " "), "cuneiform(0)=space");
+    var c0_t, c0_v = cuneiform_digit(0);
+    ok(str_eq_cstr(result_unwrap(c0_t, c0_v), " "), "cuneiform(0)=space");
 
     # ---- cuneiform_digit_out_of_range ----
-    var c60 = cuneiform_digit(60);
-    ok(is_err_result(c60), "cuneiform(60) err");
+    var c60_t, c60_v = cuneiform_digit(60);
+    ok(is_err_result(c60_t), "cuneiform(60) err");
 
     # ---- to_cuneiform_basic (60 = [1, 0]) ----
-    var tc = to_cuneiform(60);
-    ok(is_ok(tc), "to_cuneiform(60) ok");
-    var stc = result_unwrap(tc);
+    var tc_t, tc_v = to_cuneiform(60);
+    ok(is_ok(tc_t), "to_cuneiform(60) ok");
+    var stc = result_unwrap(tc_t, tc_v);
     ok(str_contains_cstr(stc, "·"), "to_cuneiform(60) contains middle dot");
     ok(str_contains_cstr(stc, "𒐕"), "to_cuneiform(60) contains diš");
 

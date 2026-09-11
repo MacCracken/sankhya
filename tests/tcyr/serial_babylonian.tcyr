@@ -24,9 +24,9 @@ fn main() {
     println("=== sankhya serial_babylonian test suite ===");
 
     # ---- BabylonianNumeral(42) = {"tens":4,"units":2} ----
-    var r = babnum_from_value(42);
-    ok(is_ok(r), "from_value(42) ok");
-    var num = result_unwrap(r);
+    var r_t, r_v = babnum_from_value(42);
+    ok(is_ok(r_t), "from_value(42) ok");
+    var num = result_unwrap(r_t, r_v);
     var njs = babnum_to_json(num);
     ok(str_contains_cstr(njs, "\"tens\":4"), "numeral json has tens:4");
     ok(str_contains_cstr(njs, "\"units\":2"), "numeral json has units:2");

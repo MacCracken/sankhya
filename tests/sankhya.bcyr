@@ -46,8 +46,8 @@ var SIRIUS_COORD = 0;
 
 # mayan: LongCount::from_days -> to_days roundtrip.
 fn _b_long_count_conversion() {
-    var r = long_count_from_days(1000000);
-    var lc = result_unwrap(r);
+    var r_t, r_v = long_count_from_days(1000000);
+    var lc = result_unwrap(r_t, r_v);
     return long_count_to_days(lc);
 }
 
@@ -92,8 +92,8 @@ fn _b_epoch_correlate() { return correlate(JDN_CORR); }
 
 # roman: to_roman_str -> from_roman roundtrip of 3999 (MMMCMXCIX).
 fn _b_roman_roundtrip() {
-    var r = to_roman_str(3999);
-    var s = result_unwrap(r);
+    var r_t, r_v = to_roman_str(3999);
+    var s = result_unwrap(r_t, r_v);
     return from_roman(s);
 }
 
@@ -158,8 +158,12 @@ SIRIUS_COORD = star_j2000(SN_SIRIUS);
 
 # Warm the itihas/avatara lazy caches touched by correlate/convert so the
 # first timed call does not pay the one-time build cost.
-warm = correlate(JDN_CORR);
-warm = convert(caldate_gregorian(gregorian_date_new(2025, GM_JANUARY, 1)));
+# ⚠ These two return a `: stack` pair (6.6.0 value form) and there is no
+# `t, v = f();` reassignment form — only `var t, v = f();` binds a pair. `warm` is a
+# discard used only to force evaluation, so each gets its own bind; the warming
+# behaviour is unchanged.
+var _warm_corr_t, _warm_corr_v = correlate(JDN_CORR);
+var _warm_conv_t, _warm_conv_v = convert(caldate_gregorian(gregorian_date_new(2025, GM_JANUARY, 1)));
 
 var benches = vec_new();
 var b = 0;

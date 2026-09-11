@@ -124,9 +124,9 @@ fn main() {
     ok(dw_gt, "winter solstice dec > -24");
 
     # -- Heliacal rising --
-    var hres = heliacal_rising(SN_SIRIUS, f64_from(2451545), f64_from(30), f64_parse("31.2"));
-    ok(is_ok(hres), "heliacal rising ok");
-    var hevt = result_unwrap(hres);
+    var hres_t, hres_v = heliacal_rising(SN_SIRIUS, f64_from(2451545), f64_from(30), f64_parse("31.2"));
+    ok(is_ok(hres_t), "heliacal rising ok");
+    var hevt = result_unwrap(hres_t, hres_v);
     assert_eq(he_star(hevt), SN_SIRIUS, "heliacal star = sirius");
     assert_eq(he_event_type(hevt), HET_RISING, "heliacal type = rising");
     var hdiff = f64_sub(he_jdn(hevt), f64_from(2451545));

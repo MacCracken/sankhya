@@ -23,9 +23,9 @@ fn row_sum(row, n) {
 
 # Unwrap a to_unicode_rods Ok to its Str, or 0 on Err.
 fn rods_str(n) {
-    var r = to_unicode_rods(n);
-    if (is_ok(r) == 0) { return 0; }
-    return result_unwrap(r);
+    var r_t, r_v = to_unicode_rods(n);
+    if (is_ok(r_t) == 0) { return 0; }
+    return result_unwrap(r_t, r_v);
 }
 
 fn main() {
@@ -147,8 +147,8 @@ fn main() {
     ok(str_eq_cstr(rods_str(101), "𝍠 𝍠"), "rods 101 = 𝍠 𝍠");
 
     # ---- unicode_rods_zero_errors ----
-    var rz = to_unicode_rods(0);
-    var iz = is_ok(rz);
+    var rz_t, rz_v = to_unicode_rods(0);
+    var iz = is_ok(rz_t);
     check(iz, 0, "rods 0 is Err");
 
     # ---- logging init doesn't crash ----

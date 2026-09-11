@@ -218,9 +218,9 @@ fn egyptian_divide(dividend, divisor) {
         return Ok(egydiv_new(quotient, vec_new()));
     }
 
-    var dres = decompose(remainder, divisor);
-    if (is_err_result(dres) == 1) { return dres; }
-    var fractions = result_unwrap(dres);
+    var dres_t, dres_v = decompose(remainder, divisor);
+    if (is_err_result(dres_t) == 1) { return Err(dres_v); }
+    var fractions = result_unwrap(dres_t, dres_v);
     return Ok(egydiv_new(quotient, fractions));
 }
 

@@ -48,10 +48,10 @@ fn test_sequential(tol) {
     for (var i = 0; i < 1500; i = i + 1) {
         var jdn = f64_add(base, f64_from(i));
         var d = jdn_to_hebrew(jdn);
-        var r = hebrew_to_jdn(d);
-        if (is_ok(r) == 0) { bad = bad + 1; }
+        var r_t, r_v = hebrew_to_jdn(d);
+        if (is_ok(r_t) == 0) { bad = bad + 1; }
         else {
-            var back = result_unwrap(r);
+            var back = result_unwrap(r_t, r_v);
             if (f64_approx_eq(back, jdn, tol) == 0) { bad = bad + 1; }
         }
     }
@@ -67,10 +67,10 @@ fn test_leap_boundary(tol) {
         if (hebdate_year(d) != y) { bad = bad + 1; }
         if (hebdate_month(d) != HM_TISHREI) { bad = bad + 1; }
         if (hebdate_day(d) != 1) { bad = bad + 1; }
-        var r = hebrew_to_jdn(d);
-        if (is_ok(r) == 0) { bad = bad + 1; }
+        var r_t, r_v = hebrew_to_jdn(d);
+        if (is_ok(r_t) == 0) { bad = bad + 1; }
         else {
-            var back = result_unwrap(r);
+            var back = result_unwrap(r_t, r_v);
             if (f64_approx_eq(back, rh, tol) == 0) { bad = bad + 1; }
         }
     }
@@ -115,16 +115,16 @@ fn main() {
     check(hebdate_year(ed), 1, "epoch year=1");
     check(hebdate_month(ed), HM_TISHREI, "epoch month=Tishrei");
     check(hebdate_day(ed), 1, "epoch day=1");
-    var er = hebrew_to_jdn(ed);
-    ok(is_ok(er), "epoch to_jdn ok");
-    var ejdn = result_unwrap(er);
+    var er_t, er_v = hebrew_to_jdn(ed);
+    ok(is_ok(er_t), "epoch to_jdn ok");
+    var ejdn = result_unwrap(er_t, er_v);
     ok(f64_approx_eq(ejdn, HEBREW_EPOCH_JDN, tol), "epoch jdn round-trips");
 
     # ---- known_date_passover_5785: 15 Nisan 5785 round-trips ----
     var pd = hebrewdate_new(5785, HM_NISAN, 15);
-    var pr = hebrew_to_jdn(pd);
-    ok(is_ok(pr), "passover to_jdn ok");
-    var pjdn = result_unwrap(pr);
+    var pr_t, pr_v = hebrew_to_jdn(pd);
+    ok(is_ok(pr_t), "passover to_jdn ok");
+    var pjdn = result_unwrap(pr_t, pr_v);
     var pback = jdn_to_hebrew(pjdn);
     ok(hebdate_eq(pback, pd), "15 Nisan 5785 round-trips");
 
@@ -142,7 +142,8 @@ fn main() {
     var z0 = hebrewdate_new(5785, HM_TISHREI, 0);
     ok(is_err_result(hebrew_to_jdn(z0)), "invalid_day_zero");
     # error carries SKE_INVALID_DATE code
-    check(sk_result_code(hebrew_to_jdn(z0)), SKE_INVALID_DATE, "day-zero code=INVALID_DATE");
+    var _sc1_t, _sc1_v = hebrew_to_jdn(z0);
+    check(sk_result_code(_sc1_t, _sc1_v), SKE_INVALID_DATE, "day-zero code=INVALID_DATE");
 
     # ---- roundtrips (loop-heavy, isolated scopes) ----
     check(test_sequential(tol), 0, "roundtrip_sequential_days 1500");

@@ -27,9 +27,9 @@ fn main() {
     assert_eq(gd_year(d0), 1, "epoch year=1");
     assert_eq(gd_month(d0), GM_JANUARY, "epoch month=January");
     assert_eq(gd_day(d0), 1, "epoch day=1");
-    var r0 = gregorian_to_jdn(d0);
-    ok(is_ok(r0), "epoch to_jdn ok");
-    var j0 = result_unwrap(r0);
+    var r0_t, r0_v = gregorian_to_jdn(d0);
+    ok(is_ok(r0_t), "epoch to_jdn ok");
+    var j0 = result_unwrap(r0_t, r0_v);
     ok(f64_approx_eq(j0, GREGORIAN_EPOCH_JDN, TOL), "epoch jdn round-trips");
 
     # ---- known_date_j2000: 2451545.0 -> 2000-01-01 ----
@@ -76,10 +76,10 @@ fn main() {
     while (mi < vec_len(mods)) {
         var jm = vec_get(mods, mi);
         var dmm = jdn_to_gregorian(jm);
-        var rmm = gregorian_to_jdn(dmm);
-        if (is_ok(rmm) == 0) { mfail = mfail + 1; }
-        if (is_ok(rmm) == 1) {
-            var bm = result_unwrap(rmm);
+        var rmm_t, rmm_v = gregorian_to_jdn(dmm);
+        if (is_ok(rmm_t) == 0) { mfail = mfail + 1; }
+        if (is_ok(rmm_t) == 1) {
+            var bm = result_unwrap(rmm_t, rmm_v);
             if (f64_approx_eq(bm, jm, TOL) == 0) { mfail = mfail + 1; }
         }
         mi = mi + 1;
@@ -93,10 +93,10 @@ fn main() {
     while (ai < 3000000) {
         var ja = jdnp5(ai);
         var da = jdn_to_gregorian(ja);
-        var ra = gregorian_to_jdn(da);
-        if (is_ok(ra) == 0) { afail = afail + 1; }
-        if (is_ok(ra) == 1) {
-            var ba = result_unwrap(ra);
+        var ra_t, ra_v = gregorian_to_jdn(da);
+        if (is_ok(ra_t) == 0) { afail = afail + 1; }
+        if (is_ok(ra_t) == 1) {
+            var ba = result_unwrap(ra_t, ra_v);
             if (f64_approx_eq(ba, ja, TOL) == 0) { afail = afail + 1; }
         }
         ai = ai + 10000;
@@ -110,10 +110,10 @@ fn main() {
     while (si < 1000) {
         var js = f64_add(jdnp5(2451544), f64_from(si));
         var ds = jdn_to_gregorian(js);
-        var rs = gregorian_to_jdn(ds);
-        if (is_ok(rs) == 0) { sfail = sfail + 1; }
-        if (is_ok(rs) == 1) {
-            var bs = result_unwrap(rs);
+        var rs_t, rs_v = gregorian_to_jdn(ds);
+        if (is_ok(rs_t) == 0) { sfail = sfail + 1; }
+        if (is_ok(rs_t) == 1) {
+            var bs = result_unwrap(rs_t, rs_v);
             if (f64_approx_eq(bs, js, TOL) == 0) { sfail = sfail + 1; }
         }
         si = si + 1;
@@ -123,25 +123,25 @@ fn main() {
 
     # ---- leap_feb_29: 2024-02-29 valid ----
     var lf = gregorian_date_new(2024, GM_FEBRUARY, 29);
-    var rlf = gregorian_to_jdn(lf);
-    ok(is_ok(rlf), "2024-02-29 ok");
+    var rlf_t, rlf_v = gregorian_to_jdn(lf);
+    ok(is_ok(rlf_t), "2024-02-29 ok");
 
     # ---- non_leap_feb_29_errors: 2023-02-29 invalid ----
     var nf = gregorian_date_new(2023, GM_FEBRUARY, 29);
-    var rnf = gregorian_to_jdn(nf);
-    ok(is_err_result(rnf), "2023-02-29 err");
-    assert_eq(sk_result_code(rnf), SKE_INVALID_DATE, "2023-02-29 InvalidDate code");
+    var rnf_t, rnf_v = gregorian_to_jdn(nf);
+    ok(is_err_result(rnf_t), "2023-02-29 err");
+    assert_eq(sk_result_code(rnf_t, rnf_v), SKE_INVALID_DATE, "2023-02-29 InvalidDate code");
 
     # ---- invalid_day_zero: 2000-01-00 invalid ----
     var dz = gregorian_date_new(2000, GM_JANUARY, 0);
-    var rdz = gregorian_to_jdn(dz);
-    ok(is_err_result(rdz), "day 0 err");
+    var rdz_t, rdz_v = gregorian_to_jdn(dz);
+    ok(is_err_result(rdz_t), "day 0 err");
 
     # ---- invalid_day_32: 2000-01-32 invalid, exact message ----
     var d32 = gregorian_date_new(2000, GM_JANUARY, 32);
-    var rd32 = gregorian_to_jdn(d32);
-    ok(is_err_result(rd32), "day 32 err");
-    var msg32 = sk_err_msg(err_code_of(rd32));
+    var rd32_t, rd32_v = gregorian_to_jdn(d32);
+    ok(is_err_result(rd32_t), "day 32 err");
+    var msg32 = sk_err_msg(err_code_of(rd32_t, rd32_v));
     ok(str_eq_cstr(msg32, "day 32 out of range for January 2000 (max 31)"), "day 32 error message");
 
     # ---- display_ce: 2025 April 1 -> "1 April 2025 CE" ----

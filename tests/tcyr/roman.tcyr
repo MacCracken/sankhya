@@ -10,19 +10,19 @@ fn ok(v, name) { return assert_neq(v, 0, name); }
 
 # assert to_roman_str(value) == cstr
 fn check_roman(value, cstr, name) {
-    var r = to_roman_str(value);
-    var okr = is_ok(r);
+    var r_t, r_v = to_roman_str(value);
+    var okr = is_ok(r_t);
     if (okr == 0) { return ok(0, name); }
-    var s = result_unwrap(r);
+    var s = result_unwrap(r_t, r_v);
     return ok(str_eq_cstr(s, cstr), name);
 }
 
 # assert from_roman(cstr) == expected value
 fn check_parse(cstr, expected, name) {
-    var r = from_roman(str_from(cstr));
-    var okr = is_ok(r);
+    var r_t, r_v = from_roman(str_from(cstr));
+    var okr = is_ok(r_t);
     if (okr == 0) { return ok(0, name); }
-    return assert_eq(result_unwrap(r), expected, name);
+    return assert_eq(result_unwrap(r_t, r_v), expected, name);
 }
 
 fn main() {
@@ -58,16 +58,16 @@ fn main() {
     var rtfail = 0;
     var n = 1;
     while (n <= 3999) {
-        var rs = to_roman_str(n);
-        if (is_ok(rs) == 0) {
+        var rs_t, rs_v = to_roman_str(n);
+        if (is_ok(rs_t) == 0) {
             rtfail = rtfail + 1;
         } else {
-            var romanstr = result_unwrap(rs);
-            var pr = from_roman(romanstr);
-            if (is_ok(pr) == 0) {
+            var romanstr = result_unwrap(rs_t, rs_v);
+            var pr_t, pr_v = from_roman(romanstr);
+            if (is_ok(pr_t) == 0) {
                 rtfail = rtfail + 1;
             } else {
-                if (result_unwrap(pr) != n) { rtfail = rtfail + 1; }
+                if (result_unwrap(pr_t, pr_v) != n) { rtfail = rtfail + 1; }
             }
         }
         n = n + 1;
@@ -79,125 +79,127 @@ fn main() {
     check_parse("mcmxcix", 1999, "mcmxcix -> 1999");
 
     # ---- parse_invalid_chars ----
-    var e1 = from_roman(str_from("ABC"));
-    ok(is_err_result(e1), "ABC is error");
-    var e2 = from_roman(str_from("IVX2"));
-    ok(is_err_result(e2), "IVX2 is error");
+    var e1_t, e1_v = from_roman(str_from("ABC"));
+    ok(is_err_result(e1_t), "ABC is error");
+    var e2_t, e2_v = from_roman(str_from("IVX2"));
+    ok(is_err_result(e2_t), "IVX2 is error");
 
     # ---- parse_non_canonical ----
-    var e3 = from_roman(str_from("IIII"));
-    ok(is_err_result(e3), "IIII is error");
-    var e4 = from_roman(str_from("VV"));
-    ok(is_err_result(e4), "VV is error");
-    var e5 = from_roman(str_from("IC"));
-    ok(is_err_result(e5), "IC is error");
+    var e3_t, e3_v = from_roman(str_from("IIII"));
+    ok(is_err_result(e3_t), "IIII is error");
+    var e4_t, e4_v = from_roman(str_from("VV"));
+    ok(is_err_result(e4_t), "VV is error");
+    var e5_t, e5_v = from_roman(str_from("IC"));
+    ok(is_err_result(e5_t), "IC is error");
 
     # ---- parse_empty ----
-    var e6 = from_roman(str_from(""));
-    ok(is_err_result(e6), "empty is error");
-    assert_eq(sk_result_code(e6), SKE_INVALID_BASE, "empty -> InvalidBase");
+    var e6_t, e6_v = from_roman(str_from(""));
+    ok(is_err_result(e6_t), "empty is error");
+    assert_eq(sk_result_code(e6_t, e6_v), SKE_INVALID_BASE, "empty -> InvalidBase");
 
     # ---- value_zero_errors ----
-    var e7 = to_roman_str(0);
-    ok(is_err_result(e7), "to_roman_str(0) error");
-    assert_eq(sk_result_code(e7), SKE_INVALID_BASE, "0 -> InvalidBase");
-    var e8 = romannum_from_value(0);
-    ok(is_err_result(e8), "from_value(0) error");
+    var e7_t, e7_v = to_roman_str(0);
+    ok(is_err_result(e7_t), "to_roman_str(0) error");
+    assert_eq(sk_result_code(e7_t, e7_v), SKE_INVALID_BASE, "0 -> InvalidBase");
+    var e8_t, e8_v = romannum_from_value(0);
+    ok(is_err_result(e8_t), "from_value(0) error");
 
     # ---- value_too_large_errors ----
-    var e9 = to_roman_str(4000);
-    ok(is_err_result(e9), "to_roman_str(4000) error");
-    var e10 = romannum_from_value(4000);
-    ok(is_err_result(e10), "from_value(4000) error");
+    var e9_t, e9_v = to_roman_str(4000);
+    ok(is_err_result(e9_t), "to_roman_str(4000) error");
+    var e10_t, e10_v = romannum_from_value(4000);
+    ok(is_err_result(e10_t), "from_value(4000) error");
 
     # ---- add_basic ----
-    var ra = roman_add(10, 5);
-    ok(is_ok(ra), "add(10,5) ok");
-    var rav = result_unwrap(ra);
+    var ra_t, ra_v = roman_add(10, 5);
+    ok(is_ok(ra_t), "add(10,5) ok");
+    var rav = result_unwrap(ra_t, ra_v);
     assert_eq(romannum_value(rav), 15, "add value 15");
     ok(str_eq_cstr(romannum_text(rav), "XV"), "add text XV");
 
     # ---- add_overflow ----
-    var rao = roman_add(3999, 1);
-    ok(is_err_result(rao), "add(3999,1) overflow error");
+    var rao_t, rao_v = roman_add(3999, 1);
+    ok(is_err_result(rao_t), "add(3999,1) overflow error");
 
     # ---- subtract_basic ----
-    var rs2 = roman_subtract(10, 3);
-    ok(is_ok(rs2), "sub(10,3) ok");
-    var rsv = result_unwrap(rs2);
+    var rs2_t, rs2_v = roman_subtract(10, 3);
+    ok(is_ok(rs2_t), "sub(10,3) ok");
+    var rsv = result_unwrap(rs2_t, rs2_v);
     assert_eq(romannum_value(rsv), 7, "sub value 7");
     ok(str_eq_cstr(romannum_text(rsv), "VII"), "sub text VII");
 
     # ---- subtract_to_zero_errors ----
-    var rse1 = roman_subtract(5, 5);
-    ok(is_err_result(rse1), "sub(5,5) error");
-    assert_eq(sk_result_code(rse1), SKE_COMPUTATION, "sub(5,5) -> Computation");
-    var rse2 = roman_subtract(3, 7);
-    ok(is_err_result(rse2), "sub(3,7) error");
+    var rse1_t, rse1_v = roman_subtract(5, 5);
+    ok(is_err_result(rse1_t), "sub(5,5) error");
+    assert_eq(sk_result_code(rse1_t, rse1_v), SKE_COMPUTATION, "sub(5,5) -> Computation");
+    var rse2_t, rse2_v = roman_subtract(3, 7);
+    ok(is_err_result(rse2_t), "sub(3,7) error");
 
     # ---- multiply_basic ----
-    var rm = roman_multiply(7, 8);
-    ok(is_ok(rm), "mul(7,8) ok");
-    var rmv = result_unwrap(rm);
+    var rm_t, rm_v = roman_multiply(7, 8);
+    ok(is_ok(rm_t), "mul(7,8) ok");
+    var rmv = result_unwrap(rm_t, rm_v);
     assert_eq(romannum_value(rmv), 56, "mul value 56");
     ok(str_eq_cstr(romannum_text(rmv), "LVI"), "mul text LVI");
 
     # ---- multiply_overflow ----
-    var rmo = roman_multiply(100, 100);
-    ok(is_err_result(rmo), "mul(100,100) overflow error");
+    var rmo_t, rmo_v = roman_multiply(100, 100);
+    ok(is_err_result(rmo_t), "mul(100,100) overflow error");
 
     # ---- divide_exact ----
-    var rd = roman_divide(10, 5);
-    ok(is_ok(rd), "div(10,5) ok");
-    var rdv = result_unwrap(rd);
+    var rd_t, rd_v = roman_divide(10, 5);
+    ok(is_ok(rd_t), "div(10,5) ok");
+    var rdv = result_unwrap(rd_t, rd_v);
     assert_eq(romannum_value(divresult_quotient(rdv)), 2, "div(10,5) quotient 2");
     assert_eq(divresult_remainder(rdv), 0, "div(10,5) remainder None");
 
     # ---- divide_with_remainder ----
-    var rd2 = roman_divide(10, 3);
-    ok(is_ok(rd2), "div(10,3) ok");
-    var rd2v = result_unwrap(rd2);
+    var rd2_t, rd2_v = roman_divide(10, 3);
+    ok(is_ok(rd2_t), "div(10,3) ok");
+    var rd2v = result_unwrap(rd2_t, rd2_v);
     assert_eq(romannum_value(divresult_quotient(rd2v)), 3, "div(10,3) quotient 3");
     var rem = divresult_remainder(rd2v);
     ok(rem, "div(10,3) remainder Some");
     assert_eq(romannum_value(rem), 1, "div(10,3) remainder 1");
 
     # ---- divide_by_zero_errors ----
-    var rdz = roman_divide(10, 0);
-    ok(is_err_result(rdz), "div(10,0) error");
-    assert_eq(sk_result_code(rdz), SKE_INVALID_FRACTION, "div by zero -> InvalidFraction");
+    var rdz_t, rdz_v = roman_divide(10, 0);
+    ok(is_err_result(rdz_t), "div(10,0) error");
+    assert_eq(sk_result_code(rdz_t, rdz_v), SKE_INVALID_FRACTION, "div by zero -> InvalidFraction");
 
     # ---- divide_zero_quotient_errors ----
-    var rdq = roman_divide(3, 5);
-    ok(is_err_result(rdq), "div(3,5) zero quotient error");
-    assert_eq(sk_result_code(rdq), SKE_COMPUTATION, "div zero quotient -> Computation");
+    var rdq_t, rdq_v = roman_divide(3, 5);
+    ok(is_err_result(rdq_t), "div(3,5) zero quotient error");
+    assert_eq(sk_result_code(rdq_t, rdq_v), SKE_COMPUTATION, "div zero quotient -> Computation");
 
     # ---- numeral_methods ----
-    var nmr = romannum_from_value(42);
-    ok(is_ok(nmr), "from_value(42) ok");
-    var x = result_unwrap(nmr);
+    var nmr_t, nmr_v = romannum_from_value(42);
+    ok(is_ok(nmr_t), "from_value(42) ok");
+    var x = result_unwrap(nmr_t, nmr_v);
     assert_eq(romannum_value(x), 42, "x.value == 42");
     ok(str_eq_cstr(romannum_text(x), "XLII"), "x.text == XLII");
     ok(str_eq_cstr(romannum_to_str(x), "XLII"), "x.to_string == XLII");
-    var pyr = romannum_parse(str_from("XIV"));
-    ok(is_ok(pyr), "parse(XIV) ok");
-    var y = result_unwrap(pyr);
+    var pyr_t, pyr_v = romannum_parse(str_from("XIV"));
+    ok(is_ok(pyr_t), "parse(XIV) ok");
+    var y = result_unwrap(pyr_t, pyr_v);
     assert_eq(romannum_value(y), 14, "y.value == 14");
 
     # ---- numeral_arithmetic ----
-    var na = result_unwrap(romannum_from_value(100));
-    var nb = result_unwrap(romannum_from_value(50));
-    var naddr = romannum_add(na, nb);
-    ok(is_ok(naddr), "100+50 ok");
-    assert_eq(romannum_value(result_unwrap(naddr)), 150, "100+50 == 150");
-    var nsubr = romannum_subtract(na, nb);
-    ok(is_ok(nsubr), "100-50 ok");
-    assert_eq(romannum_value(result_unwrap(nsubr)), 50, "100-50 == 50");
-    var nmulr = romannum_multiply(na, nb);
-    ok(is_err_result(nmulr), "100*50 overflow error");
-    var ndivr = romannum_divide(na, nb);
-    ok(is_ok(ndivr), "100/50 ok");
-    var ndv = result_unwrap(ndivr);
+    var _ra_t, _ra_v = romannum_from_value(100);
+    var na = result_unwrap(_ra_t, _ra_v);
+    var _rb_t, _rb_v = romannum_from_value(50);
+    var nb = result_unwrap(_rb_t, _rb_v);
+    var naddr_t, naddr_v = romannum_add(na, nb);
+    ok(is_ok(naddr_t), "100+50 ok");
+    assert_eq(romannum_value(result_unwrap(naddr_t, naddr_v)), 150, "100+50 == 150");
+    var nsubr_t, nsubr_v = romannum_subtract(na, nb);
+    ok(is_ok(nsubr_t), "100-50 ok");
+    assert_eq(romannum_value(result_unwrap(nsubr_t, nsubr_v)), 50, "100-50 == 50");
+    var nmulr_t, nmulr_v = romannum_multiply(na, nb);
+    ok(is_err_result(nmulr_t), "100*50 overflow error");
+    var ndivr_t, ndivr_v = romannum_divide(na, nb);
+    ok(is_ok(ndivr_t), "100/50 ok");
+    var ndv = result_unwrap(ndivr_t, ndivr_v);
     assert_eq(romannum_value(divresult_quotient(ndv)), 2, "100/50 quotient 2");
     assert_eq(divresult_remainder(ndv), 0, "100/50 remainder None");
 

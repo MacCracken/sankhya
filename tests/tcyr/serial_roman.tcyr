@@ -21,9 +21,9 @@ fn main() {
     println("=== sankhya serial_roman test suite ===");
 
     # ---- serde_roundtrip: RomanNumeral(1776) = "MDCCLXXVI" ----
-    var r = romannum_from_value(1776);
-    ok(is_ok(r), "from_value(1776) ok");
-    var n = result_unwrap(r);
+    var r_t, r_v = romannum_from_value(1776);
+    ok(is_ok(r_t), "from_value(1776) ok");
+    var n = result_unwrap(r_t, r_v);
 
     var js = romannum_to_json(n);
 
@@ -39,9 +39,9 @@ fn main() {
     ok(romannum_eq(n, parsed), "RomanNumeral serde round-trip");
 
     # ---- a second value to exercise a different text (parse path) ----
-    var r2 = romannum_parse(str_from("XIV"));
-    ok(is_ok(r2), "parse(XIV) ok");
-    var n2 = result_unwrap(r2);
+    var r2_t, r2_v = romannum_parse(str_from("XIV"));
+    ok(is_ok(r2_t), "parse(XIV) ok");
+    var n2 = result_unwrap(r2_t, r2_v);
     var js2 = romannum_to_json(n2);
     ok(str_eq_cstr(js2, "{\"value\":14,\"text\":\"XIV\"}"), "XIV exact serde shape");
     var v2 = sk_json_parse(js2);

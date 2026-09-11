@@ -21,9 +21,9 @@ fn consts_init() {
 # Encode then decode; return decoded value or (0-1) on Err.
 fn katapayadi_rt(n) {
     var e = katapayadi_encode(n);
-    var r = katapayadi_decode(e);
-    if (is_ok(r) == 0) { return 0 - 1; }
-    return result_unwrap(r);
+    var r_t, r_v = katapayadi_decode(e);
+    if (is_ok(r_t) == 0) { return 0 - 1; }
+    return result_unwrap(r_t, r_v);
 }
 
 fn main() {
@@ -35,9 +35,9 @@ fn main() {
     check(vedic_multiply(12, 13), 156, "vedic_multiply 12*13=156");
 
     # ---- vedic_nikhilam_near_100 ----
-    var r = vedic_multiply_nikhilam(97, 96);
-    ok(is_ok(r), "nikhilam(97,96) ok");
-    var steps = result_unwrap(r);
+    var r_t, r_v = vedic_multiply_nikhilam(97, 96);
+    ok(is_ok(r_t), "nikhilam(97,96) ok");
+    var steps = result_unwrap(r_t, r_v);
     check(nk_base(steps), 100, "nikhilam base=100");
     check(nk_da(steps), 3, "nikhilam da=3");
     check(nk_db(steps), 4, "nikhilam db=4");
@@ -65,14 +65,14 @@ fn main() {
     # spot-check the exact encoded form + an error path
     var e42 = katapayadi_encode(42);
     ok(str_eq_cstr(e42, "kha-gha"), "encode(42) = kha-gha");
-    var bad = katapayadi_decode(str_from("zzz"));
-    ok(is_err_result(bad), "decode(zzz) is Err");
-    check(sk_result_code(bad), SKE_COMPUTATION, "decode(zzz) -> ComputationError");
+    var bad_t, bad_v = katapayadi_decode(str_from("zzz"));
+    ok(is_err_result(bad_t), "decode(zzz) is Err");
+    check(sk_result_code(bad_t, bad_v), SKE_COMPUTATION, "decode(zzz) -> ComputationError");
 
     # ---- meru_prastara_5_rows ----
-    var mr = meru_prastara(5);
-    ok(is_ok(mr), "meru_prastara(5) ok");
-    var tri = result_unwrap(mr);
+    var mr_t, mr_v = meru_prastara(5);
+    ok(is_ok(mr_t), "meru_prastara(5) ok");
+    var tri = result_unwrap(mr_t, mr_v);
     check(vec_len(tri), 5, "meru 5 rows");
 
     var mrow0 = vec_get(tri, 0);
@@ -106,9 +106,9 @@ fn main() {
     check(vec_get(mrow4, 4), 1, "meru row4[4]=1");
 
     # meru_prastara(0) -> empty
-    var mr0 = meru_prastara(0);
-    ok(is_ok(mr0), "meru_prastara(0) ok");
-    check(vec_len(result_unwrap(mr0)), 0, "meru_prastara(0) empty");
+    var mr0_t, mr0_v = meru_prastara(0);
+    ok(is_ok(mr0_t), "meru_prastara(0) ok");
+    check(vec_len(result_unwrap(mr0_t, mr0_v)), 0, "meru_prastara(0) empty");
 
     # ---- devanagari_digits_basic ----
     ok(str_eq_cstr(to_devanagari_digits(0), "०"), "to_devanagari_digits(0)=०");

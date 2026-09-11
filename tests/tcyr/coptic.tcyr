@@ -26,9 +26,9 @@ fn main() {
     assert_eq(coptic_date_year(d0), 1, "epoch year=1");
     assert_eq(coptic_date_month(d0), CM_THOUT, "epoch month=Thout");
     assert_eq(coptic_date_day(d0), 1, "epoch day=1");
-    var r0 = coptic_to_jdn(d0);
-    ok(is_ok(r0), "epoch to_jdn ok");
-    var j0 = result_unwrap(r0);
+    var r0_t, r0_v = coptic_to_jdn(d0);
+    ok(is_ok(r0_t), "epoch to_jdn ok");
+    var j0 = result_unwrap(r0_t, r0_v);
     ok(f64_approx_eq(j0, epoch, TOL), "epoch jdn round-trips");
 
     # ---- known_date_cross_check: JDN 2460564.5 = 1 Thout 1741 AM ----
@@ -53,26 +53,26 @@ fn main() {
 
     # ---- nasie_leap_6_days: {3, Nasie, 6} valid ----
     var dnl = coptic_date_new(3, CM_NASIE, 6);
-    var rnl = coptic_to_jdn(dnl);
-    ok(is_ok(rnl), "Nasie 6 valid in leap year 3");
+    var rnl_t, rnl_v = coptic_to_jdn(dnl);
+    ok(is_ok(rnl_t), "Nasie 6 valid in leap year 3");
 
     # ---- nasie_common_rejects_6: {1, Nasie, 6} invalid ----
     var dnc = coptic_date_new(1, CM_NASIE, 6);
-    var rnc = coptic_to_jdn(dnc);
-    ok(is_err_result(rnc), "Nasie 6 invalid in common year 1");
+    var rnc_t, rnc_v = coptic_to_jdn(dnc);
+    ok(is_err_result(rnc_t), "Nasie 6 invalid in common year 1");
 
     # ---- invalid_day_zero: {1, Thout, 0} ----
     var dz = coptic_date_new(1, CM_THOUT, 0);
-    var rz = coptic_to_jdn(dz);
-    ok(is_err_result(rz), "day 0 rejected");
+    var rz_t, rz_v = coptic_to_jdn(dz);
+    ok(is_err_result(rz_t), "day 0 rejected");
 
     # ---- invalid_day_31: {1, Thout, 31} ----
     var d31 = coptic_date_new(1, CM_THOUT, 31);
-    var r31 = coptic_to_jdn(d31);
-    ok(is_err_result(r31), "day 31 rejected");
+    var r31_t, r31_v = coptic_to_jdn(d31);
+    ok(is_err_result(r31_t), "day 31 rejected");
 
     # error message parity (day 6 out of range for Nasie in common year 1, max 5)
-    var emsg = sk_err_msg(err_code_of(rnc));
+    var emsg = sk_err_msg(err_code_of(rnc_t, rnc_v));
     ok(str_eq_cstr(emsg, "day 6 out of range for Nasie in year 1 AM (max 5)"), "error message parity");
 
     # ---- roundtrip_sequential_days: 1500 consecutive days from epoch ----
@@ -81,11 +81,11 @@ fn main() {
     while (offset < 1500) {
         var jdn = f64_add(epoch, f64_from(offset));
         var date = jdn_to_coptic(jdn);
-        var res = coptic_to_jdn(date);
-        if (is_ok(res) == 0) {
+        var res_t, res_v = coptic_to_jdn(date);
+        if (is_ok(res_t) == 0) {
             seq_fail = seq_fail + 1;
         } else {
-            var back = result_unwrap(res);
+            var back = result_unwrap(res_t, res_v);
             if (f64_approx_eq(back, jdn, TOL) == 0) { seq_fail = seq_fail + 1; }
         }
         offset = offset + 1;
@@ -98,11 +98,11 @@ fn main() {
     while (ji < 3000000) {
         var wjdn = f64_add(f64_from(ji), HALF);
         var wdate = jdn_to_coptic(wjdn);
-        var wres = coptic_to_jdn(wdate);
-        if (is_ok(wres) == 0) {
+        var wres_t, wres_v = coptic_to_jdn(wdate);
+        if (is_ok(wres_t) == 0) {
             wide_fail = wide_fail + 1;
         } else {
-            var wback = result_unwrap(wres);
+            var wback = result_unwrap(wres_t, wres_v);
             if (f64_approx_eq(wback, wjdn, TOL) == 0) { wide_fail = wide_fail + 1; }
         }
         ji = ji + 7777;

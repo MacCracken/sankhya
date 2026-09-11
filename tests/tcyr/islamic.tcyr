@@ -34,67 +34,67 @@ fn main() {
     # -- Al-Jabr --
 
     # al_jabr_linear: 2x - 6 = 0 -> x = 3
-    var r_lin = solve_al_jabr(f64_from(0), f64_from(2), f64_neg(f64_from(6)));
-    ok(is_ok(r_lin), "al_jabr_linear ok");
-    var sol_lin = result_unwrap(r_lin);
+    var r_lin_t, r_lin_v = solve_al_jabr(f64_from(0), f64_from(2), f64_neg(f64_from(6)));
+    ok(is_ok(r_lin_t), "al_jabr_linear ok");
+    var sol_lin = result_unwrap(r_lin_t, r_lin_v);
     var roots_lin = aljabr_sol_roots(sol_lin);
     assert_eq(vec_len(roots_lin), 1, "al_jabr_linear one root");
     ok(f64_approx_eq(vec_get(roots_lin, 0), f64_from(3), TOL_1E10), "al_jabr_linear root=3");
 
     # al_jabr_squares_and_roots_equal_number: x^2 + 10x - 39 = 0 -> x = 3
-    var r_sar = solve_al_jabr(f64_from(1), f64_from(10), f64_neg(f64_from(39)));
-    var sol_sar = result_unwrap(r_sar);
+    var r_sar_t, r_sar_v = solve_al_jabr(f64_from(1), f64_from(10), f64_neg(f64_from(39)));
+    var sol_sar = result_unwrap(r_sar_t, r_sar_v);
     var roots_sar = aljabr_sol_roots(sol_sar);
     ok(roots_contains(roots_sar, f64_from(3), TOL_1E10), "al_jabr x^2+10x-39 -> 3");
 
     # al_jabr_two_positive_roots: x^2 - 5x + 6 = 0 -> x = 2, 3
-    var r_two = solve_al_jabr(f64_from(1), f64_neg(f64_from(5)), f64_from(6));
-    var sol_two = result_unwrap(r_two);
+    var r_two_t, r_two_v = solve_al_jabr(f64_from(1), f64_neg(f64_from(5)), f64_from(6));
+    var sol_two = result_unwrap(r_two_t, r_two_v);
     var roots_two = aljabr_sol_roots(sol_two);
     assert_eq(vec_len(roots_two), 2, "al_jabr_two_positive_roots count=2");
     ok(roots_contains(roots_two, f64_from(2), TOL_1E10), "al_jabr two roots contains 2");
     ok(roots_contains(roots_two, f64_from(3), TOL_1E10), "al_jabr two roots contains 3");
 
     # al_jabr_no_positive_roots: x^2 + x + 1 = 0 -> empty
-    var r_no = solve_al_jabr(f64_from(1), f64_from(1), f64_from(1));
-    var sol_no = result_unwrap(r_no);
+    var r_no_t, r_no_v = solve_al_jabr(f64_from(1), f64_from(1), f64_from(1));
+    var sol_no = result_unwrap(r_no_t, r_no_v);
     assert_eq(vec_len(aljabr_sol_roots(sol_no)), 0, "al_jabr_no_positive_roots empty");
 
     # al_jabr_all_zero_errors
-    var r_zero = solve_al_jabr(f64_from(0), f64_from(0), f64_from(0));
-    ok(is_err_result(r_zero), "al_jabr_all_zero_errors");
+    var r_zero_t, r_zero_v = solve_al_jabr(f64_from(0), f64_from(0), f64_from(0));
+    ok(is_err_result(r_zero_t), "al_jabr_all_zero_errors");
 
     # -- Complete the square --
 
     # complete_square_al_khwarizmi_example: x^2 + 10x = 39 -> x = 3
-    var r_cs = complete_the_square(f64_from(10), f64_from(39));
-    ok(is_ok(r_cs), "complete_the_square ok");
-    var csq = result_unwrap(r_cs);
+    var r_cs_t, r_cs_v = complete_the_square(f64_from(10), f64_from(39));
+    ok(is_ok(r_cs_t), "complete_the_square ok");
+    var csq = result_unwrap(r_cs_t, r_cs_v);
     ok(f64_approx_eq(csq_x(csq), f64_from(3), TOL_1E10), "complete_square x=3");
 
     # complete_square_negative_errors
-    var r_csn1 = complete_the_square(f64_neg(f64_from(1)), f64_from(5));
-    ok(is_err_result(r_csn1), "complete_square b<=0 errors");
-    var r_csn2 = complete_the_square(f64_from(1), f64_neg(f64_from(5)));
-    ok(is_err_result(r_csn2), "complete_square c<=0 errors");
+    var r_csn1_t, r_csn1_v = complete_the_square(f64_neg(f64_from(1)), f64_from(5));
+    ok(is_err_result(r_csn1_t), "complete_square b<=0 errors");
+    var r_csn2_t, r_csn2_v = complete_the_square(f64_from(1), f64_neg(f64_from(5)));
+    ok(is_err_result(r_csn2_t), "complete_square c<=0 errors");
 
     # -- Khayyam cubic --
 
     # khayyam_cube_equal_number: x^3 - 8 = 0 -> x = 2, type CubeEqualNumber
-    var r_ken = classify_khayyam_cubic(f64_from(1), f64_from(0), f64_from(0), f64_neg(f64_from(8)));
-    ok(is_ok(r_ken), "khayyam cube equal number ok");
-    var kh_ken = result_unwrap(r_ken);
+    var r_ken_t, r_ken_v = classify_khayyam_cubic(f64_from(1), f64_from(0), f64_from(0), f64_neg(f64_from(8)));
+    ok(is_ok(r_ken_t), "khayyam cube equal number ok");
+    var kh_ken = result_unwrap(r_ken_t, r_ken_v);
     assert_eq(khres_type(kh_ken), KCT_CUBE_EQUAL_NUMBER, "khayyam type CubeEqualNumber");
     ok(roots_contains(khres_roots(kh_ken), f64_from(2), TOL_1E6), "khayyam cube=8 root 2");
 
     # khayyam_cube_and_thing: x^3 + 6x - 20 = 0 -> x = 2
-    var r_kct = classify_khayyam_cubic(f64_from(1), f64_from(0), f64_from(6), f64_neg(f64_from(20)));
-    var kh_kct = result_unwrap(r_kct);
+    var r_kct_t, r_kct_v = classify_khayyam_cubic(f64_from(1), f64_from(0), f64_from(6), f64_neg(f64_from(20)));
+    var kh_kct = result_unwrap(r_kct_t, r_kct_v);
     ok(roots_contains(khres_roots(kh_kct), f64_from(2), TOL_1E6), "khayyam cube+thing root 2");
 
     # khayyam_not_cubic_errors: leading coeff 0
-    var r_knc = classify_khayyam_cubic(f64_from(0), f64_from(1), f64_from(2), f64_from(3));
-    ok(is_err_result(r_knc), "khayyam_not_cubic_errors");
+    var r_knc_t, r_knc_v = classify_khayyam_cubic(f64_from(0), f64_from(1), f64_from(2), f64_from(3));
+    ok(is_err_result(r_knc_t), "khayyam_not_cubic_errors");
 
     # -- Hijri calendar --
 
@@ -115,9 +115,9 @@ fn main() {
     assert_eq(hijri_date_year(d_ep), 1, "epoch year=1");
     assert_eq(hijri_date_month(d_ep), HM_MUHARRAM, "epoch month=Muharram");
     assert_eq(hijri_date_day(d_ep), 1, "epoch day=1");
-    var r_ep = hijri_to_jdn(d_ep);
-    ok(is_ok(r_ep), "epoch to_jdn ok");
-    var jdn_ep = result_unwrap(r_ep);
+    var r_ep_t, r_ep_v = hijri_to_jdn(d_ep);
+    ok(is_ok(r_ep_t), "epoch to_jdn ok");
+    var jdn_ep = result_unwrap(r_ep_t, r_ep_v);
     var diff_ep = f64_abs(f64_sub(jdn_ep, HIJRI_EPOCH_JDN));
     ok(f64_lt(diff_ep, TOL_HALF), "epoch roundtrip within 0.5");
 
@@ -129,9 +129,9 @@ fn main() {
 
     # hijri_to_jdn_invalid_day: Muharram has 30 days, day 31 invalid
     var d_inv = hijri_date_new(1, HM_MUHARRAM, 31);
-    var r_inv = hijri_to_jdn(d_inv);
-    ok(is_err_result(r_inv), "hijri_to_jdn_invalid_day errors");
-    var msg_inv = sk_err_msg(err_code_of(r_inv));
+    var r_inv_t, r_inv_v = hijri_to_jdn(d_inv);
+    ok(is_err_result(r_inv_t), "hijri_to_jdn_invalid_day errors");
+    var msg_inv = sk_err_msg(err_code_of(r_inv_t, r_inv_v));
     ok(str_eq_cstr(msg_inv, "day 31 out of range for Muharram (max 30)"), "invalid-day message parity");
 
     # hijri_30_year_cycle_consistent

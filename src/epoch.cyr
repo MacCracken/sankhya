@@ -720,16 +720,16 @@ fn correlate(jdn) {
     if (f64_ge(jdn, mayan_epoch) == 1) {
         var jdn_u64 = f64_to(jdn);
         var days = jdn_u64 - EPOCH_JDN;
-        var lc_res = long_count_from_days(days);
-        if (is_ok(lc_res) == 0) {
+        var lc_res_t, lc_res_v = long_count_from_days(days);
+        if (is_ok(lc_res_t) == 0) {
             # map_err(|e| ComputationError(format!("Mayan Long Count: {e}")))
-            var em = sk_err_msg(err_code_of(lc_res));
+            var em = sk_err_msg(err_code_of(lc_res_t, lc_res_v));
             var sbm = str_builder_new();
             str_builder_add_cstr(sbm, "Mayan Long Count: ");
             if (em != 0) { str_builder_add(sbm, em); }
             return sk_fail(SKE_COMPUTATION, str_builder_build(sbm));
         }
-        mayan_lc = result_unwrap(lc_res);
+        mayan_lc = result_unwrap(lc_res_t, lc_res_v);
         tzolkin = tzolkin_from_days(days);
         haab = haab_from_days(days);
     }
@@ -850,8 +850,8 @@ fn convert(date) {
         var _im = str_from("unified calendar conversion");
         sakshi_info(str_data(_im), str_len(_im));
     }
-    var jr = calendar_to_jdn(date);
-    if (is_ok(jr) == 0) { return jr; }
-    var jdn = result_unwrap(jr);
+    var jr_t, jr_v = calendar_to_jdn(date);
+    if (is_ok(jr_t) == 0) { return Err(jr_v); }
+    var jdn = result_unwrap(jr_t, jr_v);
     return correlate(jdn);
 }

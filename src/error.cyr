@@ -40,7 +40,10 @@ fn sk_fail(code, msg) {
 
 # Read the error code out of a Result: SKE_OK if Ok, else the Err's code.
 #must_use
-fn sk_result_code(r) {
-    if (is_ok(r) == 1) { return SKE_OK; }
-    return sk_err_code(err_code_of(r));
+# 6.6.0 value form: a Result is a register PAIR, so both halves must be passed —
+# `var t, v = f(); sk_result_code(t, v);`. Was 1-arg over the boxed form.
+# Same shape as sigil/agnodrm/kavach's `result_print_err`.
+fn sk_result_code(r_tag, r) {
+    if (is_ok(r_tag) == 1) { return SKE_OK; }
+    return sk_err_code(err_code_of(r_tag, r));
 }

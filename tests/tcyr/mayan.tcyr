@@ -25,10 +25,10 @@ fn digits5(a, b, c, d, e) {
 # Round-trip one value through to_vigesimal -> from_vigesimal, assert equal.
 fn vig_roundtrip(n, name) {
     var digits = to_vigesimal(n);
-    var r = from_vigesimal(digits);
-    var okr = is_ok(r);
+    var r_t, r_v = from_vigesimal(digits);
+    var okr = is_ok(r_t);
     if (okr == 0) { return assert_eq(0, 1, name); }
-    return assert_eq(result_unwrap(r), n, name);
+    return assert_eq(result_unwrap(r_t, r_v), n, name);
 }
 
 fn main() {
@@ -42,9 +42,9 @@ fn main() {
     assert_eq(vec_len(v0), 1, "to_vigesimal(0) len 1");
     assert_eq(vec_get(v0, 0), 0, "to_vigesimal(0) = [0]");
     var d0 = digits5(0, (0 - 1), (0 - 1), (0 - 1), (0 - 1));
-    var rz = from_vigesimal(d0);
-    ok(is_ok(rz), "from_vigesimal([0]) ok");
-    assert_eq(result_unwrap(rz), 0, "from_vigesimal([0]) = 0");
+    var rz_t, rz_v = from_vigesimal(d0);
+    ok(is_ok(rz_t), "from_vigesimal([0]) ok");
+    assert_eq(result_unwrap(rz_t, rz_v), 0, "from_vigesimal([0]) = 0");
 
     # ---- vigesimal_roundtrip ----
     vig_roundtrip(1, "vig roundtrip 1");
@@ -58,39 +58,39 @@ fn main() {
 
     # ---- from_vigesimal error path (digit >= 20) ----
     var dbad = digits5(20, (0 - 1), (0 - 1), (0 - 1), (0 - 1));
-    var rbad = from_vigesimal(dbad);
-    ok(is_err_result(rbad), "from_vigesimal([20]) err");
-    assert_eq(sk_result_code(rbad), SKE_INVALID_BASE, "from_vigesimal([20]) InvalidBase");
-    ok(str_eq_cstr(sk_err_msg(err_code_of(rbad)), "vigesimal digit 20 out of range 0..20"), "from_vigesimal msg parity");
+    var rbad_t, rbad_v = from_vigesimal(dbad);
+    ok(is_err_result(rbad_t), "from_vigesimal([20]) err");
+    assert_eq(sk_result_code(rbad_t, rbad_v), SKE_INVALID_BASE, "from_vigesimal([20]) InvalidBase");
+    ok(str_eq_cstr(sk_err_msg(err_code_of(rbad_t, rbad_v)), "vigesimal digit 20 out of range 0..20"), "from_vigesimal msg parity");
 
     # ---- mayan_numeral_values ----
-    var rzero = mayan_numeral_from_value(0);
-    ok(is_ok(rzero), "numeral 0 ok");
-    var zero = result_unwrap(rzero);
+    var rzero_t, rzero_v = mayan_numeral_from_value(0);
+    ok(is_ok(rzero_t), "numeral 0 ok");
+    var zero = result_unwrap(rzero_t, rzero_v);
     assert_eq(mayan_numeral_shell(zero), 1, "numeral 0 shell");
     assert_eq(mayan_numeral_value(zero), 0, "numeral 0 value");
-    var r13 = mayan_numeral_from_value(13);
-    var thirteen = result_unwrap(r13);
+    var r13_t, r13_v = mayan_numeral_from_value(13);
+    var thirteen = result_unwrap(r13_t, r13_v);
     assert_eq(mayan_numeral_dots(thirteen), 3, "numeral 13 dots");
     assert_eq(mayan_numeral_bars(thirteen), 2, "numeral 13 bars");
     assert_eq(mayan_numeral_value(thirteen), 13, "numeral 13 value");
     # numeral out-of-range error
-    var rbign = mayan_numeral_from_value(20);
-    ok(is_err_result(rbign), "numeral 20 err");
-    assert_eq(sk_result_code(rbign), SKE_INVALID_BASE, "numeral 20 InvalidBase");
-    ok(str_eq_cstr(sk_err_msg(err_code_of(rbign)), "Mayan numeral value 20 out of range 0..19"), "numeral msg parity");
+    var rbign_t, rbign_v = mayan_numeral_from_value(20);
+    ok(is_err_result(rbign_t), "numeral 20 err");
+    assert_eq(sk_result_code(rbign_t, rbign_v), SKE_INVALID_BASE, "numeral 20 InvalidBase");
+    ok(str_eq_cstr(sk_err_msg(err_code_of(rbign_t, rbign_v)), "Mayan numeral value 20 out of range 0..19"), "numeral msg parity");
 
     # ---- long_count_creation_date ----
-    var rc0 = long_count_from_days(0);
-    ok(is_ok(rc0), "from_days(0) ok");
-    var lc0 = result_unwrap(rc0);
+    var rc0_t, rc0_v = long_count_from_days(0);
+    ok(is_ok(rc0_t), "from_days(0) ok");
+    var lc0 = result_unwrap(rc0_t, rc0_v);
     assert_eq(long_count_to_days(lc0), 0, "from_days(0) to_days=0");
     assert_eq(lc_baktun(lc0), 0, "from_days(0) baktun=0");
 
     # ---- long_count_dec_21_2012 ----
     var days2012 = 13 * 144000;
-    var rc12 = long_count_from_days(days2012);
-    var lc12 = result_unwrap(rc12);
+    var rc12_t, rc12_v = long_count_from_days(days2012);
+    var lc12 = result_unwrap(rc12_t, rc12_v);
     assert_eq(lc_baktun(lc12), 13, "2012 baktun=13");
     assert_eq(lc_katun(lc12), 0, "2012 katun=0");
     assert_eq(lc_tun(lc12), 0, "2012 tun=0");
@@ -101,21 +101,21 @@ fn main() {
     ok(str_eq_cstr(longcount_to_str(lc12), "13.0.0.0.0"), "longcount display 13.0.0.0.0");
 
     # ---- long_count_new validation + JDN correlation ----
-    var rnew_bad = long_count_new(0, 20, 0, 0, 0);
-    ok(is_err_result(rnew_bad), "new katun=20 err");
-    assert_eq(sk_result_code(rnew_bad), SKE_INVALID_DATE, "new katun=20 InvalidDate");
-    ok(str_eq_cstr(sk_err_msg(err_code_of(rnew_bad)), "katun 20 out of range 0..20"), "new katun msg parity");
-    var rnew_ok = long_count_new(13, 0, 0, 0, 0);
-    ok(is_ok(rnew_ok), "new valid ok");
-    var rjd = long_count_from_julian_day(EPOCH_JDN);
-    ok(is_ok(rjd), "from_julian_day(EPOCH_JDN) ok");
-    var lcjd = result_unwrap(rjd);
+    var rnew_bad_t, rnew_bad_v = long_count_new(0, 20, 0, 0, 0);
+    ok(is_err_result(rnew_bad_t), "new katun=20 err");
+    assert_eq(sk_result_code(rnew_bad_t, rnew_bad_v), SKE_INVALID_DATE, "new katun=20 InvalidDate");
+    ok(str_eq_cstr(sk_err_msg(err_code_of(rnew_bad_t, rnew_bad_v)), "katun 20 out of range 0..20"), "new katun msg parity");
+    var rnew_ok_t, rnew_ok_v = long_count_new(13, 0, 0, 0, 0);
+    ok(is_ok(rnew_ok_t), "new valid ok");
+    var rjd_t, rjd_v = long_count_from_julian_day(EPOCH_JDN);
+    ok(is_ok(rjd_t), "from_julian_day(EPOCH_JDN) ok");
+    var lcjd = result_unwrap(rjd_t, rjd_v);
     assert_eq(long_count_to_days(lcjd), 0, "from_julian_day(EPOCH_JDN) = day 0");
     assert_eq(long_count_to_julian_day(lcjd), EPOCH_JDN, "to_julian_day = EPOCH_JDN");
     var pre = EPOCH_JDN - 1;
-    var rjd_bad = long_count_from_julian_day(pre);
-    ok(is_err_result(rjd_bad), "from_julian_day(pre-epoch) err");
-    assert_eq(sk_result_code(rjd_bad), SKE_INVALID_DATE, "from_julian_day pre-epoch InvalidDate");
+    var rjd_bad_t, rjd_bad_v = long_count_from_julian_day(pre);
+    ok(is_err_result(rjd_bad_t), "from_julian_day(pre-epoch) err");
+    assert_eq(sk_result_code(rjd_bad_t, rjd_bad_v), SKE_INVALID_DATE, "from_julian_day pre-epoch InvalidDate");
 
     # ---- tzolkin_at_creation ----
     var tz0 = tzolkin_from_days(0);
@@ -144,33 +144,33 @@ fn main() {
     ok(f64_approx_eq(venus_synodic_period(), f64_parse("583.92"), tol), "VENUS_SYNODIC_PERIOD=583.92");
 
     # ---- find_calendar_round_at_creation ----
-    var fcr0 = find_calendar_round(4, DS_AHAU, 8, HM_KUMKU, 0);
-    ok(is_ok(fcr0), "find_calendar_round at creation ok");
-    assert_eq(result_unwrap(fcr0), 0, "find_calendar_round at creation = 0");
+    var fcr0_t, fcr0_v = find_calendar_round(4, DS_AHAU, 8, HM_KUMKU, 0);
+    ok(is_ok(fcr0_t), "find_calendar_round at creation ok");
+    assert_eq(result_unwrap(fcr0_t, fcr0_v), 0, "find_calendar_round at creation = 0");
 
     # ---- find_calendar_round_next_cycle ----
-    var fcr1 = find_calendar_round(4, DS_AHAU, 8, HM_KUMKU, 1);
-    ok(is_ok(fcr1), "find_calendar_round next cycle ok");
-    assert_eq(result_unwrap(fcr1), CALENDAR_ROUND_DAYS, "find_calendar_round next = 18980");
+    var fcr1_t, fcr1_v = find_calendar_round(4, DS_AHAU, 8, HM_KUMKU, 1);
+    ok(is_ok(fcr1_t), "find_calendar_round next cycle ok");
+    assert_eq(result_unwrap(fcr1_t, fcr1_v), CALENDAR_ROUND_DAYS, "find_calendar_round next = 18980");
 
     # ---- find_calendar_round_invalid_tzolkin ----
-    var fcr_lo = find_calendar_round(0, DS_AHAU, 0, HM_POP, 0);
-    ok(is_err_result(fcr_lo), "find_calendar_round(0) err");
-    assert_eq(sk_result_code(fcr_lo), SKE_INVALID_DATE, "find_calendar_round(0) InvalidDate");
-    ok(str_eq_cstr(sk_err_msg(err_code_of(fcr_lo)), "Tzolkin number 0 out of range 1..13"), "fcr(0) msg parity");
-    var fcr_hi = find_calendar_round(14, DS_AHAU, 0, HM_POP, 0);
-    ok(is_err_result(fcr_hi), "find_calendar_round(14) err");
-    assert_eq(sk_result_code(fcr_hi), SKE_INVALID_DATE, "find_calendar_round(14) InvalidDate");
+    var fcr_lo_t, fcr_lo_v = find_calendar_round(0, DS_AHAU, 0, HM_POP, 0);
+    ok(is_err_result(fcr_lo_t), "find_calendar_round(0) err");
+    assert_eq(sk_result_code(fcr_lo_t, fcr_lo_v), SKE_INVALID_DATE, "find_calendar_round(0) InvalidDate");
+    ok(str_eq_cstr(sk_err_msg(err_code_of(fcr_lo_t, fcr_lo_v)), "Tzolkin number 0 out of range 1..13"), "fcr(0) msg parity");
+    var fcr_hi_t, fcr_hi_v = find_calendar_round(14, DS_AHAU, 0, HM_POP, 0);
+    ok(is_err_result(fcr_hi_t), "find_calendar_round(14) err");
+    assert_eq(sk_result_code(fcr_hi_t, fcr_hi_v), SKE_INVALID_DATE, "find_calendar_round(14) InvalidDate");
 
     # ---- find_tzolkin_at_creation ----
-    var ft0 = find_tzolkin(4, DS_AHAU, 0);
-    ok(is_ok(ft0), "find_tzolkin at creation ok");
-    assert_eq(result_unwrap(ft0), 0, "find_tzolkin at creation = 0");
+    var ft0_t, ft0_v = find_tzolkin(4, DS_AHAU, 0);
+    ok(is_ok(ft0_t), "find_tzolkin at creation ok");
+    assert_eq(result_unwrap(ft0_t, ft0_v), 0, "find_tzolkin at creation = 0");
 
     # ---- find_tzolkin_next_occurrence ----
-    var ft1 = find_tzolkin(4, DS_AHAU, 1);
-    ok(is_ok(ft1), "find_tzolkin next ok");
-    assert_eq(result_unwrap(ft1), 260, "find_tzolkin next = 260");
+    var ft1_t, ft1_v = find_tzolkin(4, DS_AHAU, 1);
+    ok(is_ok(ft1_t), "find_tzolkin next ok");
+    assert_eq(result_unwrap(ft1_t, ft1_v), 260, "find_tzolkin next = 260");
 
     # ---- name-table spot checks ----
     ok(str_eq_cstr(daysign_name(DS_IMIX), "Imix"), "daysign_name Imix");

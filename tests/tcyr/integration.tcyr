@@ -64,9 +64,9 @@ fn int_sum(v) {
 fn test_mayan_longcount() {
     # long_count_dec_21_2012: 13 baktun = 1,872,000 days -> 13.0.0.0.0
     var days = 13 * 144000;
-    var r = long_count_from_days(days);
-    ok(is_ok(r), "long_count_from_days(1872000) ok");
-    var lc = result_unwrap(r);
+    var r_t, r_v = long_count_from_days(days);
+    ok(is_ok(r_t), "long_count_from_days(1872000) ok");
+    var lc = result_unwrap(r_t, r_v);
     assert_eq(lc_baktun(lc), 13, "2012 baktun=13");
     assert_eq(lc_katun(lc), 0, "2012 katun=0");
     assert_eq(lc_tun(lc), 0, "2012 tun=0");
@@ -83,9 +83,9 @@ fn test_mayan_longcount() {
     var fail = 0;
     while (i < n) {
         var d = vec_get(vals, i);
-        var rr = long_count_from_days(d);
-        if (is_ok(rr) == 0) { fail = fail + 1; }
-        else { if (long_count_to_days(result_unwrap(rr)) != d) { fail = fail + 1; } }
+        var rr_t, rr_v = long_count_from_days(d);
+        if (is_ok(rr_t) == 0) { fail = fail + 1; }
+        else { if (long_count_to_days(result_unwrap(rr_t, rr_v)) != d) { fail = fail + 1; } }
         i = i + 1;
     }
     assert_eq(fail, 0, "long_count days roundtrip [0..2000000]");
@@ -95,9 +95,9 @@ fn test_mayan_longcount() {
 # One vigesimal roundtrip: to_vigesimal then from_vigesimal == n.
 fn vig_rt(n) {
     var d = to_vigesimal(n);
-    var r = from_vigesimal(d);
-    if (is_ok(r) == 0) { return 0; }
-    if (result_unwrap(r) == n) { return 1; }
+    var r_t, r_v = from_vigesimal(d);
+    if (is_ok(r_t) == 0) { return 0; }
+    if (result_unwrap(r_t, r_v) == n) { return 1; }
     return 0;
 }
 
@@ -148,16 +148,16 @@ fn test_mayan_cycles() {
 
 fn sexa_rt(n) {
     var d = to_sexagesimal(n);
-    var r = from_sexagesimal(d);
-    if (is_ok(r) == 0) { return 0; }
-    if (result_unwrap(r) == n) { return 1; }
+    var r_t, r_v = from_sexagesimal(d);
+    if (is_ok(r_t) == 0) { return 0; }
+    if (result_unwrap(r_t, r_v) == n) { return 1; }
     return 0;
 }
 
 fn sqrt_check(n, tol) {
-    var r = babylonian_sqrt(f64_from(n), 20);
-    if (is_ok(r) == 0) { return 0; }
-    var got = result_unwrap(r);
+    var r_t, r_v = babylonian_sqrt(f64_from(n), 20);
+    if (is_ok(r_t) == 0) { return 0; }
+    var got = result_unwrap(r_t, r_v);
     var exp = f64_sqrt(f64_from(n));
     return f64_approx_eq(got, exp, tol);
 }
@@ -182,9 +182,9 @@ fn test_babylonian() {
     ok(sexa_rt(12960000), "sexa rt 12960000");
 
     # sqrt2_herons_method: within 1e-15
-    var r2 = babylonian_sqrt(f64_from(2), 10);
-    ok(is_ok(r2), "sqrt(2) ok");
-    ok(f64_approx_eq(result_unwrap(r2), SQRT2, TOL_1E15), "Heron sqrt(2) within 1e-15");
+    var r2_t, r2_v = babylonian_sqrt(f64_from(2), 10);
+    ok(is_ok(r2_t), "sqrt(2) ok");
+    ok(f64_approx_eq(result_unwrap(r2_t, r2_v), SQRT2, TOL_1E15), "Heron sqrt(2) within 1e-15");
 
     # sqrt_perfect_squares: within 1e-12
     ok(sqrt_check(4, TOL_1E12), "sqrt(4) within 1e-12");
@@ -228,9 +228,9 @@ fn test_babylonian() {
 
 fn test_egyptian() {
     # decompose_2_3: 2/3 -> [2,6], sum ~ 2/3 within 1e-15
-    var dr = decompose(2, 3);
-    ok(is_ok(dr), "decompose 2/3 ok");
-    var res = result_unwrap(dr);
+    var dr_t, dr_v = decompose(2, 3);
+    ok(is_ok(dr_t), "decompose 2/3 ok");
+    var res = result_unwrap(dr_t, dr_v);
     assert_eq(vec_len(res), 2, "2/3 -> 2 terms");
     assert_eq(vec_get(res, 0), 2, "2/3[0]=2");
     assert_eq(vec_get(res, 1), 6, "2/3[1]=6");
@@ -238,10 +238,10 @@ fn test_egyptian() {
     ok(f64_approx_eq(unit_frac_sum(res), twothirds, TOL_1E15), "2/3 sum within 1e-15");
 
     # decompose_various: 3/7 sum ~ 3/7 within 1e-10
-    var dr2 = decompose(3, 7);
-    ok(is_ok(dr2), "decompose 3/7 ok");
+    var dr2_t, dr2_v = decompose(3, 7);
+    ok(is_ok(dr2_t), "decompose 3/7 ok");
     var threesev = f64_div(f64_from(3), f64_from(7));
-    ok(f64_approx_eq(unit_frac_sum(result_unwrap(dr2)), threesev, TOL_1E10), "3/7 sum within 1e-10");
+    ok(f64_approx_eq(unit_frac_sum(result_unwrap(dr2_t, dr2_v)), threesev, TOL_1E10), "3/7 sum within 1e-10");
 
     # egyptian_multiply
     assert_eq(egyptian_multiply(12, 13), 156, "12*13=156");
@@ -251,9 +251,9 @@ fn test_egyptian() {
     assert_eq(egyptian_multiply(100, 100), 10000, "100*100=10000");
 
     # egyptian_divide_basic: 10/3 -> q=3, rem sum ~ 1/3 within 1e-15
-    var dv = egyptian_divide(10, 3);
-    ok(is_ok(dv), "divide 10/3 ok");
-    var rec = result_unwrap(dv);
+    var dv_t, dv_v = egyptian_divide(10, 3);
+    ok(is_ok(dv_t), "divide 10/3 ok");
+    var rec = result_unwrap(dv_t, dv_v);
     assert_eq(egydiv_quotient(rec), 3, "10/3 quotient 3");
     var onethird = f64_div(f64_from(1), f64_from(3));
     ok(f64_approx_eq(unit_frac_sum(egydiv_fractions(rec)), onethird, TOL_1E15), "10/3 remainder ~ 1/3");
@@ -283,9 +283,9 @@ fn test_vedic() {
     ok(f64_approx_eq(approx, SQRT2, TOL_1E5), "sulba_sqrt2 within 1e-5 of SQRT_2");
 
     # meru_prastara_matches_pascal (5 rows)
-    var mr = meru_prastara(5);
-    ok(is_ok(mr), "meru_prastara(5) ok");
-    var tri = result_unwrap(mr);
+    var mr_t, mr_v = meru_prastara(5);
+    ok(is_ok(mr_t), "meru_prastara(5) ok");
+    var tri = result_unwrap(mr_t, mr_v);
     assert_eq(vec_len(tri), 5, "meru 5 rows");
     var row0 = vec_get(tri, 0);
     assert_eq(vec_len(row0), 1, "meru row0 = [1]");
@@ -302,9 +302,9 @@ fn test_vedic() {
     assert_eq(vec_get(row4, 4), 1, "meru row4[4]=1");
 
     # meru_prastara_row_sums: row i sums to 2^i
-    var mr10 = meru_prastara(10);
-    ok(is_ok(mr10), "meru_prastara(10) ok");
-    var tri10 = result_unwrap(mr10);
+    var mr10_t, mr10_v = meru_prastara(10);
+    ok(is_ok(mr10_t), "meru_prastara(10) ok");
+    var tri10 = result_unwrap(mr10_t, mr10_v);
     var i = 0;
     var sumbad = 0;
     while (i < 10) {
@@ -327,9 +327,9 @@ fn test_vedic() {
     while (k < n) {
         var v = vec_get(vals, k);
         var e = katapayadi_encode(v);
-        var r = katapayadi_decode(e);
-        if (is_ok(r) == 0) { ktfail = ktfail + 1; }
-        else { if (result_unwrap(r) != v) { ktfail = ktfail + 1; } }
+        var r_t, r_v = katapayadi_decode(e);
+        if (is_ok(r_t) == 0) { ktfail = ktfail + 1; }
+        else { if (result_unwrap(r_t, r_v) != v) { ktfail = ktfail + 1; } }
         k = k + 1;
     }
     assert_eq(ktfail, 0, "katapayadi roundtrip [0,1,42,123,9876]");
@@ -449,27 +449,27 @@ fn test_greek() {
 # ============================ Roman ============================
 
 fn check_roman_str(value, cstr, name) {
-    var r = to_roman_str(value);
-    if (is_ok(r) == 0) { return ok(0, name); }
-    return ok(str_eq_cstr(result_unwrap(r), cstr), name);
+    var r_t, r_v = to_roman_str(value);
+    if (is_ok(r_t) == 0) { return ok(0, name); }
+    return ok(str_eq_cstr(result_unwrap(r_t, r_v), cstr), name);
 }
 
 fn check_from_roman(cstr, expected, name) {
-    var r = from_roman(str_from(cstr));
-    if (is_ok(r) == 0) { return ok(0, name); }
-    return assert_eq(result_unwrap(r), expected, name);
+    var r_t, r_v = from_roman(str_from(cstr));
+    if (is_ok(r_t) == 0) { return ok(0, name); }
+    return assert_eq(result_unwrap(r_t, r_v), expected, name);
 }
 
 fn roman_rt_fail() {
     var fail = 0;
     var n = 1;
     while (n <= 3999) {
-        var rs = to_roman_str(n);
-        if (is_ok(rs) == 0) { fail = fail + 1; }
+        var rs_t, rs_v = to_roman_str(n);
+        if (is_ok(rs_t) == 0) { fail = fail + 1; }
         else {
-            var pr = from_roman(result_unwrap(rs));
-            if (is_ok(pr) == 0) { fail = fail + 1; }
-            else { if (result_unwrap(pr) != n) { fail = fail + 1; } }
+            var pr_t, pr_v = from_roman(result_unwrap(rs_t, rs_v));
+            if (is_ok(pr_t) == 0) { fail = fail + 1; }
+            else { if (result_unwrap(pr_t, pr_v) != n) { fail = fail + 1; } }
         }
         n = n + 1;
     }
@@ -495,28 +495,28 @@ fn test_roman() {
     check_from_roman("CM", 900, "CM=900");
 
     # arithmetic_basic
-    var sum = roman_add(14, 28);
-    ok(is_ok(sum), "add(14,28) ok");
-    var sumv = result_unwrap(sum);
+    var sum_t, sum_v = roman_add(14, 28);
+    ok(is_ok(sum_t), "add(14,28) ok");
+    var sumv = result_unwrap(sum_t, sum_v);
     assert_eq(romannum_value(sumv), 42, "14+28=42");
     ok(str_eq_cstr(romannum_text(sumv), "XLII"), "14+28 text XLII");
 
-    var diff = roman_subtract(100, 1);
-    ok(is_ok(diff), "sub(100,1) ok");
-    var diffv = result_unwrap(diff);
+    var diff_t, diff_v = roman_subtract(100, 1);
+    ok(is_ok(diff_t), "sub(100,1) ok");
+    var diffv = result_unwrap(diff_t, diff_v);
     assert_eq(romannum_value(diffv), 99, "100-1=99");
     ok(str_eq_cstr(romannum_text(diffv), "XCIX"), "100-1 text XCIX");
 
-    var prod = roman_multiply(12, 12);
-    ok(is_ok(prod), "mul(12,12) ok");
-    var prodv = result_unwrap(prod);
+    var prod_t, prod_v = roman_multiply(12, 12);
+    ok(is_ok(prod_t), "mul(12,12) ok");
+    var prodv = result_unwrap(prod_t, prod_v);
     assert_eq(romannum_value(prodv), 144, "12*12=144");
     ok(str_eq_cstr(romannum_text(prodv), "CXLIV"), "12*12 text CXLIV");
 
     # division_with_remainder: 17/5 -> q=3, r=2
-    var dv = roman_divide(17, 5);
-    ok(is_ok(dv), "div(17,5) ok");
-    var dvv = result_unwrap(dv);
+    var dv_t, dv_v = roman_divide(17, 5);
+    ok(is_ok(dv_t), "div(17,5) ok");
+    var dvv = result_unwrap(dv_t, dv_v);
     assert_eq(romannum_value(divresult_quotient(dvv)), 3, "17/5 quotient 3");
     var rem = divresult_remainder(dvv);
     ok(rem, "17/5 remainder Some");
@@ -556,9 +556,9 @@ fn skerr_eq(a, b) {
 
 fn test_serde() {
     # long_count
-    var lcr = long_count_from_days(1872000);
-    ok(is_ok(lcr), "serde lc from_days ok");
-    var lc = result_unwrap(lcr);
+    var lcr_t, lcr_v = long_count_from_days(1872000);
+    ok(is_ok(lcr_t), "serde lc from_days ok");
+    var lc = result_unwrap(lcr_t, lcr_v);
     var lcj = longcount_to_json(lc);
     ok(longcount_eq(lc, longcount_from_json(sk_json_parse(lcj))), "LongCount serde roundtrip");
 
@@ -568,16 +568,16 @@ fn test_serde() {
     ok(tzolkin_eq(tz, tzolkin_from_json(sk_json_parse(tzj))), "Tzolkin serde roundtrip");
 
     # babylonian_numeral
-    var bnr = babnum_from_value(42);
-    ok(is_ok(bnr), "serde babnum from_value ok");
-    var bn = result_unwrap(bnr);
+    var bnr_t, bnr_v = babnum_from_value(42);
+    ok(is_ok(bnr_t), "serde babnum from_value ok");
+    var bn = result_unwrap(bnr_t, bnr_v);
     var bnj = babnum_to_json(bn);
     ok(babnum_eq(bn, babnum_from_json(sk_json_parse(bnj))), "BabylonianNumeral serde roundtrip");
 
     # mayan_numeral
-    var mnr = mayan_numeral_from_value(13);
-    ok(is_ok(mnr), "serde mayan numeral from_value ok");
-    var mn = result_unwrap(mnr);
+    var mnr_t, mnr_v = mayan_numeral_from_value(13);
+    ok(is_ok(mnr_t), "serde mayan numeral from_value ok");
+    var mn = result_unwrap(mnr_t, mnr_v);
     var mnj = mayan_numeral_to_json(mn);
     ok(mayan_numeral_eq(mn, mayan_numeral_from_json(sk_json_parse(mnj))), "MayanNumeral serde roundtrip");
 
@@ -597,9 +597,9 @@ fn test_serde() {
     ok(venusphase_eq(vp, venusphase_from_json(sk_json_parse(vpj))), "VenusPhase serde roundtrip");
 
     # roman_numeral
-    var rr = romannum_from_value(1776);
-    ok(is_ok(rr), "serde roman from_value ok");
-    var rmn = result_unwrap(rr);
+    var rr_t, rr_v = romannum_from_value(1776);
+    ok(is_ok(rr_t), "serde roman from_value ok");
+    var rmn = result_unwrap(rr_t, rr_v);
     var rmj = romannum_to_json(rmn);
     ok(romannum_eq(rmn, romannum_from_json(sk_json_parse(rmj))), "RomanNumeral serde roundtrip");
 
@@ -619,9 +619,9 @@ fn greg_rt_fail() {
     while (d < 36525) {
         var jdn = f64_add(base, f64_from(d));
         var date = jdn_to_gregorian(jdn);
-        var r = gregorian_to_jdn(date);
-        if (is_ok(r) == 0) { fail = fail + 1; }
-        else { if (f64_approx_eq(result_unwrap(r), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
+        var r_t, r_v = gregorian_to_jdn(date);
+        if (is_ok(r_t) == 0) { fail = fail + 1; }
+        else { if (f64_approx_eq(result_unwrap(r_t, r_v), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
         d = d + 7;
     }
     return fail;
@@ -647,9 +647,9 @@ fn coptic_rt_fail(epoch) {
     while (d < 1500) {
         var jdn = f64_add(epoch, f64_from(d));
         var date = jdn_to_coptic(jdn);
-        var r = coptic_to_jdn(date);
-        if (is_ok(r) == 0) { fail = fail + 1; }
-        else { if (f64_approx_eq(result_unwrap(r), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
+        var r_t, r_v = coptic_to_jdn(date);
+        if (is_ok(r_t) == 0) { fail = fail + 1; }
+        else { if (f64_approx_eq(result_unwrap(r_t, r_v), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
         d = d + 1;
     }
     return fail;
@@ -668,9 +668,9 @@ fn persian_rt_fail(start) {
     while (d < 1500) {
         var jdn = f64_add(start, f64_from(d));
         var date = jdn_to_persian(jdn);
-        var r = persian_to_jdn(date);
-        if (is_ok(r) == 0) { fail = fail + 1; }
-        else { if (f64_approx_eq(result_unwrap(r), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
+        var r_t, r_v = persian_to_jdn(date);
+        if (is_ok(r_t) == 0) { fail = fail + 1; }
+        else { if (f64_approx_eq(result_unwrap(r_t, r_v), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
         d = d + 1;
     }
     return fail;
@@ -690,9 +690,9 @@ fn hebrew_rt_fail(start) {
     while (d < 1500) {
         var jdn = f64_add(start, f64_from(d));
         var date = jdn_to_hebrew(jdn);
-        var r = hebrew_to_jdn(date);
-        if (is_ok(r) == 0) { fail = fail + 1; }
-        else { if (f64_approx_eq(result_unwrap(r), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
+        var r_t, r_v = hebrew_to_jdn(date);
+        if (is_ok(r_t) == 0) { fail = fail + 1; }
+        else { if (f64_approx_eq(result_unwrap(r_t, r_v), jdn, TOL_JDN) == 0) { fail = fail + 1; } }
         d = d + 1;
     }
     return fail;
@@ -718,34 +718,34 @@ fn test_hebrew() {
 fn test_crosscal() {
     # Convert Jan 1 2025 through hebrew/coptic/persian and back to JDN.
     var greg = gregorian_date_new(2025, GM_JANUARY, 1);
-    var rj = gregorian_to_jdn(greg);
-    ok(is_ok(rj), "gregorian_to_jdn ok");
-    var jdn = result_unwrap(rj);
+    var rj_t, rj_v = gregorian_to_jdn(greg);
+    ok(is_ok(rj_t), "gregorian_to_jdn ok");
+    var jdn = result_unwrap(rj_t, rj_v);
 
     var hebrew = jdn_to_hebrew(jdn);
     var coptic = jdn_to_coptic(jdn);
     var persian = jdn_to_persian(jdn);
 
-    var rh = hebrew_to_jdn(hebrew);
-    ok(is_ok(rh), "hebrew_to_jdn ok");
-    ok(f64_approx_eq(result_unwrap(rh), jdn, TOL_JDN), "hebrew roundtrip JDN");
+    var rh_t, rh_v = hebrew_to_jdn(hebrew);
+    ok(is_ok(rh_t), "hebrew_to_jdn ok");
+    ok(f64_approx_eq(result_unwrap(rh_t, rh_v), jdn, TOL_JDN), "hebrew roundtrip JDN");
 
-    var rc = coptic_to_jdn(coptic);
-    ok(is_ok(rc), "coptic_to_jdn ok");
-    ok(f64_approx_eq(result_unwrap(rc), jdn, TOL_JDN), "coptic roundtrip JDN");
+    var rc_t, rc_v = coptic_to_jdn(coptic);
+    ok(is_ok(rc_t), "coptic_to_jdn ok");
+    ok(f64_approx_eq(result_unwrap(rc_t, rc_v), jdn, TOL_JDN), "coptic roundtrip JDN");
 
-    var rp = persian_to_jdn(persian);
-    ok(is_ok(rp), "persian_to_jdn ok");
-    ok(f64_approx_eq(result_unwrap(rp), jdn, TOL_JDN), "persian roundtrip JDN");
+    var rp_t, rp_v = persian_to_jdn(persian);
+    ok(is_ok(rp_t), "persian_to_jdn ok");
+    ok(f64_approx_eq(result_unwrap(rp_t, rp_v), jdn, TOL_JDN), "persian roundtrip JDN");
     return 0;
 }
 
 fn test_convert_api() {
     # convert(CalendarDate::Gregorian(April 1 2025))
     var greg = gregorian_date_new(2025, GM_APRIL, 1);
-    var cvt = convert(caldate_gregorian(greg));
-    ok(is_ok(cvt), "convert gregorian ok");
-    var result = result_unwrap(cvt);
+    var cvt_t, cvt_v = convert(caldate_gregorian(greg));
+    ok(is_ok(cvt_t), "convert gregorian ok");
+    var result = result_unwrap(cvt_t, cvt_v);
 
     var rg = mcd_gregorian(result);
     assert_eq(gd_year(rg), 2025, "convert greg year 2025");
@@ -755,9 +755,9 @@ fn test_convert_api() {
     ok(mcd_mayan_lc(result), "mayan_long_count is_some");
 
     # Hebrew roundtrip through convert
-    var hj = calendar_to_jdn(caldate_hebrew(mcd_hebrew(result)));
-    ok(is_ok(hj), "hebrew calendar_to_jdn ok");
-    ok(f64_approx_eq(result_unwrap(hj), mcd_jdn(result), TOL_JDN), "convert hebrew roundtrip JDN");
+    var hj_t, hj_v = calendar_to_jdn(caldate_hebrew(mcd_hebrew(result)));
+    ok(is_ok(hj_t), "hebrew calendar_to_jdn ok");
+    ok(f64_approx_eq(result_unwrap(hj_t, hj_v), mcd_jdn(result), TOL_JDN), "convert hebrew roundtrip JDN");
     return 0;
 }
 

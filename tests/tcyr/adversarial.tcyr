@@ -45,10 +45,10 @@ fn vecrep(val, count) {
 }
 
 # --- generic "Result is Err, or Ok with a finite f64 payload" -------------------
-fn err_or_finite(r, name) {
+fn err_or_finite(r_tag, r, name) {
     var good = 0;
-    if (is_ok(r) == 0) { good = 1; }
-    else { good = fin(result_unwrap(r)); }
+    if (is_ok(r_tag) == 0) { good = 1; }
+    else { good = fin(result_unwrap(r_tag, r)); }
     return ok(good, name);
 }
 
@@ -57,9 +57,9 @@ fn err_or_finite(r, name) {
 # ==============================================================================
 fn test_mayan() {
     # fuzz_from_vigesimal_empty: from_vigesimal(&[]).unwrap() == 0
-    var rve = from_vigesimal(vec_new());
-    ok(is_ok(rve), "from_vigesimal([]) ok");
-    assert_eq(result_unwrap(rve), 0, "from_vigesimal([]) == 0");
+    var rve_t, rve_v = from_vigesimal(vec_new());
+    ok(is_ok(rve_t), "from_vigesimal([]) ok");
+    assert_eq(result_unwrap(rve_t, rve_v), 0, "from_vigesimal([]) == 0");
 
     # fuzz_from_vigesimal_invalid_digit
     no(is_ok(from_vigesimal(vec1(20))),  "from_vigesimal([20]) err");
@@ -69,9 +69,9 @@ fn test_mayan() {
     no(is_ok(from_vigesimal(vecrep(19, 20))), "from_vigesimal([19;20]) err");
 
     # fuzz_long_count_from_days_max: LongCount::from_days(u64::MAX) — Err or baktun>0
-    var rlc = long_count_from_days(I64_MAX);
+    var rlc_t, rlc_v = long_count_from_days(I64_MAX);
     var lcgood = 1;
-    if (is_ok(rlc) == 1) { lcgood = lc_baktun(result_unwrap(rlc)) > 0; }
+    if (is_ok(rlc_t) == 1) { lcgood = lc_baktun(result_unwrap(rlc_t, rlc_v)) > 0; }
     ok(lcgood, "from_days(MAX) err or baktun>0");
 
     # fuzz_long_count_new_invalid
@@ -123,16 +123,19 @@ fn test_babylonian() {
     no(is_ok(babylonian_sqrt(f64_from(2), 0)), "sqrt(2, 0 iters) err");
 
     # fuzz_babylonian_sqrt_nan / _infinity: if Ok, must be finite
-    err_or_finite(babylonian_sqrt(nan_f64(), 10),  "sqrt(NaN) err-or-finite");
-    err_or_finite(babylonian_sqrt(pinf_f64(), 10), "sqrt(+inf) err-or-finite");
+    var _h1_t, _h1_v = babylonian_sqrt(nan_f64(), 10);
+    err_or_finite(_h1_t, _h1_v,  "sqrt(NaN) err-or-finite");
+    var _h2_t, _h2_v = babylonian_sqrt(pinf_f64(), 10);
+    err_or_finite(_h2_t, _h2_v, "sqrt(+inf) err-or-finite");
 
     # fuzz_babylonian_sqrt_huge: f64::MAX
-    err_or_finite(babylonian_sqrt(F64_MAXV, 10), "sqrt(MAX) err-or-finite");
+    var _h3_t, _h3_v = babylonian_sqrt(F64_MAXV, 10);
+    err_or_finite(_h3_t, _h3_v, "sqrt(MAX) err-or-finite");
 
     # fuzz_babylonian_sqrt_tiny: f64::EPSILON — ok, finite, >= 0
-    var re = babylonian_sqrt(F64_EPS, 10);
-    ok(is_ok(re), "sqrt(EPS) ok");
-    var ve = result_unwrap(re);
+    var re_t, re_v = babylonian_sqrt(F64_EPS, 10);
+    ok(is_ok(re_t), "sqrt(EPS) ok");
+    var ve = result_unwrap(re_t, re_v);
     ok(fin(ve), "sqrt(EPS) finite");
     ok(f64_ge(ve, f64_from(0)), "sqrt(EPS) >= 0");
 
@@ -161,16 +164,16 @@ fn test_egyptian() {
     no(is_ok(decompose(1, 0)), "decompose(1,0) err");
 
     # fuzz_decompose_zero_numerator: Ok, empty
-    var rz = decompose(0, 7);
-    ok(is_ok(rz), "decompose(0,7) ok");
-    no(vec_len(result_unwrap(rz)), "decompose(0,7) empty");
+    var rz_t, rz_v = decompose(0, 7);
+    ok(is_ok(rz_t), "decompose(0,7) ok");
+    no(vec_len(result_unwrap(rz_t, rz_v)), "decompose(0,7) empty");
 
     # fuzz_decompose_large_fraction: if Ok, sum(1/d) ~ 5/121 within 1e-8
-    var rdf = decompose(5, 121);
+    var rdf_t, rdf_v = decompose(5, 121);
     var dgood = 1;
-    if (is_ok(rdf) == 1) {
+    if (is_ok(rdf_t) == 1) {
         var tgt = f64_div(f64_from(5), f64_from(121));
-        dgood = f64_approx_eq(frac_sum(result_unwrap(rdf)), tgt, TOL_1E8);
+        dgood = f64_approx_eq(frac_sum(result_unwrap(rdf_t, rdf_v)), tgt, TOL_1E8);
     }
     ok(dgood, "decompose(5,121) sum within 1e-8");
 
@@ -203,17 +206,17 @@ fn test_vedic() {
     no(is_ok(katapayadi_decode(str_from("hello-world"))), "katapayadi 'hello-world' err");
 
     # fuzz_meru_prastara_zero: Ok, empty
-    var rm0 = meru_prastara(0);
-    ok(is_ok(rm0), "meru(0) ok");
-    no(vec_len(result_unwrap(rm0)), "meru(0) empty");
+    var rm0_t, rm0_v = meru_prastara(0);
+    ok(is_ok(rm0_t), "meru(0) ok");
+    no(vec_len(result_unwrap(rm0_t, rm0_v)), "meru(0) empty");
 
     # fuzz_meru_prastara_large: overflow
     no(is_ok(meru_prastara(70)), "meru(70) overflow err");
 
     # fuzz_vedic_multiply_nikhilam_exceeds_base: if Ok, product == 100
-    var rn = vedic_multiply_nikhilam(100, 1);
+    var rn_t, rn_v = vedic_multiply_nikhilam(100, 1);
     var ngood = 1;
-    if (is_ok(rn) == 1) { ngood = nk_product(result_unwrap(rn)) == 100; }
+    if (is_ok(rn_t) == 1) { ngood = nk_product(result_unwrap(rn_t, rn_v)) == 100; }
     ok(ngood, "nikhilam(100,1) product==100 if ok");
     return 0;
 }
@@ -342,9 +345,9 @@ fn test_roman() {
 # ==============================================================================
 # Islamic
 # ==============================================================================
-fn roots_all_finite(r) {
-    if (is_ok(r) == 0) { return 1; }
-    var roots = aljabr_sol_roots(result_unwrap(r));
+fn roots_all_finite(r_tag, r) {
+    if (is_ok(r_tag) == 0) { return 1; }
+    var roots = aljabr_sol_roots(result_unwrap(r_tag, r));
     var n = vec_len(roots);
     var i = 0;
     while (i < n) {
@@ -353,9 +356,9 @@ fn roots_all_finite(r) {
     }
     return 1;
 }
-fn khroots_all_finite(r) {
-    if (is_ok(r) == 0) { return 1; }
-    var roots = khres_roots(result_unwrap(r));
+fn khroots_all_finite(r_tag, r) {
+    if (is_ok(r_tag) == 0) { return 1; }
+    var roots = khres_roots(result_unwrap(r_tag, r));
     var n = vec_len(roots);
     var i = 0;
     while (i < n) {
@@ -370,14 +373,17 @@ fn test_islamic() {
     no(is_ok(solve_al_jabr(f64_from(0), f64_from(0), f64_from(0))), "al_jabr(0,0,0) err");
 
     # fuzz_solve_al_jabr_nan / _infinity: if Ok, roots finite
-    ok(roots_all_finite(solve_al_jabr(nan_f64(),  f64_from(1), f64_from(1))), "al_jabr(NaN) roots finite");
-    ok(roots_all_finite(solve_al_jabr(pinf_f64(), f64_from(1), f64_from(1))), "al_jabr(Inf) roots finite");
+    var _k1_t, _k1_v = solve_al_jabr(nan_f64(),  f64_from(1), f64_from(1));
+    ok(roots_all_finite(_k1_t, _k1_v), "al_jabr(NaN) roots finite");
+    var _k2_t, _k2_v = solve_al_jabr(pinf_f64(), f64_from(1), f64_from(1));
+    ok(roots_all_finite(_k2_t, _k2_v), "al_jabr(Inf) roots finite");
 
     # fuzz_classify_khayyam_zero_leading
     no(is_ok(classify_khayyam_cubic(f64_from(0), f64_from(1), f64_from(2), f64_from(3))), "khayyam a3=0 err");
 
     # fuzz_classify_khayyam_nan: if Ok, roots finite
-    ok(khroots_all_finite(classify_khayyam_cubic(nan_f64(), f64_from(1), f64_from(1), f64_from(1))), "khayyam(NaN) roots finite");
+    var _k3_t, _k3_v = classify_khayyam_cubic(nan_f64(), f64_from(1), f64_from(1), f64_from(1));
+    ok(khroots_all_finite(_k3_t, _k3_v), "khayyam(NaN) roots finite");
 
     # fuzz_complete_the_square_invalid
     no(is_ok(complete_the_square(f64_from(0), f64_from(5))),          "complete_sq(0,5) err");
@@ -416,25 +422,25 @@ fn test_epoch() {
     no(is_ok(find_cycle_alignments(vec1(CN_SAROS), f64_from(0), f64_from(1000), f64_from(1))), "find_align <2 cycles err");
 
     # fuzz_correlate_extreme_jdn: if Ok, jdn finite
-    var cmax = correlate(f64_div(F64_MAXV, f64_from(2)));
+    var cmax_t, cmax_v = correlate(f64_div(F64_MAXV, f64_from(2)));
     var cmaxgood = 1;
-    if (is_ok(cmax) == 1) { cmaxgood = fin(mcd_jdn(result_unwrap(cmax))); }
+    if (is_ok(cmax_t) == 1) { cmaxgood = fin(mcd_jdn(result_unwrap(cmax_t, cmax_v))); }
     ok(cmaxgood, "correlate(MAX/2) jdn finite if ok");
 
     # fuzz_correlate_zero_jdn: if Ok, mayan none & julian_year finite
-    var c0 = correlate(f64_from(0));
+    var c0_t, c0_v = correlate(f64_from(0));
     var c0good = 1;
-    if (is_ok(c0) == 1) {
-        var m0 = result_unwrap(c0);
+    if (is_ok(c0_t) == 1) {
+        var m0 = result_unwrap(c0_t, c0_v);
         if (mcd_mayan_lc(m0) != 0) { c0good = 0; }
         if (fin(mcd_julian_year(m0)) == 0) { c0good = 0; }
     }
     ok(c0good, "correlate(0) mayan none & julian finite");
 
     # fuzz_correlate_negative_jdn: if Ok, mayan none
-    var cn = correlate(f64_neg(f64_from(1000000)));
+    var cn_t, cn_v = correlate(f64_neg(f64_from(1000000)));
     var cngood = 1;
-    if (is_ok(cn) == 1) { cngood = mcd_mayan_lc(result_unwrap(cn)) == 0; }
+    if (is_ok(cn_t) == 1) { cngood = mcd_mayan_lc(result_unwrap(cn_t, cn_v)) == 0; }
     ok(cngood, "correlate(-1e6) mayan none if ok");
 
     # fuzz_bp_roundtrip_extremes: [0, 1, 12800, 100000, 1e10] within 1e-6

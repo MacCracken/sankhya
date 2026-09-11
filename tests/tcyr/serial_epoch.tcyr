@@ -62,9 +62,9 @@ fn test_sages_tradition() {
 
 # ---- MultiCalendarDate round-trip (serde_roundtrip_multi_calendar_date) ----
 fn test_multi_calendar_date() {
-    var cr = correlate(f64_from(EPOCH_JDN));
-    ok(is_ok(cr), "correlate at Mayan creation ok");
-    var date = result_unwrap(cr);
+    var cr_t, cr_v = correlate(f64_from(EPOCH_JDN));
+    ok(is_ok(cr_t), "correlate at Mayan creation ok");
+    var date = result_unwrap(cr_t, cr_v);
     var js = multi_calendar_date_to_json(date);
 
     # jdn is an integer-valued f64 (EPOCH_JDN 584283) -> "584283.0" (serde/Grisu2).
@@ -126,9 +126,9 @@ fn test_calendar_date() {
     var backj = calendar_date_from_json(sk_json_parse(jjs));
     ok(calendar_date_eq(cdj, backj), "CalendarDate serde round-trip (Jdn f64)");
 
-    var lcr = long_count_from_days(1872000);
-    ok(is_ok(lcr), "long_count_from_days ok");
-    var lc = result_unwrap(lcr);
+    var lcr_t, lcr_v = long_count_from_days(1872000);
+    ok(is_ok(lcr_t), "long_count_from_days ok");
+    var lc = result_unwrap(lcr_t, lcr_v);
     var cdm = caldate_mayan_long_count(lc);
     var mjs = calendar_date_to_json(cdm);
     var hm = str_contains_cstr(mjs, "\"MayanLongCount\":{\"baktun\":13");

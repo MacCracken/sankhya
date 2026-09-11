@@ -596,11 +596,11 @@ fn to_cuneiform(n) {
     var i = 0;
     while (i < len) {
         var d = vec_get(digits, i);
-        var r = cuneiform_digit(d);
-        if (is_err_result(r) == 1) {
-            return r;
+        var r_t, r_v = cuneiform_digit(d);
+        if (is_err_result(r_t) == 1) {
+            return Err(r_v);
         }
-        var part = result_unwrap(r);
+        var part = result_unwrap(r_t, r_v);
         if (i > 0) {
             str_builder_add_cstr(sb, "·");
         }

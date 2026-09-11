@@ -33,9 +33,9 @@ fn main() {
     # ---- serde_roundtrip_al_jabr_solution ----
     # Rust: solve_al_jabr(1.0, -5.0, 6.0) → form SquaresAndNumberEqualRoots,
     # roots [3.0, 2.0], coefficients (1.0, -5.0, 6.0).
-    var r = solve_al_jabr(f64_from(1), f64_neg(f64_from(5)), f64_from(6));
-    ok(is_ok(r), "solve_al_jabr ok");
-    var sol = result_unwrap(r);
+    var r_t, r_v = solve_al_jabr(f64_from(1), f64_neg(f64_from(5)), f64_from(6));
+    ok(is_ok(r_t), "solve_al_jabr ok");
+    var sol = result_unwrap(r_t, r_v);
     var sjs = aljabr_sol_to_json(sol);
     # serde: {"form":"SquaresAndNumberEqualRoots","roots":[3.0,2.0],
     #         "coefficients":[1.0,-5.0,6.0]} — enum as variant-name string,

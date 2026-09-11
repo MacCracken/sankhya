@@ -160,25 +160,25 @@ fn test_cycles() {
 
 # -- Correlate --
 fn test_correlate() {
-    var cr1 = correlate(f64_from(EPOCH_JDN));
-    ok(is_ok(cr1), "correlate at creation ok");
-    var d1 = result_unwrap(cr1);
+    var cr1_t, cr1_v = correlate(f64_from(EPOCH_JDN));
+    ok(is_ok(cr1_t), "correlate at creation ok");
+    var d1 = result_unwrap(cr1_t, cr1_v);
     var lc = mcd_mayan_lc(d1);
     ok(lc, "mayan lc present at creation");
     check(lc_baktun(lc), 0, "baktun 0 at creation");
     check(lc_katun(lc), 0, "katun 0 at creation");
     check(lc_kin(lc), 0, "kin 0 at creation");
 
-    var cr2 = correlate(f64_from(0));
-    ok(is_ok(cr2), "correlate before epoch ok");
-    var d2 = result_unwrap(cr2);
+    var cr2_t, cr2_v = correlate(f64_from(0));
+    ok(is_ok(cr2_t), "correlate before epoch ok");
+    var d2 = result_unwrap(cr2_t, cr2_v);
     check(mcd_mayan_lc(d2), 0, "mayan lc none before epoch");
     check(mcd_tzolkin(d2), 0, "tzolkin none before epoch");
     check(mcd_haab(d2), 0, "haab none before epoch");
 
-    var cr3 = correlate(YOUNGER_DRYAS_JDN);
-    ok(is_ok(cr3), "correlate at YD ok");
-    var d3 = result_unwrap(cr3);
+    var cr3_t, cr3_v = correlate(YOUNGER_DRYAS_JDN);
+    ok(is_ok(cr3_t), "correlate at YD ok");
+    var d3 = result_unwrap(cr3_t, cr3_v);
     check(ap_age(mcd_age(d3)), PA_LEO, "age Leo at YD");
     check(mcd_mayan_lc(d3), 0, "mayan none at YD");
     return 0;
@@ -187,9 +187,9 @@ fn test_correlate() {
 # -- Unified convert() API --
 fn test_convert() {
     var g1 = gregorian_date_new(2000, GM_JANUARY, 1);
-    var cvt1 = convert(caldate_gregorian(g1));
-    ok(is_ok(cvt1), "convert gregorian ok");
-    var r1 = result_unwrap(cvt1);
+    var cvt1_t, cvt1_v = convert(caldate_gregorian(g1));
+    ok(is_ok(cvt1_t), "convert gregorian ok");
+    var r1 = result_unwrap(cvt1_t, cvt1_v);
     var rg1 = mcd_gregorian(r1);
     check(gd_year(rg1), 2000, "greg year 2000");
     check(gd_month(rg1), GM_JANUARY, "greg month January");
@@ -198,49 +198,49 @@ fn test_convert() {
     ok(f64_approx_eq(mcd_jdn(r1), jexp, TOL_EPS), "jdn = 2451544.5");
 
     var h1 = hijri_date_new(1, HM_MUHARRAM, 1);
-    var cvt2 = convert(caldate_hijri(h1));
-    ok(is_ok(cvt2), "convert hijri ok");
-    var r2 = result_unwrap(cvt2);
+    var cvt2_t, cvt2_v = convert(caldate_hijri(h1));
+    ok(is_ok(cvt2_t), "convert hijri ok");
+    var r2 = result_unwrap(cvt2_t, cvt2_v);
     check(gd_year(mcd_gregorian(r2)), 622, "hijri 1 AH -> greg 622");
 
     var jd = f64_add(f64_from(2451544), F64_HALF);
-    var cvt3 = convert(caldate_jdn(jd));
-    ok(is_ok(cvt3), "convert jdn ok");
-    var r3 = result_unwrap(cvt3);
+    var cvt3_t, cvt3_v = convert(caldate_jdn(jd));
+    ok(is_ok(cvt3_t), "convert jdn ok");
+    var r3 = result_unwrap(cvt3_t, cvt3_v);
     var rg3 = mcd_gregorian(r3);
     check(gd_year(rg3), 2000, "jdn greg year 2000");
     check(gd_month(rg3), GM_JANUARY, "jdn greg month January");
     check(gd_day(rg3), 1, "jdn greg day 1");
 
-    var lcr = long_count_from_days(1872000);
-    ok(is_ok(lcr), "long_count_from_days ok");
-    var lc4 = result_unwrap(lcr);
-    var cvt4 = convert(caldate_mayan_long_count(lc4));
-    ok(is_ok(cvt4), "convert mayan ok");
-    var r4 = result_unwrap(cvt4);
+    var lcr_t, lcr_v = long_count_from_days(1872000);
+    ok(is_ok(lcr_t), "long_count_from_days ok");
+    var lc4 = result_unwrap(lcr_t, lcr_v);
+    var cvt4_t, cvt4_v = convert(caldate_mayan_long_count(lc4));
+    ok(is_ok(cvt4_t), "convert mayan ok");
+    var r4 = result_unwrap(cvt4_t, cvt4_v);
     var rg4 = mcd_gregorian(r4);
     check(gd_year(rg4), 2012, "mayan greg year 2012");
     check(gd_month(rg4), GM_DECEMBER, "mayan greg month December");
     check(gd_day(rg4), 21, "mayan greg day 21");
 
     var g5 = gregorian_date_new(2025, GM_JANUARY, 1);
-    var cvt5 = convert(caldate_gregorian(g5));
-    ok(is_ok(cvt5), "convert 2025 ok");
-    var r5 = result_unwrap(cvt5);
+    var cvt5_t, cvt5_v = convert(caldate_gregorian(g5));
+    ok(is_ok(cvt5_t), "convert 2025 ok");
+    var r5 = result_unwrap(cvt5_t, cvt5_v);
     var jorig = mcd_jdn(r5);
-    var hj = calendar_to_jdn(caldate_hebrew(mcd_hebrew(r5)));
-    ok(is_ok(hj), "hebrew back ok");
-    ok(f64_approx_eq(result_unwrap(hj), jorig, TOL_EPS), "hebrew roundtrip jdn");
-    var cj = calendar_to_jdn(caldate_coptic(mcd_coptic(r5)));
-    ok(is_ok(cj), "coptic back ok");
-    ok(f64_approx_eq(result_unwrap(cj), jorig, TOL_EPS), "coptic roundtrip jdn");
-    var pj = calendar_to_jdn(caldate_persian(mcd_persian(r5)));
-    ok(is_ok(pj), "persian back ok");
-    ok(f64_approx_eq(result_unwrap(pj), jorig, TOL_EPS), "persian roundtrip jdn");
+    var hj_t, hj_v = calendar_to_jdn(caldate_hebrew(mcd_hebrew(r5)));
+    ok(is_ok(hj_t), "hebrew back ok");
+    ok(f64_approx_eq(result_unwrap(hj_t, hj_v), jorig, TOL_EPS), "hebrew roundtrip jdn");
+    var cj_t, cj_v = calendar_to_jdn(caldate_coptic(mcd_coptic(r5)));
+    ok(is_ok(cj_t), "coptic back ok");
+    ok(f64_approx_eq(result_unwrap(cj_t, cj_v), jorig, TOL_EPS), "coptic roundtrip jdn");
+    var pj_t, pj_v = calendar_to_jdn(caldate_persian(mcd_persian(r5)));
+    ok(is_ok(pj_t), "persian back ok");
+    ok(f64_approx_eq(result_unwrap(pj_t, pj_v), jorig, TOL_EPS), "persian roundtrip jdn");
 
     var gbad = gregorian_date_new(2025, GM_FEBRUARY, 30);
-    var cvtbad = convert(caldate_gregorian(gbad));
-    var iok = is_ok(cvtbad);
+    var cvtbad_t, cvtbad_v = convert(caldate_gregorian(gbad));
+    var iok = is_ok(cvtbad_t);
     check(iok, 0, "invalid date convert errors");
     return 0;
 }
@@ -249,9 +249,9 @@ fn test_convert() {
 #    saptarishi profiles) at 30 CE — always-on, full parity. --
 fn test_context() {
     var jctx = julian_year_to_jdn(30);
-    var crc = correlate(jctx);
-    ok(is_ok(crc), "correlate 30 CE ok");
-    var ctx = result_unwrap(crc);
+    var crc_t, crc_v = correlate(jctx);
+    ok(is_ok(crc_t), "correlate 30 CE ok");
+    var ctx = result_unwrap(crc_t, crc_v);
 
     var ne = vec_len(mcd_eras(ctx));
     var ce = ne > 0;

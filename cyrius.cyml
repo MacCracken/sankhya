@@ -4,7 +4,7 @@ version = "${file:VERSION}"
 description = "sankhya — ancient mathematical systems, historical calendars, and archaeoastronomy for AGNOS"
 license = "GPL-3.0-only"
 language = "cyrius"
-cyrius = "6.4.69"
+cyrius = "6.6.2"
 repository = "https://github.com/MacCracken/sankhya"
 
 [build]
@@ -83,17 +83,17 @@ stdlib = [
 # added with the epoch capstone.
 [deps.varna]
 git = "https://github.com/MacCracken/varna.git"
-tag = "2.1.0"
+tag = "2.4.1"
 modules = ["dist/varna.cyr"]
 
 # epoch's historical context (eras/civilizations/events) — always-on, full parity.
 [deps.itihas]
 git = "https://github.com/MacCracken/itihas.git"
-tag = "2.4.0"
+tag = "2.5.0"
 modules = ["dist/itihas.cyr"]
 
 # epoch's Saptarishi archetype profiles — always-on, full parity.
 [deps.avatara]
 git = "https://github.com/MacCracken/avatara.git"
-tag = "2.9.0"
+tag = "2.14.8"
 modules = ["dist/avatara.cyr"]

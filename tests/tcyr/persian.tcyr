@@ -35,9 +35,9 @@ fn main() {
     assert_eq(pd_year(d), 1, "epoch year=1");
     assert_eq(pd_month(d), PM_FARVARDIN, "epoch month=Farvardin");
     assert_eq(pd_day(d), 1, "epoch day=1");
-    var r = persian_to_jdn(d);
-    ok(is_ok(r), "epoch persian_to_jdn ok");
-    var j = result_unwrap(r);
+    var r_t, r_v = persian_to_jdn(d);
+    ok(is_ok(r_t), "epoch persian_to_jdn ok");
+    var j = result_unwrap(r_t, r_v);
     ok(f64_approx_eq(j, PERSIAN_EPOCH_JDN, TOL_EPS), "epoch jdn roundtrip");
 
     # ---- known_date_nowruz_1404 ----
@@ -68,18 +68,18 @@ fn main() {
 
     # ---- esfand_leap_30_days ----
     var e1 = persian_date_new(1399, PM_ESFAND, 30);
-    var re1 = persian_to_jdn(e1);
-    ok(is_ok(re1), "Esfand 30 valid in leap 1399");
+    var re1_t, re1_v = persian_to_jdn(e1);
+    ok(is_ok(re1_t), "Esfand 30 valid in leap 1399");
 
     # ---- esfand_common_rejects_30 ----
     var e2 = persian_date_new(1400, PM_ESFAND, 30);
-    var re2 = persian_to_jdn(e2);
-    ok(is_err_result(re2), "Esfand 30 rejected in common 1400");
+    var re2_t, re2_v = persian_to_jdn(e2);
+    ok(is_err_result(re2_t), "Esfand 30 rejected in common 1400");
 
     # ---- invalid_day_zero ----
     var e3 = persian_date_new(1400, PM_FARVARDIN, 0);
-    var re3 = persian_to_jdn(e3);
-    ok(is_err_result(re3), "day 0 rejected");
+    var re3_t, re3_v = persian_to_jdn(e3);
+    ok(is_err_result(re3_t), "day 0 rejected");
 
     # ---- roundtrip_sequential_days ----
     # 1500 consecutive days from Nowruz 1400 round-trip within EPSILON.
@@ -89,25 +89,25 @@ fn main() {
     while (off < 1500) {
         var jj = f64_add(start, f64_from(off));
         var dd = jdn_to_persian(jj);
-        var rr = persian_to_jdn(dd);
-        if (is_ok(rr) == 1) {
-            var bk = result_unwrap(rr);
+        var rr_t, rr_v = persian_to_jdn(dd);
+        if (is_ok(rr_t) == 1) {
+            var bk = result_unwrap(rr_t, rr_v);
             if (f64_approx_eq(bk, jj, TOL_EPS) == 0) { rt_ok = 0; }
         }
-        if (is_ok(rr) == 0) { rt_ok = 0; }
+        if (is_ok(rr_t) == 0) { rt_ok = 0; }
         off = off + 1;
     }
     assert_eq(rt_ok, 1, "1500-day sequential roundtrip");
 
     # ---- roundtrip_across_leap_boundary ----
     var lb = persian_date_new(1399, PM_ESFAND, 30);
-    var rlb = persian_to_jdn(lb);
-    ok(is_ok(rlb), "last_1399 ok");
-    var last_1399 = result_unwrap(rlb);
+    var rlb_t, rlb_v = persian_to_jdn(lb);
+    ok(is_ok(rlb_t), "last_1399 ok");
+    var last_1399 = result_unwrap(rlb_t, rlb_v);
     var fb = persian_date_new(1400, PM_FARVARDIN, 1);
-    var rfb = persian_to_jdn(fb);
-    ok(is_ok(rfb), "first_1400 ok");
-    var first_1400 = result_unwrap(rfb);
+    var rfb_t, rfb_v = persian_to_jdn(fb);
+    ok(is_ok(rfb_t), "first_1400 ok");
+    var first_1400 = result_unwrap(rfb_t, rfb_v);
     # (first_1400 - last_1399 - 1.0).abs() < EPSILON
     var diff = f64_sub(f64_sub(first_1400, last_1399), f64_from(1));
     ok(f64_approx_eq(diff, f64_from(0), TOL_EPS), "leap boundary adjacency (1 day)");

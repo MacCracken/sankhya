@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.2] — 2026-09-30
+
+**cyrius 6.6.2 → 6.6.11; the CI bench is built with `CYRIUS_DCE=1` again.** No source change.
+
+### Changed
+
+- **Toolchain pin `cyrius` 6.6.2 → 6.6.11.** `cyrius.lock` re-locked (42 deps, the three
+  sibling deps still commit-pinned at varna 2.4.1, itihas 2.5.0 and avatara 2.14.8). The
+  re-vendor also picks up the aarch64 syscall peer's `SYS_UNLINKAT` 35 → 263 correction; a
+  peer vendored before it made `sys_unlink` issue nanosleep on aarch64. Nothing in the
+  6.6.3–6.6.11 releases turned into a compile error here: the tests, bench and `cyrius
+  distlib` all build unchanged.
+- `dist/sankhya.cyr` regenerated (version header only); `dist/sankhya.deps` unchanged.
+
+### Fixed
+
+- **The *Benchmarks* CI step builds with `CYRIUS_DCE=1` again**, and the workaround comment is
+  gone. 3.0.1 dropped DCE there because cycc 6.6.2 emitted a PT_LOAD the code was never
+  patched against: DCE shrank the code after the data segment's address was fixed, so global
+  initialisation stored into unmapped memory and the DCE bench died with rc 139 and no
+  output. cyrius 6.6.3 fixed it, and at the 6.6.11 pin the DCE bench runs to completion with
+  rc 0 and the same output shape as the non-DCE build.
+
 ## [3.0.1] — 2026-09-11
 
 **Migrated to the cyrius 6.6.x value form.** 34/34 test files, 0 failures.

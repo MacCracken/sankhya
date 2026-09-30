@@ -62,11 +62,13 @@ jobs:
 
       - name: Smoke test
         # build/sankhya is the minimal CLI entry point — it does not include the
-        # library, only proves the toolchain builds and runs the package.
+        # library, only proves the toolchain builds and runs the package. The
+        # version it prints must be VERSION's (it printed 3.0.0 until 3.0.2).
         run: |
           chmod +x build/sankhya
           ./build/sankhya 2>&1 | tee /tmp/smoke
-          grep -q "cyrius port" /tmp/smoke
+          WANT="sankhya $(tr -d '[:space:]' < VERSION) (cyrius port)"
+          grep -qxF "$WANT" /tmp/smoke || { echo "smoke printed '$(cat /tmp/smoke)', expected '$WANT'"; exit 1; }
 
       - name: Unit tests
         # 32 .tcyr suites under tests/tcyr (~1,346 assertions: per-module, serial

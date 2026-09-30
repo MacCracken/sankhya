@@ -47,7 +47,7 @@ cyrius tests tests/tcyr
 cyrius bench tests/sankhya.bcyr
 ```
 
-Requires Cyrius 6.4.69 (`cyriusly install 6.4.69`) — pinned in `cyrius.cyml`.
+Requires Cyrius 6.6.11 (`cyriusly install 6.6.11`) — pinned in `cyrius.cyml`.
 
 ### Use as a dependency
 
@@ -102,7 +102,7 @@ Ported from Rust v2.0.0 (9,857 lines, 17 files) to Cyrius v3.0.0 (10,733 lines a
 - **Benchmarks** — 18 benches in `tests/sankhya.bcyr`: all 16 original Rust criterion benches plus new `coptic` and `aztec` benches.
 - **Consumer bundle** — `dist/sankhya.cyr`, regenerated via `cyrius distlib`.
 - **Deps** — `bayan` (JSON, replaces serde / serde_json, full round-trip), `sakshi` (logging, replaces tracing), and `math` + `ganita` (f64 / extended math) are folded stdlib; `varna` 2.1.0, `itihas` 2.4.0, and `avatara` 2.9.0 are git-tagged sibling deps, always-on for full parity; `net` / `http` come in transitively to satisfy itihas's bundled hoosh HTTP client (unused by sankhya).
-- **Version** — `VERSION` holds `3.0.0`; `cyrius.cyml` derives it via `${file:VERSION}`.
+- **Version** — `VERSION` holds `3.0.2`; `cyrius.cyml` derives it via `${file:VERSION}`.
 
 ### Cyrius idioms
 
@@ -114,7 +114,7 @@ Ported from Rust v2.0.0 (9,857 lines, 17 files) to Cyrius v3.0.0 (10,733 lines a
 
 ## Requirements
 
-- Cyrius 6.4.69 (`cyriusly install 6.4.69`) — pinned in `cyrius.cyml`.
+- Cyrius 6.6.11 (`cyriusly install 6.6.11`) — pinned in `cyrius.cyml`.
 - Folded stdlib: `string`, `fmt`, `alloc`, `vec`, `str`, `syscalls`, `io`, `args`, `assert`, `result`, `tagged`, `fnptr`, `hashmap`, `math`, `ganita`, `bayan`, `sakshi`, `bench`, `net`, `http`.
 - Sibling deps (git-tagged, always-on): `varna` 2.1.0, `itihas` 2.4.0, `avatara` 2.9.0.
 

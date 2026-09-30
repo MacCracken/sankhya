@@ -5,13 +5,14 @@
 
 ## Version
 
-**3.0.0** — the Rust→Cyrius port is complete (2026-07-21). The original Rust crate
-(v2.0.0, 9,857 lines across 17 files) is preserved at `rust-old/` as the frozen parity
-oracle.
+**3.0.2** — cyrius pin 6.6.11; the CI bench builds with `CYRIUS_DCE=1` again. The
+Rust→Cyrius port completed at 3.0.0 (2026-07-21); 3.0.1 migrated to the cyrius 6.6.x
+`Result` value form. The original Rust crate (v2.0.0, 9,857 lines across 17 files) is
+preserved at `rust-old/` as the frozen parity oracle.
 
 ## Toolchain
 
-- **Cyrius pin**: `6.4.69` (in `cyrius.cyml [package].cyrius`)
+- **Cyrius pin**: `6.6.11` (in `cyrius.cyml [package].cyrius`)
 - `VERSION` is the single source of truth; `cyrius.cyml` derives it via `${file:VERSION}`
 
 ## Source

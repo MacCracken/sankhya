@@ -7,8 +7,8 @@ historical calendars, and archaeoastronomy for AGNOS.
 
 - **Type**: Cyrius library (ported from Rust v2.0.0 — original preserved at `rust-old/`)
 - **License**: GPL-3.0-only
-- **Compiler**: Cyrius 6.4.69 — pinned in `cyrius.cyml` `[package].cyrius`
-- **Version**: SemVer 3.0.0 — `VERSION` at the project root is the source of truth
+- **Compiler**: Cyrius 6.6.11 — pinned in `cyrius.cyml` `[package].cyrius`
+- **Version**: SemVer 3.0.2 — `VERSION` at the project root is the source of truth
   (`cyrius.cyml` derives it via `${file:VERSION}`); do not inline the number elsewhere
 - **Consumers**: hisab (higher mathematics, as an optional companion), and the wider AGNOS
   ecosystem needing historical/ancient computations, calendar systems, or archaeoastronomy

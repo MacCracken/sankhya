@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to Sankhya.
 
-Sankhya is a Cyrius library (toolchain `6.4.69`), ported from the Rust v2.0.0
+Sankhya is a Cyrius library (toolchain `6.6.11`), ported from the Rust v2.0.0
 crate. The original Rust source is preserved read-only at `rust-old/` and serves
 as the reference oracle for every ported module (see
 [Cross-checking against Rust](#cross-checking-against-rust)).
@@ -22,7 +22,7 @@ description.
 
 ## Prerequisites
 
-- Cyrius 6.4.69 (`cyriusly install 6.4.69`) — pinned in `cyrius.cyml`
+- Cyrius 6.6.11 (`cyriusly install 6.6.11`) — pinned in `cyrius.cyml`
 
 ## Commands
 

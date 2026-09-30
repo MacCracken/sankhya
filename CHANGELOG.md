@@ -20,6 +20,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   6.6.3–6.6.11 releases turned into a compile error here: the tests, bench and `cyrius
   distlib` all build unchanged.
 - `dist/sankhya.cyr` regenerated (version header only); `dist/sankhya.deps` unchanged.
+- **The version and pin strings name 3.0.2 and 6.6.11.** `src/main.cyr` printed `sankhya 3.0.0`
+  through 3.0.1, and `CLAUDE.md`, `README.md`, `CONTRIBUTING.md`, `docs/development/state.md`,
+  `docs/development/roadmap.md` and `docs/guides/getting-started.md` still named 3.0.0 and the
+  6.4.69 pin. The *Smoke test* CI step now requires the binary to print exactly
+  `sankhya <VERSION> (cyrius port)`, so the literal cannot fall behind `VERSION` again.
 
 ### Fixed
 

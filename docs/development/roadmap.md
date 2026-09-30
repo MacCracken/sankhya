@@ -1,9 +1,9 @@
 # Development Roadmap
 
-> **Status**: v3.0.0 released (Rust→Cyrius port complete) | **Current**: 3.0.0 | **Compiler**: cyrius 6.4.69
+> **Status**: v3.0.2 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.0.2 | **Compiler**: cyrius 6.6.11
 
 Completed items are in [CHANGELOG.md](../../CHANGELOG.md).
-`VERSION` is the single source of truth (`3.0.0`); `cyrius.cyml` derives it via `${file:VERSION}`.
+`VERSION` is the single source of truth (`3.0.2`); `cyrius.cyml` derives it via `${file:VERSION}`.
 
 ## Completed in 3.0.0 — Rust → Cyrius port
 
@@ -80,5 +80,5 @@ its own work-loop cycle behind the cleanliness + benchmark gates.
 |------|---------|----------|
 | Tests | `cyrius tests tests/tcyr` | `32 passed, 0 failed` (~1,346 assertions) |
 | Benchmarks | `cyrius bench tests/sankhya.bcyr` | 18 benches; recorded via `scripts/bench-history.sh` |
-| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.0.0 (cyrius port)` |
+| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.0.2 (cyrius port)` |
 | Bundle | `cyrius distlib` | regenerates `dist/sankhya.cyr` |

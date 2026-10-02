@@ -74,6 +74,13 @@ crosses 6.6.3, where the one item below was fixed.
 
 ## Deferred / Backlog
 
+**Recorded by cyrius 6.6.12 / 6.6.13 (2026-10-02):**
+- README and CLAUDE.md name varna 2.1.0 / itihas 2.4.0 / avatara 2.9.0, while the 3.0.2 lock pins 2.4.1 /
+  2.5.0 / 2.14.8 — re-derive the documented versions from `cyrius.lock`.
+- At the cyrius 6.6.13 pin bump: `f64_parse` is correctly rounded (I4), so parsed values can move by up to
+  2 ulp — run the full CI and re-baseline any golden numeric output; and re-vendor `lib/math.cyr` with `cyrius deps` in the same commit — 6.6.13 made `f64_le` / `f64_ge` / `f64_trunc` compiler builtins (reserved names), and a pre-6.6.13 vendored copy still defines them (`reserved keyword`).
+
+
 Post-port work, none of it blocking. Sequenced most-consequential first; each is
 its own work-loop cycle behind the cleanliness + benchmark gates.
 

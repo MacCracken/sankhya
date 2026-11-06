@@ -6,7 +6,7 @@
 cyrius lib sync                                # vendor the folded stdlib into lib/
 cyrius deps                                    # resolve sibling deps (varna/itihas/avatara)
 cyrius build src/main.cyr build/sankhya        # compile the smoke test
-./build/sankhya                                # -> sankhya 3.1.0 (cyrius port)
+./build/sankhya                                # -> sankhya 3.1.1 (cyrius port)
 cyrius test tests/tcyr                         # run all 32 suites -> "32 passed, 0 failed"
 cyrius bench tests/sankhya.bcyr                # run the 18 benchmarks
 cyrius distlib                                 # rebuild dist/sankhya.cyr for consumers
@@ -30,7 +30,7 @@ cyrius distlib                                 # rebuild dist/sankhya.cyr for co
 # in your cyrius.cyml
 # [deps.sankhya]
 # git = "https://github.com/MacCracken/sankhya.git"
-# tag = "3.1.0"
+# tag = "3.1.1"
 # modules = ["dist/sankhya.cyr"]
 ```
 

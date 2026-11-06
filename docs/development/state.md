@@ -5,14 +5,14 @@
 
 ## Version
 
-**3.1.0** — cyrius pin 6.7.9, the first on the 6.7 language minor, with the sibling deps
-at the tags that pin it. The Rust→Cyrius port completed at 3.0.0 (2026-07-21); 3.0.1
-migrated to the cyrius 6.6.x `Result` value form. The original Rust crate (v2.0.0, 9,857
+**3.1.1** — cyrius pin 6.7.18, with the sibling deps at their latest tags. The Rust→Cyrius
+port completed at 3.0.0 (2026-07-21); 3.0.1 migrated to the cyrius 6.6.x `Result` value
+form, and 3.1.0 moved to the 6.7 language minor. The original Rust crate (v2.0.0, 9,857
 lines across 17 files) is preserved at `rust-old/` as the frozen parity oracle.
 
 ## Toolchain
 
-- **Cyrius pin**: `6.7.9` (in `cyrius.cyml [package].cyrius`)
+- **Cyrius pin**: `6.7.18` (in `cyrius.cyml [package].cyrius`)
 - `VERSION` is the single source of truth; `cyrius.cyml` derives it via `${file:VERSION}`
 
 ## Source
@@ -56,7 +56,7 @@ Declared in `cyrius.cyml`:
   fnptr, hashmap, math, **ganita** (extended math), **bayan** (JSON), **sakshi** (logging),
   bench, net + http (transitive, for itihas's bundled hoosh client)
 - **Sibling deps** (git-tagged, always-on — see [ADR-006](../adr/006-always-on-dependencies.md)):
-  `varna` 2.5.0, `itihas` 2.6.0, `avatara` 2.16.0
+  `varna` 2.5.2, `itihas` 2.6.2, `avatara` 2.16.1
 
 ## Consumers
 

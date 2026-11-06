@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.1] — 2026-11-05
+
+**cyrius 6.7.9 → 6.7.18, with the sibling deps at their latest tags.** No library source changed,
+only the version string in `src/main.cyr`. Two things consumers can see do change: `correlate`'s
+historical context, because itihas corrected its data, and binary size. 32 suites and
+`tests/foundation.tcyr`: 1,368 assertions, 0 failed.
+
+### Changed
+
+- **Toolchain pin `cyrius` 6.7.9 → 6.7.18**, the latest release. 6.7.10–6.7.18 move a great deal of
+  struct-value, vector, generic, `Str` and multi-value semantics. sankhya declares no `struct`,
+  `impl`, generic, closure, typed pointer or tuple, and its only type annotations are two `Str`
+  parameters of one fn, so most of that cannot reach it. What could reach it was checked at runtime
+  (see *Verified*). The new refusals that fit this code (an enum without separators, a statement that
+  is only a value builtin, trailing code after an `include`) do not occur: the tree compiles and lints.
+- **Sibling deps move to their latest tags, each pinned to 6.7.18:** varna 2.5.0 → 2.5.2, itihas
+  2.6.0 → 2.6.2, avatara 2.16.0 → 2.16.1. Each `lib/*.cyr` is byte-equal to its tag's `dist/` bundle.
+  varna 2.5.2's new JSON is in `dist/varna-json.cyr`, which sankhya does not take, and its `-D MCP`
+  break is outside the bundle sankhya does take.
+- ⚠ **`correlate`'s historical context changes, because itihas 2.6.2 corrected its data.** Across the
+  42 JDNs compared, Maya now ends in 1697 (was 1500), the Muisca Confederation in 1540 (was 1541) and
+  the Renaissance in 1647 (was 1610), so a date around 1629 now lists both Maya and the Renaissance.
+  Other itihas corrections reach `eras`, `civilizations` and `events` at dates not sampled: for
+  example, two events are renamed, to "Peace of Westphalia" and "Launch of the iPhone". Re-baseline any
+  stored `MultiCalendarDate` context. itihas's own CHANGELOG has the full list. sankhya's calls
+  are unchanged, `eras_containing` is byte-identical between the tags, and no calendar field moved.
+- ⚠ **DCE binaries grow by 282,328 B:** the smoke test 520,104 → 802,432 B, the bench 711,216 →
+  993,544 B. `lib/bayan.cyr` now keeps Unicode tables that DCE cannot drop. In a program that does
+  nothing else, bayan's surviving footprint goes from 27,096 B at 6.7.9 to 374,944 B at 6.7.18. sankhya
+  uses only bayan's JSON layer, but it cannot take the thin `dist/bayan-json.cyr` profile, because
+  itihas's sidecar and `# Requires` block name the monolith and both would define the same symbols.
+  The fix starts upstream in itihas; the roadmap records it.
+- **`cyrius.lock` regenerated from an empty `lib/`** (50 deps, 3 commit pins, a `cyrius 6.7.18` row). CI's
+  `lib sync` then `deps` leaves it byte-identical. `cyrius deps` now prints a note that
+  `lib/hashmap_fast.cyr` is outside the declared footprint, because `lib sync` vendors it and `deps`
+  does not. It is harmless, and sankhya calls nothing in that file.
+- **`dist/sankhya.deps` shrinks from 2 leaves to 1 (`ganita`)**, and the bundle's `# Requires` block
+  drops `lib/math.cyr`. Both are `cyrius distlib` output; ganita brings `math` itself. The rest of the
+  bundle changes only in its version line. A scratch consumer with a bare `[deps.sankhya]` and no
+  stdlib list still resolves, compiles and runs.
+- **GitHub Actions move to their latest majors:** `actions/checkout` v4 → v7 and
+  `softprops/action-gh-release` v2 → v3, floating on the major tag as the siblings do. Both now run on
+  Node 24. The workflows use neither `pull_request_target` nor `workflow_run`, which checkout v7
+  restricts, and `release.yml`'s three inputs (`name`, `body_path`, `files`) are unchanged. These
+  were not run locally, so the first push and the first tag are their test.
+
+### Verified
+
+- **Everything but that context is byte-identical to 3.1.0.** 921 of the 935 dumped lines match, and
+  all 14 that differ are `correlate` lines whose only changes are the itihas fields above. Every f64
+  bit is unchanged, so the bit-for-bit Rust match from 3.0.3 carries over.
+- **JSON floats survive bayan's rewritten parser.** `bayan_f64_parse` now delegates to `f64_parse_n`,
+  which tolerance-based tests would not catch if it shifted a value. 399,894 doubles (200,000
+  pseudo-random bit patterns, skipping non-finite ones, and 200,000 three-decimal values) went through
+  emit and parse with 0 mismatches. Results are byte-identical under both pins, including `-0.0`,
+  the smallest subnormal and `DBL_MAX`.
+- **All 33 suites pass when each is built with `CYRIUS_DCE=1`** (1,368 assertions), and the output dump
+  is byte-identical to the non-DCE build. CI does not build the suites this way, and this is where
+  the `sk_vec_sort` comparators reached through fn pointers run under DCE.
+- **The suite passes under `cyrius test --bounds tests/tcyr`** (1,346 of 1,346).
+
+### Performance
+
+- **Flat overall.** Interleaved A/B over 9 rounds against a 6.7.9 control built from 3.1.0, comparing
+  medians, twice, at load 1.3–1.6 on 16 threads: suite total −0.6 % and −2.0 %, with round-to-round
+  spreads of ±2–4 %. `babylonian/sqrt_convergence` is faster in both runs (−2.9 %, −6.6 %).
+  `roman/roundtrip_3999` is slower in both (+4.7 %, +2.2 %), around its ±3 % spread. Neither is attributed.
+- **The 3.1.1 rows in `bench-history.csv` carry `85793bc`** because they were recorded before the
+  3.1.1 commit. Compare releases with the A/B above, not these single-sample rows.
+
 ## [3.1.0] — 2026-11-05
 
 **cyrius 6.6.20 → 6.7.9, with the sibling deps at the tags that pin it.** A minor release because

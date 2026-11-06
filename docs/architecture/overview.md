@@ -155,9 +155,9 @@ First-party sibling deps (git-tagged, **always-on** — see below):
 
 | Dep | Tag | Purpose |
 |-----|-----|---------|
-| `varna` | 2.5.0 | script rendering (cuneiform, hieroglyphic, Devanagari, Greek, rod numerals) — wave-1/2 numeral modules |
-| `itihas` | 2.6.0 | historical context (eras, civilizations, events) on the epoch capstone |
-| `avatara` | 2.16.0 | Saptarishi archetype profiles on the epoch capstone |
+| `varna` | 2.5.2 | script rendering (cuneiform, hieroglyphic, Devanagari, Greek, rod numerals) — wave-1/2 numeral modules |
+| `itihas` | 2.6.2 | historical context (eras, civilizations, events) on the epoch capstone |
+| `avatara` | 2.16.1 | Saptarishi archetype profiles on the epoch capstone |
 
 > **Always-on note.** The Rust crate gated `varna` / `itihas` / `avatara` behind
 > optional Cargo features. Cyrius has no feature-flag system yet, so these three

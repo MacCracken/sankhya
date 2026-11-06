@@ -225,6 +225,6 @@ var eq   = multi_calendar_date_eq(mcd, mcd2);   # 1 for sankhya-native fields
 ## Testing & Benchmarks
 
 ```sh
-cyrius tests tests/tcyr        # 32 suites, ~1,346 assertions → "32 passed, 0 failed"
+cyrius test tests/tcyr        # 32 suites, ~1,346 assertions → "32 passed, 0 failed"
 cyrius bench tests/sankhya.bcyr # 18 benchmarks
 ```

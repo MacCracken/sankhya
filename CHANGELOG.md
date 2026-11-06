@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.0] — 2026-11-05
+
+**cyrius 6.6.20 → 6.7.9, with the sibling deps at the tags that pin it.** A minor release because
+the toolchain crosses a language minor. No library source changed, only the version string in
+`src/main.cyr`, and the API is the same. 32 suites and `tests/foundation.tcyr`: 1,368 assertions,
+0 failed.
+
+### Changed
+
+- **Toolchain pin `cyrius` 6.6.20 → 6.7.9.** 6.7.x changes what some existing code means, not only
+  what compiles, so a passing build proves little here. `src/` and `tests/` were swept for each
+  construct the 6.7.0–6.7.9 migration notes name, with comments and strings stripped first. A
+  fixture of planted cases confirmed the sweep finds them. None of the constructs below that change
+  meaning occur:
+
+  | since | change | in sankhya |
+  |---|---|---|
+  | 6.7.3 | a lone `!` was silently dropped (`if (!ok)` meant `if (ok)`); it is now an operator | no `!` outside `!=` |
+  | 6.7.9 | unary `-` / `~` on a constant binds tighter than a following literal operator (`-K + 10` was 15, now 5) | none |
+  | 6.7.8 | `*p` through a narrow `*T` reads the element width; signed slice elements read negative | no typed pointers, no slices |
+  | 6.7.8–6.7.9 | a `for` step must assign a declared variable; stray tokens after it are refused | 9 loops, all `i = i + 1` |
+  | 6.7.0–6.7.8 | `trait`, `const`, `true`, `false`, `do`, `dyn` reserved; an untyped `self` in an `impl` is `*T` | none used, no `impl` |
+  | 6.7.9 | `f64_parse` goes through a strict front | all 160 calls take a literal `N.N` or `-N.N` |
+
+- **Sibling deps move to the tags that pin 6.7.9:** varna 2.4.3 → 2.5.0, itihas 2.5.2 → 2.6.0,
+  avatara 2.15.1 → 2.16.0. These are not the newest tags; varna 2.5.1, itihas 2.6.1–2.6.2 and avatara
+  2.16.1 pin 6.7.18. Each `lib/*.cyr` is byte-equal to its tag's `dist/` bundle. itihas 2.6.0's
+  breaking change is to its MCP failure shape, which is outside its default bundle, and sankhya
+  calls nothing there.
+- **`cyrius.lock` regenerated from an empty `lib/`** (42 deps, 3 commit pins, a `cyrius 6.7.9` row).
+  A clean checkout leaves it byte-identical. `cyrius deps --verify` reports 42 verified, and
+  `cyrius deps --locked` (new in 6.7.6) reports that `lib/` and the lock are exactly what the tags
+  resolve.
+- **`dist/sankhya.cyr` changes only in its version line**, and `dist/sankhya.deps` is unchanged. A
+  scratch consumer with a bare `[deps.sankhya]` and no stdlib list still resolves, compiles and runs.
+  ⚠ **Consumer note:** from 6.7.6 a `[deps.*]` entry with only a `path`, or with an absolute path, is
+  refused by name. A local `path` must sit beside `git` / `tag` and takes effect only in local mode
+  (`CYRIUS_LOCAL=1`).
+- **`cyrius tests` → `cyrius test`** in CI, `CLAUDE.md`, `README.md`, `CONTRIBUTING.md` and the
+  docs. The old spelling is a deprecated alias from 6.7.6 and is removed at 6.7.12.
+
+### Verified
+
+- **Output is byte-identical to 3.0.3.** A dump of 935 lines is the same under both pins: raw f64
+  bits for the astro conversions, obliquity, sidereal time and solar position, `correlate` at 42 JDNs
+  as full JSON with itihas and avatara context, and sampled cuneiform, hieroglyphic and Greek
+  numerals. The bit-for-bit Rust match that 3.0.3 established for `obliquity_of_ecliptic` and
+  `greenwich_sidereal_time` carries over.
+- **The suite also passes under 6.7.8's opt-in bounds-checked mode** (`cyrius test --bounds
+  tests/tcyr`): 1,346 of 1,346. That mode checks typed arrays and slices, which sankhya does not
+  use, so it says little about the raw `load64` / `store64` accesses.
+
+### Performance
+
+- **Flat.** Interleaved A/B over 9 rounds against a 6.6.20 control built from 3.0.3, comparing
+  medians, twice: suite total −0.7 % and +1.3 %, and every row within about 3 %, inside its round-to-round
+  spread of ±4–7 %. Host load was 2–3.5 on 16 threads. An earlier run straight after a CI replay
+  showed `epoch/correlate` at −8.8 % and `islamic/cubic_newton` at +4.1 %; neither repeated, so
+  those were noise.
+- **The 3.1.0 rows in `bench-history.csv` carry `d4282df`** because they were recorded before the
+  3.1.0 commit. Compare releases with the A/B above, not these single-sample rows.
+
 ## [3.0.3] — 2026-11-05
 
 **cyrius 6.6.11 → 6.6.20, with the sibling deps at the tags that pin it. Sidereal time and the

@@ -7,7 +7,7 @@
 
 fn main() {
     alloc_init();
-    println("sankhya 3.0.3 (cyrius port)");
+    println("sankhya 3.1.0 (cyrius port)");
     return 0;
 }
 

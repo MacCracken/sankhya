@@ -75,7 +75,7 @@ jobs:
         # 32 .tcyr suites under tests/tcyr (~1,346 assertions: per-module, serial
         # round-trip, integration, adversarial/never-panic). Summary: "N failed".
         run: |
-          cyrius tests tests/tcyr 2>&1 | tee /tmp/test_output
+          cyrius test tests/tcyr 2>&1 | tee /tmp/test_output
           grep -v '^[[:space:]]*$' /tmp/test_output | tail -1 | grep -q "0 failed"
 
       - name: Benchmarks

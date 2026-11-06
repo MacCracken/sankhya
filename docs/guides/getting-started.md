@@ -6,8 +6,8 @@
 cyrius lib sync                                # vendor the folded stdlib into lib/
 cyrius deps                                    # resolve sibling deps (varna/itihas/avatara)
 cyrius build src/main.cyr build/sankhya        # compile the smoke test
-./build/sankhya                                # -> sankhya 3.0.3 (cyrius port)
-cyrius tests tests/tcyr                        # run all 32 suites -> "32 passed, 0 failed"
+./build/sankhya                                # -> sankhya 3.1.0 (cyrius port)
+cyrius test tests/tcyr                         # run all 32 suites -> "32 passed, 0 failed"
 cyrius bench tests/sankhya.bcyr                # run the 18 benchmarks
 cyrius distlib                                 # rebuild dist/sankhya.cyr for consumers
 ```
@@ -30,7 +30,7 @@ cyrius distlib                                 # rebuild dist/sankhya.cyr for co
 # in your cyrius.cyml
 # [deps.sankhya]
 # git = "https://github.com/MacCracken/sankhya.git"
-# tag = "3.0.3"
+# tag = "3.1.0"
 # modules = ["dist/sankhya.cyr"]
 ```
 
@@ -43,7 +43,7 @@ Then call the library directly — see [`usage.md`](usage.md) for worked example
 2. Register it in `src/lib.cyr` (dependency order) and in `cyrius.cyml` `[lib].modules`.
 3. Cross-check parity against `rust-old/` — that is the correctness bar.
 4. Add assertions to `tests/tcyr/<module>.tcyr` (and `serial_<module>.tcyr` if the type is
-   serializable), then run `cyrius tests tests/tcyr`.
+   serializable), then run `cyrius test tests/tcyr`.
 5. Add a benchmark to `tests/sankhya.bcyr` for any new hot path and run
    `./scripts/bench-history.sh`.
 6. Add a CHANGELOG entry. **Do not bump `VERSION`** unless explicitly asked.

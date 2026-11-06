@@ -7,8 +7,8 @@ historical calendars, and archaeoastronomy for AGNOS.
 
 - **Type**: Cyrius library (ported from Rust v2.0.0 — original preserved at `rust-old/`)
 - **License**: GPL-3.0-only
-- **Compiler**: Cyrius 6.6.20 — pinned in `cyrius.cyml` `[package].cyrius`
-- **Version**: SemVer 3.0.3 — `VERSION` at the project root is the source of truth
+- **Compiler**: Cyrius 6.7.9 — pinned in `cyrius.cyml` `[package].cyrius`
+- **Version**: SemVer 3.1.0 — `VERSION` at the project root is the source of truth
   (`cyrius.cyml` derives it via `${file:VERSION}`); do not inline the number elsewhere
 - **Consumers**: hisab (higher mathematics, as an optional companion), and the wider AGNOS
   ecosystem needing historical/ancient computations, calendar systems, or archaeoastronomy
@@ -82,7 +82,7 @@ historical calendars, and archaeoastronomy for AGNOS.
 | Resolve sibling deps | `cyrius deps` |
 | Vendor stdlib | `cyrius lib sync` |
 | Build smoke test | `cyrius build src/main.cyr build/sankhya && ./build/sankhya` |
-| Run all tests | `cyrius tests tests/tcyr` (each `.tcyr` prints "N passed, 0 failed") |
+| Run all tests | `cyrius test tests/tcyr` (each `.tcyr` prints "N passed, 0 failed") |
 | Run benchmarks | `cyrius bench tests/sankhya.bcyr` |
 | Build dist bundle | `cyrius distlib` → `dist/sankhya.cyr` |
 | Lint / format | `cyrius lint <file>` / `cyrius fmt <file> [--check]` |
@@ -95,13 +95,13 @@ those are stale pre-3.0 references. Rust survives only as the `rust-old/` parity
 
 ### P(-1): Scaffold Hardening (before new features)
 0. Read roadmap, CHANGELOG, open issues. 1. Test + benchmark sweep. 2. Cleanliness check
-(`cyrius build`, `cyrius tests`, `cyrius lint`). 3. Baseline benchmarks. 4. Internal deep review
+(`cyrius build`, `cyrius test`, `cyrius lint`). 3. Baseline benchmarks. 4. Internal deep review
 (gaps, correctness vs `rust-old/`, logging/errors, docs). 5. External research. 6. Cleanliness
 check. 7. Tests/benchmarks from findings. 8. Post-review benchmarks. 9. Repeat if heavy.
 
 ### Work Loop (continuous)
 1. Work phase. 2. Cleanliness check (`cyrius build src/main.cyr build/sankhya && ./build/sankhya`,
-`cyrius tests tests/tcyr`). 3. Test + benchmark additions. 4. Run benchmarks. 5. Internal review.
+`cyrius test tests/tcyr`). 3. Test + benchmark additions. 4. Run benchmarks. 5. Internal review.
 6. Cleanliness check. 7. Deeper tests. 8. Benchmarks again — prove the wins. 9. If review heavy →
 step 5. 10. Documentation (CHANGELOG, roadmap, sources, ADRs). 11. Version check (VERSION ↔
 `cyrius.cyml` via `${file:VERSION}`). 12. **Release benchmark gate (MANDATORY)** — full suite, record

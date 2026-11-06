@@ -41,13 +41,13 @@ cyrius deps
 cyrius build src/main.cyr build/sankhya && ./build/sankhya
 
 # Run the full test suite (32 suites under tests/tcyr/) → "32 passed, 0 failed"
-cyrius tests tests/tcyr
+cyrius test tests/tcyr
 
 # Run the benchmarks (18 benches)
 cyrius bench tests/sankhya.bcyr
 ```
 
-Requires Cyrius 6.6.20 (`cyriusly install 6.6.20`) — pinned in `cyrius.cyml`.
+Requires Cyrius 6.7.9 (`cyriusly install 6.7.9`) — pinned in `cyrius.cyml`.
 
 ### Use as a dependency
 
@@ -84,9 +84,9 @@ Add `sankhya` to your `cyrius.cyml` `[deps]`, and ensure the bundle's folded std
 
 | Dependency | Version | Provides |
 |-----------|---------|----------|
-| `varna` | 2.4.3 | Script rendering: cuneiform, hieroglyphic, Devanagari, Greek alphabetic, CJK rod numerals |
-| `itihas` | 2.5.2 | Historical context — eras, civilizations, events on `MultiCalendarDate` |
-| `avatara` | 2.15.1 | Saptarishi archetype profiles on `MultiCalendarDate` |
+| `varna` | 2.5.0 | Script rendering: cuneiform, hieroglyphic, Devanagari, Greek alphabetic, CJK rod numerals |
+| `itihas` | 2.6.0 | Historical context — eras, civilizations, events on `MultiCalendarDate` |
+| `avatara` | 2.16.0 | Saptarishi archetype profiles on `MultiCalendarDate` |
 | `bayan` | stdlib | JSON serialize + round-trip parse (replaces serde / serde_json) |
 | `sakshi` | stdlib | Structured logging (replaces tracing) |
 | `math` + `ganita` | stdlib | f64 constants + extended math (pow / hypot / asin / acos / atan2 / sinh / cosh) for astro |
@@ -98,11 +98,11 @@ In the Rust crate `varna`, `itihas`, and `avatara` were optional Cargo features 
 Ported from Rust v2.0.0 (9,857 lines, 17 files) to Cyrius v3.0.0 (10,733 lines across 37 `src/*.cyr` files). The previous Rust source is preserved in `rust-old/` for reference.
 
 - **Modules** — 15 domain modules (`mayan`, `babylonian`, `egyptian`, `vedic`, `chinese`, `greek`, `roman`, `islamic`, `gregorian`, `coptic`, `persian`, `hebrew`, `aztec`, `astro`, `epoch`) over a foundation layer (`error`, `util`, `f64_util`, `logging`), plus a per-module `serial_*.cyr` JSON layer, the `lib.cyr` aggregator, and `main.cyr`.
-- **Tests** — 32 `.tcyr` suites under `tests/tcyr/` (plus `tests/foundation.tcyr`), ≈1,346 assertions: per-module 729, serial round-trip 260, integration 198, adversarial / never-panic 159, foundation 22. `cyrius tests tests/tcyr` reports **32 passed, 0 failed**.
+- **Tests** — 32 `.tcyr` suites under `tests/tcyr/` (plus `tests/foundation.tcyr`), ≈1,346 assertions: per-module 729, serial round-trip 260, integration 198, adversarial / never-panic 159, foundation 22. `cyrius test tests/tcyr` reports **32 passed, 0 failed**.
 - **Benchmarks** — 18 benches in `tests/sankhya.bcyr`: all 16 original Rust criterion benches plus new `coptic` and `aztec` benches.
 - **Consumer bundle** — `dist/sankhya.cyr`, regenerated via `cyrius distlib`.
-- **Deps** — `bayan` (JSON, replaces serde / serde_json, full round-trip), `sakshi` (logging, replaces tracing), and `math` + `ganita` (f64 / extended math) are folded stdlib; `varna` 2.4.3, `itihas` 2.5.2, and `avatara` 2.15.1 are git-tagged sibling deps, always-on for full parity; `net` / `http` come in transitively to satisfy itihas's bundled hoosh HTTP client (unused by sankhya).
-- **Version** — `VERSION` holds `3.0.3`; `cyrius.cyml` derives it via `${file:VERSION}`.
+- **Deps** — `bayan` (JSON, replaces serde / serde_json, full round-trip), `sakshi` (logging, replaces tracing), and `math` + `ganita` (f64 / extended math) are folded stdlib; `varna` 2.5.0, `itihas` 2.6.0, and `avatara` 2.16.0 are git-tagged sibling deps, always-on for full parity; `net` / `http` come in transitively to satisfy itihas's bundled hoosh HTTP client (unused by sankhya).
+- **Version** — `VERSION` holds `3.1.0`; `cyrius.cyml` derives it via `${file:VERSION}`.
 
 ### Cyrius idioms
 
@@ -114,9 +114,9 @@ Ported from Rust v2.0.0 (9,857 lines, 17 files) to Cyrius v3.0.0 (10,733 lines a
 
 ## Requirements
 
-- Cyrius 6.6.20 (`cyriusly install 6.6.20`) — pinned in `cyrius.cyml`.
+- Cyrius 6.7.9 (`cyriusly install 6.7.9`) — pinned in `cyrius.cyml`.
 - Folded stdlib: `string`, `fmt`, `alloc`, `vec`, `str`, `syscalls`, `io`, `args`, `assert`, `result`, `tagged`, `fnptr`, `hashmap`, `math`, `ganita`, `bayan`, `sakshi`, `bench`, `net`, `http`.
-- Sibling deps (git-tagged, always-on): `varna` 2.4.3, `itihas` 2.5.2, `avatara` 2.15.1.
+- Sibling deps (git-tagged, always-on): `varna` 2.5.0, `itihas` 2.6.0, `avatara` 2.16.0.
 
 ## License
 

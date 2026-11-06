@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to Sankhya.
 
-Sankhya is a Cyrius library (toolchain `6.6.20`), ported from the Rust v2.0.0
+Sankhya is a Cyrius library (toolchain `6.7.9`), ported from the Rust v2.0.0
 crate. The original Rust source is preserved read-only at `rust-old/` and serves
 as the reference oracle for every ported module (see
 [Cross-checking against Rust](#cross-checking-against-rust)).
@@ -12,7 +12,7 @@ as the reference oracle for every ported module (see
 1. Fork and clone the repository
 2. Create a feature branch from `main` (e.g. `port/haab`, `fix/hebrew-molad`)
 3. Make your changes in `src/*.cyr` and `tests/tcyr/*.tcyr`
-4. Run `cyrius tests tests/tcyr` to validate (and `cyrius bench tests/sankhya.bcyr`
+4. Run `cyrius test tests/tcyr` to validate (and `cyrius bench tests/sankhya.bcyr`
    if performance is touched)
 5. Push the branch and open a pull request against `main`
 
@@ -22,7 +22,7 @@ description.
 
 ## Prerequisites
 
-- Cyrius 6.6.20 (`cyriusly install 6.6.20`) — pinned in `cyrius.cyml`
+- Cyrius 6.7.9 (`cyriusly install 6.7.9`) — pinned in `cyrius.cyml`
 
 ## Commands
 
@@ -31,7 +31,7 @@ description.
 | `cyrius build src/main.cyr build/sankhya` | Build the smoke-test binary |
 | `CYRIUS_DCE=1 cyrius build src/main.cyr build/sankhya` | Build (dead-code-elimination optimized) |
 | `./build/sankhya` | Run the CLI smoke test |
-| `cyrius tests tests/tcyr` | Run the full suite (32 `.tcyr` suites, ~1,346 assertions) — expect `32 passed, 0 failed` |
+| `cyrius test tests/tcyr` | Run the full suite (32 `.tcyr` suites, ~1,346 assertions) — expect `32 passed, 0 failed` |
 | `cyrius bench tests/sankhya.bcyr` | Run the 18 benchmarks |
 | `cyrius lint src/*.cyr` | Lint |
 | `cyrius fmt src/*.cyr` | Format |
@@ -65,7 +65,7 @@ description.
    serial round-trips, and adversarial/never-panic inputs.
 6. Cross-check the module's outputs against its `rust-old/` counterpart.
 7. Update the README module table.
-8. Verify: `cyrius build src/main.cyr build/sankhya && cyrius tests tests/tcyr`.
+8. Verify: `cyrius build src/main.cyr build/sankhya && cyrius test tests/tcyr`.
 
 ## Cross-checking against Rust
 
@@ -100,7 +100,7 @@ true optional gating is a backlog item pending Cyrius support.
 
 ## Testing
 
-- Full suite in `tests/tcyr/` (run via `cyrius tests tests/tcyr`) — per-module,
+- Full suite in `tests/tcyr/` (run via `cyrius test tests/tcyr`) — per-module,
   serial round-trip, integration, and adversarial/never-panic coverage
 - Foundation checks in `tests/foundation.tcyr`
 - Smoke test in `src/main.cyr` (run via `./build/sankhya`)

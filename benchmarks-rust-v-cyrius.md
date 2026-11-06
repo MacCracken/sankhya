@@ -47,7 +47,7 @@ derive macro is replaced by an explicit, hand-written JSON layer — one
 |---|-------------|---------------|
 | Unit of measure | `#[test]` functions | `.tcyr` suites / assertions |
 | Count | 418 `#[test]` | 32 suites, ~1,346 assertions |
-| Runner | `cargo test` | `cyrius tests tests/tcyr` → `32 passed, 0 failed` |
+| Runner | `cargo test` | `cyrius test tests/tcyr` → `32 passed, 0 failed` |
 
 Cyrius assertion breakdown (`tests/tcyr/` plus `tests/foundation.tcyr`):
 

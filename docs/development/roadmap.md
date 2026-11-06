@@ -1,9 +1,9 @@
 # Development Roadmap
 
-> **Status**: v3.0.3 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.0.3 | **Compiler**: cyrius 6.6.20
+> **Status**: v3.1.0 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.1.0 | **Compiler**: cyrius 6.7.9
 
 Completed items are in [CHANGELOG.md](../../CHANGELOG.md).
-`VERSION` is the single source of truth (`3.0.3`); `cyrius.cyml` derives it via `${file:VERSION}`.
+`VERSION` is the single source of truth (`3.1.0`); `cyrius.cyml` derives it via `${file:VERSION}`.
 
 ## Completed in 3.0.0 — Rust → Cyrius port
 
@@ -28,7 +28,7 @@ at `rust-old/` as the parity oracle.
       parity); `net`/`http` resolve itihas's bundled hoosh client transitively
 - [x] **32 `.tcyr` suites**, ~1,346 assertions — per-module 729, serial round-trip 260,
       integration 198, adversarial/never-panic 159, foundation 22.
-      Run `cyrius tests tests/tcyr` → `32 passed, 0 failed`
+      Run `cyrius test tests/tcyr` → `32 passed, 0 failed`
 - [x] **18 benchmarks** in `tests/sankhya.bcyr` — all 16 Rust criterion benches + new
       coptic/aztec. Run `cyrius bench tests/sankhya.bcyr`
 - [x] Consumer bundle `dist/sankhya.cyr` via `cyrius distlib`
@@ -58,7 +58,7 @@ at `rust-old/` as the parity oracle.
 
 ## Deferred / Backlog
 
-**Recorded at 3.0.3 (2026-11-05):**
+**Recorded at 3.0.3 and 3.1.0 (2026-11-05):**
 - `cyrius audit` exits 1, with the same counts as at 3.0.2, and CI does not run it. It fails on any of three
   steps: fmt (`src/gregorian.cyr`, `src/epoch.cyr` and `tests/tcyr/serial_greek.tcyr`, whitespace only), lint
   (52 warnings, including the line-length ones CI exempts) and docs (795 undocumented public fns). Formatting
@@ -67,8 +67,9 @@ at `rust-old/` as the parity oracle.
   so itihas loses only its non-positive-size message; both exit 134. The fix is upstream (a prefixed name).
 - `src/` calls `f64_asin` / `f64_acos` / `f64_atan2` 13 times. ganita marks them "deprecated alias, migration
   window only" in a comment (no `#deprecated` yet); `ganita_f64_*` are the lasting names.
-- The next pin is on the 6.7 line, where the siblings already are: varna 2.5.1, itihas 2.6.2 and avatara 2.16.1
-  pin 6.7.18. Read `ecosystem-migration.md` in the cyrius repo first; 6.7.x is a language minor.
+- The next pin is 6.7.18, where the siblings' newest tags are: varna 2.5.1, itihas 2.6.2 and avatara 2.16.1. Read
+  the 6.7.10–6.7.18 sections of `ecosystem-migration.md` in the cyrius repo first. 6.7.x releases change what
+  existing code computes, not only what compiles, so sweep `src/` for each construct they name.
 
 
 Post-port work, none of it blocking. Sequenced most-consequential first; each is
@@ -91,7 +92,7 @@ its own work-loop cycle behind the cleanliness + benchmark gates.
 
 | Gate | Command | Expected |
 |------|---------|----------|
-| Tests | `cyrius tests tests/tcyr` | `32 passed, 0 failed` (~1,346 assertions) |
+| Tests | `cyrius test tests/tcyr` | `32 passed, 0 failed` (~1,346 assertions) |
 | Benchmarks | `cyrius bench tests/sankhya.bcyr` | 18 benches; recorded via `scripts/bench-history.sh` |
-| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.0.3 (cyrius port)` |
+| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.1.0 (cyrius port)` |
 | Bundle | `cyrius distlib` | regenerates `dist/sankhya.cyr` |

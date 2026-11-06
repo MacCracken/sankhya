@@ -8,7 +8,7 @@
 # Self-contained (NO include lines). Relies on:
 #   * serial_util.cyr — sk_json_int / sk_json_str / sk_json_sep / sk_json_parse
 #   * roman.cyr       — romannum_new / romannum_value / romannum_text (RN_* offsets)
-#   * bayan (folded stdlib) — bayan_json_v_obj_get / _int / _str value-tree accessors
+#   * bayan (folded stdlib) — bayan_json_v_obj_get_by_cstr / _int / _str value-tree accessors
 #
 # There are NO enums, floats, bools, nested structs, arrays, or Options among
 # roman's serde types, so this is a plain {int, string} record.
@@ -30,8 +30,8 @@ fn romannum_to_json(p) {
 # Reconstruct a RomanNumeral from a parsed bayan value-tree node `v`.
 #must_use
 fn romannum_from_json(v) {
-    var value = bayan_json_v_int(bayan_json_v_obj_get(v, "value"));
-    var text = bayan_json_v_str(bayan_json_v_obj_get(v, "text"));
+    var value = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "value"));
+    var text = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "text"));
     return romannum_new(value, text);
 }
 

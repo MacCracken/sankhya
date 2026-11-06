@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.3] — 2026-11-05
+
+**cyrius 6.6.11 → 6.6.20, with the sibling deps at the tags that pin it. Sidereal time and the
+obliquity of the ecliptic now match Rust bit for bit.** 32 suites and `tests/foundation.tcyr`:
+1,368 assertions, 0 failed.
+
+### Changed
+
+- **Toolchain pin `cyrius` 6.6.11 → 6.6.20.** Nothing in 6.6.12–6.6.20 turned into a compile
+  error here: no declared `sizeof` / `mulh64` / `fncallN` / `f64_le` / `f64_ge` / `f64_trunc`, and
+  no function-like `#define`. The source changes below remove warnings.
+- **Sibling deps move to the tags that pin 6.6.20:** varna 2.4.1 → 2.4.3, itihas 2.5.0 → 2.5.2,
+  avatara 2.14.8 → 2.15.1. These are not the newest tags; varna 2.5.x, itihas 2.6.x and avatara
+  2.16.x pin the 6.7 line. Each `lib/*.cyr` is byte-equal to its tag's `dist/` bundle.
+- **`cyrius.lock` regenerated from an empty `lib/`** (42 deps, 3 commit pins, a `cyrius 6.6.20`
+  row). A clean checkout leaves it byte-identical, and `cyrius deps --verify` reports 42 verified.
+- **`dist/sankhya.cyr` opens with a compile-verified `# Requires` block, and `dist/sankhya.deps`
+  shrinks from 20 stdlib leaves to 2 (`math`, `ganita`).** Both are cyrius 6.6.18+ `distlib`
+  output. The sidecar now names only what the bundle needs beyond its named deps; the rest arrive
+  through the varna, itihas and avatara sidecars.
+  ⚠ **Consumer note:** a project that calls a stdlib family itself and got it only through
+  sankhya's old sidecar must now declare it in its own `[deps] stdlib`. The CLI prints a `hint:`
+  naming the leaf. A scratch consumer with a bare `[deps.sankhya]` and no stdlib list resolves,
+  compiles and runs.
+- **`bayan_json_v_obj_get` → `bayan_json_v_obj_get_by_cstr`** at all 142 call sites (14 serial
+  modules and `tests/tcyr/integration.tcyr`). bayan deprecated the old name, which added 140
+  warnings to every build. Every key is a literal and the old name is a one-line wrapper around
+  the new one, so behaviour is unchanged.
+- **`f64_tan` is gone from `f64_util`; ganita's is used.** ganita 1.2.11 began exporting `f64_tan`,
+  and from cyrius 6.6.20 a redefined fn binds every call to its last definition, so a consumer's
+  include order would have chosen which tan ran. The module's rule is that only what neither the
+  stdlib nor ganita provides lives there. `f64_tan` still resolves for consumers, because `ganita`
+  is in the sidecar. ganita's is an fdlibm port and closer to Rust's libm-backed `f64::tan`: over
+  17,999 angles in (−90°, 90°) it is exact against libm 96.03 % of the time with a worst case of
+  1 ulp, against 67.79 % and 2 ulp for `sin / cos`.
+- **CI, the release workflow and the docs run `cyrius lib sync` before `cyrius deps`**, the order
+  the cyrius migration guide asks for from 6.6.17. Here both orders produce a byte-identical lock.
+- **The documented dep versions are re-derived from `cyrius.lock`.** `README.md`,
+  `docs/development/state.md` and `docs/architecture/overview.md` still named varna 2.1.0, itihas
+  2.4.0 and avatara 2.9.0. ADR-006 now points at the manifest instead of naming tags. The roadmap's
+  two "Moving the cyrius pin" sections described moves already made and are removed.
+
+### Fixed
+
+- **`obliquity_of_ecliptic` and `greenwich_sidereal_time` match Rust bit for bit.** Their constants
+  come from `f64_parse`, which is correctly rounded since cyrius 6.6.13; before that some parsed one
+  ulp off. Recomputing the `rust-old/` formulas in IEEE doubles at 40 dates spaced 18,251 days apart,
+  including Rust's exact `%`, matches `obliquity_of_ecliptic` at 40 of 40 (0 of 40 before) and
+  `greenwich_sidereal_time` at 40 of 40 (3 of 40 before). The sidereal-time error reached
+  3.97e-9 hours, about 6e-8°, because `GMST_B` is multiplied by the day count. `greek_phi()` moves
+  one ulp to `1.618033988749895`, the value the Rust literal parses to.
+  ⚠ **Golden numbers:** values derived from these change too. `equatorial_to_horizontal` azimuth and
+  altitude moved by up to about 1.2e-7° in the dates tested, and ecliptic and equatorial conversions
+  by a few ulp (more near zero). Those paths use trig, so they were not checked bit for bit against
+  Rust. Calendar and numeral output did not change: a bit-level dump under both pins is identical
+  for `correlate` at 42 JDNs (full JSON, including itihas and avatara context) and for every
+  cuneiform, hieroglyphic and Greek numeral sampled. JSON float text changes only where the value did.
+
+### Performance
+
+- **Flat, with one row faster.** Interleaved A/B over 9 rounds against a 6.6.11 control built from
+  3.0.2, comparing medians: suite total −1.4 %, and every row within its ±3–5 % round-to-round
+  spread except `epoch/correlate` at −13.8 %. That gain is not attributed.
+- **`bench-history.csv` has its first rows:** the 6.6.11 control (`6.6.11@e8df3fa`) and this release.
+  This release's 18 rows carry `e8df3fa` because they were recorded before the 3.0.3 commit.
+  `benchmarks.md` is generated from them. Compare releases with the A/B above, not these
+  single-sample rows.
+
 ## [3.0.2] — 2026-09-30
 
 **cyrius 6.6.2 → 6.6.11; the CI bench is built with `CYRIUS_DCE=1` again.** No source change.

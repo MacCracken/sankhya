@@ -40,10 +40,10 @@ fn anti_to_json(p) {
 # the integer field via bayan_json_v_int.
 #must_use
 fn anti_from_json(v) {
-    var name = bayan_json_v_str(bayan_json_v_obj_get(v, "name"));
-    var period = bayan_json_v_str(bayan_json_v_obj_get(v, "period_years"));
-    var teeth = bayan_json_v_int(bayan_json_v_obj_get(v, "gear_teeth"));
-    var desc = bayan_json_v_str(bayan_json_v_obj_get(v, "description"));
+    var name = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "name"));
+    var period = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "period_years"));
+    var teeth = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "gear_teeth"));
+    var desc = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "description"));
     return anti_new(name, period, teeth, desc);
 }
 

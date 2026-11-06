@@ -61,7 +61,7 @@ fn rod_numeral_to_json(p) {
 
 #must_use
 fn rod_numeral_from_json(v) {
-    var val = bayan_json_v_int(bayan_json_v_obj_get(v, "value"));
+    var val = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "value"));
     return rod_numeral_new(val);
 }
 
@@ -137,11 +137,11 @@ fn sexagenary_year_to_json(p) {
 
 #must_use
 fn sexagenary_year_from_json(v) {
-    var stem_name = bayan_json_v_str(bayan_json_v_obj_get(v, "stem"));
+    var stem_name = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "stem"));
     var stem = heavenly_stem_from_name(stem_name);
-    var branch_name = bayan_json_v_str(bayan_json_v_obj_get(v, "branch"));
+    var branch_name = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "branch"));
     var branch = earthly_branch_from_name(branch_name);
-    var pos = bayan_json_v_int(bayan_json_v_obj_get(v, "cycle_position"));
+    var pos = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "cycle_position"));
     return sexagenary_year_new(stem, branch, pos);
 }
 

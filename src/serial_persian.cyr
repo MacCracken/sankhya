@@ -75,11 +75,11 @@ fn persian_date_to_json(p) {
 # discriminant via persian_month_from_name.
 #must_use
 fn persian_date_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
-    var mv = bayan_json_v_obj_get(v, "month");
+    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
+    var mv = bayan_json_v_obj_get_by_cstr(v, "month");
     var mname = bayan_json_v_str(mv);
     var m = persian_month_from_name(mname);
-    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return persian_date_new(y, m, d);
 }
 

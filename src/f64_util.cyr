@@ -3,8 +3,8 @@
 # Base f64 ops (f64_add/sub/mul/div/sqrt/sin/cos/atan/floor/abs/neg/lt/eq...) are
 # compiler builtins. Constants (F64_PI, F64_TAU, ...) and f64_parse/min/max/clamp
 # come from the `math` stdlib module; the extended transcendentals
-# (f64_pow/hypot/asin/acos/atan2/sinh/cosh) come from `ganita`. Only what neither
-# provides lives here.
+# (f64_pow/hypot/asin/acos/atan2/sinh/cosh/tan) come from `ganita`. Only what
+# neither provides lives here.
 
 # 1e-12 as an IEEE-754 double bit pattern (a bare hex literal → no global-init
 # cost, always valid). Used as the near-zero divisor guard in f64_fmod.
@@ -16,11 +16,6 @@ var EPSILON_F64 = 0x3D719799812DEA11;
 # Julian year = 365.25 days = 1461/4 (both exact in f64).
 var J2000_JDN = f64_from(2451545);
 var JULIAN_YEAR_DAYS = f64_div(f64_from(1461), f64_from(4));
-
-# tan(x) = sin(x) / cos(x)  — neither the builtins nor ganita expose tan.
-fn f64_tan(x) {
-    return f64_div(f64_sin(x), f64_cos(x));
-}
 
 # fmod(x, y) via floor: x - floor(x/y)*y. Returns 0 if |y| < EPSILON.
 # Note: this is floor-based (like hisab); for angle normalization the callers

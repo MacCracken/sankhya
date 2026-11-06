@@ -93,8 +93,8 @@ fn celestial_coord_to_json(p) {
 
 #must_use
 fn celestial_coord_from_json(v) {
-    var ra = bayan_json_v_float(bayan_json_v_obj_get(v, "ra_hours"));
-    var dec = bayan_json_v_float(bayan_json_v_obj_get(v, "dec_degrees"));
+    var ra = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "ra_hours"));
+    var dec = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "dec_degrees"));
     return celestial_new(ra, dec);
 }
 
@@ -122,8 +122,8 @@ fn ecliptic_coord_to_json(p) {
 
 #must_use
 fn ecliptic_coord_from_json(v) {
-    var lon = bayan_json_v_float(bayan_json_v_obj_get(v, "longitude"));
-    var lat = bayan_json_v_float(bayan_json_v_obj_get(v, "latitude"));
+    var lon = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "longitude"));
+    var lat = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "latitude"));
     return ecliptic_new(lon, lat);
 }
 
@@ -151,8 +151,8 @@ fn horizontal_coord_to_json(p) {
 
 #must_use
 fn horizontal_coord_from_json(v) {
-    var az = bayan_json_v_float(bayan_json_v_obj_get(v, "azimuth"));
-    var alt = bayan_json_v_float(bayan_json_v_obj_get(v, "altitude"));
+    var az = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "azimuth"));
+    var alt = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "altitude"));
     return horizontal_new(az, alt);
 }
 
@@ -189,12 +189,12 @@ fn star_to_json(p) {
 
 #must_use
 fn star_from_json(v) {
-    var nm = bayan_json_v_str(bayan_json_v_obj_get(v, "name"));
-    var by = bayan_json_v_str(bayan_json_v_obj_get(v, "bayer"));
-    var co = bayan_json_v_str(bayan_json_v_obj_get(v, "constellation"));
-    var ra = bayan_json_v_float(bayan_json_v_obj_get(v, "ra_j2000"));
-    var dec = bayan_json_v_float(bayan_json_v_obj_get(v, "dec_j2000"));
-    var mag = bayan_json_v_float(bayan_json_v_obj_get(v, "visual_magnitude"));
+    var nm = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "name"));
+    var by = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "bayer"));
+    var co = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "constellation"));
+    var ra = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "ra_j2000"));
+    var dec = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "dec_j2000"));
+    var mag = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "visual_magnitude"));
     return star_rec_new(nm, by, co, ra, dec, mag);
 }
 
@@ -274,9 +274,9 @@ fn heliacal_event_to_json(p) {
 
 #must_use
 fn heliacal_event_from_json(v) {
-    var jdn = bayan_json_v_float(bayan_json_v_obj_get(v, "jdn"));
-    var sncode = starname_from_name(str_cstr(bayan_json_v_str(bayan_json_v_obj_get(v, "star"))));
-    var etcode = heltype_from_name(str_cstr(bayan_json_v_str(bayan_json_v_obj_get(v, "event_type"))));
+    var jdn = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "jdn"));
+    var sncode = starname_from_name(str_cstr(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "star"))));
+    var etcode = heltype_from_name(str_cstr(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "event_type"))));
     return heliacal_event_new(jdn, sncode, etcode);
 }
 
@@ -306,7 +306,7 @@ fn alignmenttarget_to_json(target, starcode) {
 #must_use
 fn alignmenttarget_from_json(v) {
     if (bayan_json_v_is_obj(v) == 1) {
-        var svnode = bayan_json_v_obj_get(v, "StarRising");
+        var svnode = bayan_json_v_obj_get_by_cstr(v, "StarRising");
         var scode = starname_from_name(str_cstr(bayan_json_v_str(svnode)));
         return (AT_STAR_RISING, scode);
     }
@@ -343,10 +343,10 @@ fn alignment_result_to_json(p) {
 
 #must_use
 fn alignment_result_from_json(v) {
-    var tnode = bayan_json_v_obj_get(v, "target");
+    var tnode = bayan_json_v_obj_get_by_cstr(v, "target");
     var tcode, scode = alignmenttarget_from_json(tnode);
-    var az = bayan_json_v_float(bayan_json_v_obj_get(v, "azimuth"));
-    var dev = bayan_json_v_float(bayan_json_v_obj_get(v, "deviation"));
+    var az = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "azimuth"));
+    var dev = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "deviation"));
     return alignment_result_new(tcode, scode, az, dev);
 }
 

@@ -237,11 +237,11 @@ fn ep_lc_to_json(p) {
 }
 #must_use
 fn ep_lc_from_json(v) {
-    var b = bayan_json_v_int(bayan_json_v_obj_get(v, "baktun"));
-    var k = bayan_json_v_int(bayan_json_v_obj_get(v, "katun"));
-    var t = bayan_json_v_int(bayan_json_v_obj_get(v, "tun"));
-    var u = bayan_json_v_int(bayan_json_v_obj_get(v, "uinal"));
-    var n = bayan_json_v_int(bayan_json_v_obj_get(v, "kin"));
+    var b = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "baktun"));
+    var k = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "katun"));
+    var t = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "tun"));
+    var u = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "uinal"));
+    var n = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "kin"));
     return longcount_make(b, k, t, u, n);
 }
 #must_use
@@ -267,8 +267,8 @@ fn ep_tzolkin_to_json(p) {
 }
 #must_use
 fn ep_tzolkin_from_json(v) {
-    var num = bayan_json_v_int(bayan_json_v_obj_get(v, "number"));
-    var sign = ep_daysign_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "day_sign")));
+    var num = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "number"));
+    var sign = ep_daysign_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "day_sign")));
     return tzolkin_make(num, sign);
 }
 #must_use
@@ -291,8 +291,8 @@ fn ep_haab_to_json(p) {
 }
 #must_use
 fn ep_haab_from_json(v) {
-    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
-    var m = ep_haabmonth_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
+    var m = ep_haabmonth_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
     return haab_make(d, m);
 }
 #must_use
@@ -317,9 +317,9 @@ fn ep_greg_to_json(p) {
 }
 #must_use
 fn ep_greg_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
-    var m = ep_greg_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
-    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
+    var m = ep_greg_month_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return gregorian_date_new(y, m, d);
 }
 #must_use
@@ -345,9 +345,9 @@ fn ep_coptic_to_json(p) {
 }
 #must_use
 fn ep_coptic_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
-    var m = ep_coptic_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
-    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
+    var m = ep_coptic_month_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return coptic_date_new(y, m, d);
 }
 #must_use
@@ -373,9 +373,9 @@ fn ep_persian_to_json(p) {
 }
 #must_use
 fn ep_persian_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
-    var m = ep_persian_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
-    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
+    var m = ep_persian_month_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return persian_date_new(y, m, d);
 }
 #must_use
@@ -401,9 +401,9 @@ fn ep_hebrew_to_json(p) {
 }
 #must_use
 fn ep_hebrew_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
-    var m = ep_hebrew_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
-    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
+    var m = ep_hebrew_month_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return hebrewdate_new(y, m, d);
 }
 #must_use
@@ -429,9 +429,9 @@ fn ep_hijri_to_json(p) {
 }
 #must_use
 fn ep_hijri_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
-    var m = ep_hijri_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
-    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
+    var m = ep_hijri_month_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return hijri_date_new(y, m, d);
 }
 #must_use
@@ -457,9 +457,9 @@ fn ep_sex_to_json(p) {
 }
 #must_use
 fn ep_sex_from_json(v) {
-    var stem = ep_stem_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "stem")));
-    var branch = ep_branch_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "branch")));
-    var pos = bayan_json_v_int(bayan_json_v_obj_get(v, "cycle_position"));
+    var stem = ep_stem_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "stem")));
+    var branch = ep_branch_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "branch")));
+    var pos = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "cycle_position"));
     return sexagenary_year_new(stem, branch, pos);
 }
 #must_use
@@ -483,8 +483,8 @@ fn ep_tonal_to_json(p) {
 }
 #must_use
 fn ep_tonal_from_json(v) {
-    var num = bayan_json_v_int(bayan_json_v_obj_get(v, "number"));
-    var sign = ep_tonal_sign_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "sign")));
+    var num = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "number"));
+    var sign = ep_tonal_sign_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "sign")));
     return tonalpohualli_new(num, sign);
 }
 #must_use
@@ -507,8 +507,8 @@ fn ep_xiuh_to_json(p) {
 }
 #must_use
 fn ep_xiuh_from_json(v) {
-    var d = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
-    var m = ep_xiuh_month_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "month")));
+    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
+    var m = ep_xiuh_month_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
     return xiuhpohualli_new(d, m);
 }
 #must_use
@@ -613,12 +613,12 @@ fn sages_tradition_to_json(p) {
 }
 #must_use
 fn sages_tradition_from_json(v) {
-    var civ = civilization_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "civilization")));
-    var group = bayan_json_v_str(bayan_json_v_obj_get(v, "group_name"));
-    var names = _ep_parse_str_arr(bayan_json_v_obj_get(v, "sage_names"));
-    var texts = _ep_parse_str_arr(bayan_json_v_obj_get(v, "source_texts"));
-    var stars = bayan_json_v_str(bayan_json_v_obj_get(v, "associated_stars"));
-    var narr = bayan_json_v_str(bayan_json_v_obj_get(v, "catastrophe_narrative"));
+    var civ = civilization_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "civilization")));
+    var group = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "group_name"));
+    var names = _ep_parse_str_arr(bayan_json_v_obj_get_by_cstr(v, "sage_names"));
+    var texts = _ep_parse_str_arr(bayan_json_v_obj_get_by_cstr(v, "source_texts"));
+    var stars = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "associated_stars"));
+    var narr = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "catastrophe_narrative"));
     return sgt_new(civ, group, names, texts, stars, narr);
 }
 #must_use
@@ -653,10 +653,10 @@ fn age_position_to_json(p) {
 }
 #must_use
 fn age_position_from_json(v) {
-    var age = precessionalage_from_name(bayan_json_v_str(bayan_json_v_obj_get(v, "age")));
-    var years = bayan_json_v_float(bayan_json_v_obj_get(v, "years_into_age"));
-    var fraction = bayan_json_v_float(bayan_json_v_obj_get(v, "fraction"));
-    var lon = bayan_json_v_float(bayan_json_v_obj_get(v, "vernal_point_longitude"));
+    var age = precessionalage_from_name(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "age")));
+    var years = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "years_into_age"));
+    var fraction = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "fraction"));
+    var lon = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "vernal_point_longitude"));
     return ap_new(age, years, fraction, lon);
 }
 #must_use
@@ -697,8 +697,8 @@ fn cycle_alignment_to_json(p) {
 }
 #must_use
 fn cycle_alignment_from_json(v) {
-    var jdn = bayan_json_v_float(bayan_json_v_obj_get(v, "jdn"));
-    var arr = bayan_json_v_obj_get(v, "cycles");
+    var jdn = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "jdn"));
+    var arr = bayan_json_v_obj_get_by_cstr(v, "cycles");
     var cyc = vec_new();
     var n = bayan_json_v_arr_len(arr);
     var i = 0;
@@ -706,7 +706,7 @@ fn cycle_alignment_from_json(v) {
         vec_push(cyc, cyclename_from_name(bayan_json_v_str(bayan_json_v_arr_get(arr, i))));
         i = i + 1;
     }
-    var maxres = bayan_json_v_float(bayan_json_v_obj_get(v, "max_residual_days"));
+    var maxres = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "max_residual_days"));
     return calgn_new(jdn, cyc, maxres);
 }
 #must_use
@@ -906,32 +906,32 @@ fn _ep_opt_from_json(node, kind) {
 #must_use
 fn multi_calendar_date_from_json(v) {
     var p = alloc(MCD_SIZE);
-    store64(p + MCD_JDN, bayan_json_v_float(bayan_json_v_obj_get(v, "jdn")));
-    store64(p + MCD_MAYAN_LC, _ep_opt_from_json(bayan_json_v_obj_get(v, "mayan_long_count"), 0));
-    store64(p + MCD_TZOLKIN, _ep_opt_from_json(bayan_json_v_obj_get(v, "tzolkin"), 1));
-    store64(p + MCD_HAAB, _ep_opt_from_json(bayan_json_v_obj_get(v, "haab"), 2));
+    store64(p + MCD_JDN, bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "jdn")));
+    store64(p + MCD_MAYAN_LC, _ep_opt_from_json(bayan_json_v_obj_get_by_cstr(v, "mayan_long_count"), 0));
+    store64(p + MCD_TZOLKIN, _ep_opt_from_json(bayan_json_v_obj_get_by_cstr(v, "tzolkin"), 1));
+    store64(p + MCD_HAAB, _ep_opt_from_json(bayan_json_v_obj_get_by_cstr(v, "haab"), 2));
 
-    var spn = bayan_json_v_obj_get(v, "sothic_position");
+    var spn = bayan_json_v_obj_get_by_cstr(v, "sothic_position");
     var spc = bayan_json_v_int(bayan_json_v_arr_get(spn, 0));
     var spy = bayan_json_v_int(bayan_json_v_arr_get(spn, 1));
     var spd = bayan_json_v_float(bayan_json_v_arr_get(spn, 2));
     store64(p + MCD_SOTHIC, sothicpos_new(spc, spy, spd));
 
-    store64(p + MCD_AGE, age_position_from_json(bayan_json_v_obj_get(v, "precessional_age")));
-    store64(p + MCD_JULIAN_YEAR, bayan_json_v_float(bayan_json_v_obj_get(v, "julian_year")));
-    store64(p + MCD_GREGORIAN, ep_greg_from_json(bayan_json_v_obj_get(v, "gregorian")));
-    store64(p + MCD_COPTIC, ep_coptic_from_json(bayan_json_v_obj_get(v, "coptic")));
-    store64(p + MCD_PERSIAN, ep_persian_from_json(bayan_json_v_obj_get(v, "persian")));
-    store64(p + MCD_HEBREW, ep_hebrew_from_json(bayan_json_v_obj_get(v, "hebrew")));
-    store64(p + MCD_CHINESE, ep_sex_from_json(bayan_json_v_obj_get(v, "chinese_sexagenary")));
-    store64(p + MCD_TONAL, ep_tonal_from_json(bayan_json_v_obj_get(v, "aztec_tonalpohualli")));
-    store64(p + MCD_XIUH, ep_xiuh_from_json(bayan_json_v_obj_get(v, "aztec_xiuhpohualli")));
+    store64(p + MCD_AGE, age_position_from_json(bayan_json_v_obj_get_by_cstr(v, "precessional_age")));
+    store64(p + MCD_JULIAN_YEAR, bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "julian_year")));
+    store64(p + MCD_GREGORIAN, ep_greg_from_json(bayan_json_v_obj_get_by_cstr(v, "gregorian")));
+    store64(p + MCD_COPTIC, ep_coptic_from_json(bayan_json_v_obj_get_by_cstr(v, "coptic")));
+    store64(p + MCD_PERSIAN, ep_persian_from_json(bayan_json_v_obj_get_by_cstr(v, "persian")));
+    store64(p + MCD_HEBREW, ep_hebrew_from_json(bayan_json_v_obj_get_by_cstr(v, "hebrew")));
+    store64(p + MCD_CHINESE, ep_sex_from_json(bayan_json_v_obj_get_by_cstr(v, "chinese_sexagenary")));
+    store64(p + MCD_TONAL, ep_tonal_from_json(bayan_json_v_obj_get_by_cstr(v, "aztec_tonalpohualli")));
+    store64(p + MCD_XIUH, ep_xiuh_from_json(bayan_json_v_obj_get_by_cstr(v, "aztec_xiuhpohualli")));
 
     # itihas/avatara arrays: recover element nodes so the count round-trips.
-    store64(p + MCD_ERAS, _ep_parse_node_arr(bayan_json_v_obj_get(v, "eras")));
-    store64(p + MCD_CIVS, _ep_parse_node_arr(bayan_json_v_obj_get(v, "civilizations")));
-    store64(p + MCD_EVENTS, _ep_parse_node_arr(bayan_json_v_obj_get(v, "events")));
-    store64(p + MCD_SAPTARISHI, _ep_parse_node_arr(bayan_json_v_obj_get(v, "saptarishi_profiles")));
+    store64(p + MCD_ERAS, _ep_parse_node_arr(bayan_json_v_obj_get_by_cstr(v, "eras")));
+    store64(p + MCD_CIVS, _ep_parse_node_arr(bayan_json_v_obj_get_by_cstr(v, "civilizations")));
+    store64(p + MCD_EVENTS, _ep_parse_node_arr(bayan_json_v_obj_get_by_cstr(v, "events")));
+    store64(p + MCD_SAPTARISHI, _ep_parse_node_arr(bayan_json_v_obj_get_by_cstr(v, "saptarishi_profiles")));
     return p;
 }
 
@@ -1025,19 +1025,19 @@ fn calendar_date_to_json(p) {
 
 #must_use
 fn calendar_date_from_json(v) {
-    var jn = bayan_json_v_obj_get(v, "Jdn");
+    var jn = bayan_json_v_obj_get_by_cstr(v, "Jdn");
     if (jn != 0) { return caldate_jdn(bayan_json_v_float(jn)); }
-    var gn = bayan_json_v_obj_get(v, "Gregorian");
+    var gn = bayan_json_v_obj_get_by_cstr(v, "Gregorian");
     if (gn != 0) { return caldate_gregorian(ep_greg_from_json(gn)); }
-    var cn = bayan_json_v_obj_get(v, "Coptic");
+    var cn = bayan_json_v_obj_get_by_cstr(v, "Coptic");
     if (cn != 0) { return caldate_coptic(ep_coptic_from_json(cn)); }
-    var pn = bayan_json_v_obj_get(v, "Persian");
+    var pn = bayan_json_v_obj_get_by_cstr(v, "Persian");
     if (pn != 0) { return caldate_persian(ep_persian_from_json(pn)); }
-    var hn = bayan_json_v_obj_get(v, "Hebrew");
+    var hn = bayan_json_v_obj_get_by_cstr(v, "Hebrew");
     if (hn != 0) { return caldate_hebrew(ep_hebrew_from_json(hn)); }
-    var jn2 = bayan_json_v_obj_get(v, "Hijri");
+    var jn2 = bayan_json_v_obj_get_by_cstr(v, "Hijri");
     if (jn2 != 0) { return caldate_hijri(ep_hijri_from_json(jn2)); }
-    var mn = bayan_json_v_obj_get(v, "MayanLongCount");
+    var mn = bayan_json_v_obj_get_by_cstr(v, "MayanLongCount");
     if (mn != 0) { return caldate_mayan_long_count(ep_lc_from_json(mn)); }
     return 0;
 }

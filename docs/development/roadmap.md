@@ -1,9 +1,9 @@
 # Development Roadmap
 
-> **Status**: v3.0.2 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.0.2 | **Compiler**: cyrius 6.6.11
+> **Status**: v3.0.3 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.0.3 | **Compiler**: cyrius 6.6.20
 
 Completed items are in [CHANGELOG.md](../../CHANGELOG.md).
-`VERSION` is the single source of truth (`3.0.2`); `cyrius.cyml` derives it via `${file:VERSION}`.
+`VERSION` is the single source of truth (`3.0.3`); `cyrius.cyml` derives it via `${file:VERSION}`.
 
 ## Completed in 3.0.0 — Rust → Cyrius port
 
@@ -56,29 +56,19 @@ at `rust-old/` as the parity oracle.
 | `error.rs` | `error.cyr` | — | Complete |
 | `lib.rs` | `lib.cyr` + `main.cyr` | — | Complete |
 
-## Moving the cyrius pin to 6.6.5
-
-Nothing breaks at this bump. cyrius 6.6.5 is not tagged yet, and nothing below
-can land against the pin until it is. The pin is 6.6.2 today, so the move also
-crosses 6.6.3, where the one item below was fixed.
-
-- [ ] Restore `CYRIUS_DCE=1` on the *Benchmarks* step and delete the no-DCE
-      workaround comment (`.github/workflows/ci.yml:81-87`). The bench segfault
-      was fixed in cyrius 6.6.3: DCE shrank the code after the data segment's
-      address had been baked in, so global initialisation stored into unmapped
-      memory. See the cyrius CHANGELOG [6.6.3] entry "`CYRIUS_DCE=1` emitted a
-      PT_LOAD the code was never patched against".
-- [ ] At the bump, re-run `cyrius deps` — the aarch64 syscall peer moved
-      SYS_UNLINKAT 35 → 263, so an un-re-vendored peer's sys_unlink would run
-      nanosleep.
-
 ## Deferred / Backlog
 
-**Recorded by cyrius 6.6.12 / 6.6.13 (2026-10-02):**
-- README and CLAUDE.md name varna 2.1.0 / itihas 2.4.0 / avatara 2.9.0, while the 3.0.2 lock pins 2.4.1 /
-  2.5.0 / 2.14.8 — re-derive the documented versions from `cyrius.lock`.
-- At the cyrius 6.6.13 pin bump: `f64_parse` is correctly rounded (I4), so parsed values can move by up to
-  2 ulp — run the full CI and re-baseline any golden numeric output; and re-vendor `lib/math.cyr` with `cyrius deps` in the same commit — 6.6.13 made `f64_le` / `f64_ge` / `f64_trunc` compiler builtins (reserved names), and a pre-6.6.13 vendored copy still defines them (`reserved keyword`).
+**Recorded at 3.0.3 (2026-11-05):**
+- `cyrius audit` exits 1, with the same counts as at 3.0.2, and CI does not run it. It fails on any of three
+  steps: fmt (`src/gregorian.cyr`, `src/epoch.cyr` and `tests/tcyr/serial_greek.tcyr`, whitespace only), lint
+  (52 warnings, including the line-length ones CI exempts) and docs (795 undocumented public fns). Formatting
+  alone does not turn it green.
+- `xalloc` is defined by both the itihas and avatara bundles. Since cyrius 6.6.20 every call binds to avatara's,
+  so itihas loses only its non-positive-size message; both exit 134. The fix is upstream (a prefixed name).
+- `src/` calls `f64_asin` / `f64_acos` / `f64_atan2` 13 times. ganita marks them "deprecated alias, migration
+  window only" in a comment (no `#deprecated` yet); `ganita_f64_*` are the lasting names.
+- The next pin is on the 6.7 line, where the siblings already are: varna 2.5.1, itihas 2.6.2 and avatara 2.16.1
+  pin 6.7.18. Read `ecosystem-migration.md` in the cyrius repo first; 6.7.x is a language minor.
 
 
 Post-port work, none of it blocking. Sequenced most-consequential first; each is
@@ -103,30 +93,5 @@ its own work-loop cycle behind the cleanliness + benchmark gates.
 |------|---------|----------|
 | Tests | `cyrius tests tests/tcyr` | `32 passed, 0 failed` (~1,346 assertions) |
 | Benchmarks | `cyrius bench tests/sankhya.bcyr` | 18 benches; recorded via `scripts/bench-history.sh` |
-| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.0.2 (cyrius port)` |
+| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.0.3 (cyrius port)` |
 | Bundle | `cyrius distlib` | regenerates `dist/sankhya.cyr` |
-
----
-
-## Moving the cyrius pin to 6.6.6
-
-**Current pin:** `cyrius = "6.6.2"` (`cyrius.cyml`).
-
-**sankhya needs the pin bump and nothing else.** It is a pure computation library —
-calendars, epoch correlation, archaeoastronomy — and it does no file I/O at all:
-zero `sys_open` / `file_open` / `file_write_all` / `file_read_all` / `file_exists`
-call sites in `src/` or `programs/`, so the Windows `O_APPEND` / `O_TRUNC` data
-corruption fixed in 6.6.6 cannot reach it. CI is `ubuntu-latest` only, with no
-`CYRIUS_TARGET_WIN` guard anywhere in the tree.
-
-Everything 6.6.6 turns into a new compile error was checked and is absent:
-0 structs (so no different-struct-copy and no by-value deep-copy site), 0
-`async fn`, 0 `operator` fns, 0 `ret2` / `rethi`, no SIMD intrinsics, no
-`: cstring` params. 153 globals, **none** redeclared. No `var` inside a top-level
-block. No own `vec_*` definitions, so `assert.cyr`'s new transitive `vec.cyr`
-include cannot collide with the 35 assert call sites. No raw `SYS_STATFS`. `lib/`
-holds no symlinks and `cyrius.lock` is writable, so 6.6.6's fail-hard
-`cyrius deps` / `publish` changes nothing.
-
-After bumping: `cyrius tests tests/tcyr` (expect the usual 32 passed / 0 failed)
-and `cyrius distlib` to regenerate `dist/sankhya.cyr` under the new compiler.

@@ -86,8 +86,8 @@ fn babnum_to_json(p) {
 # Reconstruct a BabylonianNumeral from a parsed bayan value-tree node `v`.
 #must_use
 fn babnum_from_json(v) {
-    var tens = bayan_json_v_int(bayan_json_v_obj_get(v, "tens"));
-    var units = bayan_json_v_int(bayan_json_v_obj_get(v, "units"));
+    var tens = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "tens"));
+    var units = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "units"));
     return babnum_new(tens, units);
 }
 
@@ -124,10 +124,10 @@ fn babdate_to_json(p) {
 # discriminant via babmonth_from_name.
 #must_use
 fn babdate_from_json(v) {
-    var year = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
-    var mname = bayan_json_v_str(bayan_json_v_obj_get(v, "month"));
+    var year = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
+    var mname = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
     var month = babmonth_from_name(mname);
-    var day = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return babdate_new(year, month, day);
 }
 

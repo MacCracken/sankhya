@@ -47,9 +47,9 @@ fn decan_to_json(p) {
 # ecliptic_longitude via bayan_json_v_float (returns the f64 bit pattern).
 #must_use
 fn decan_from_json(v) {
-    var number = bayan_json_v_int(bayan_json_v_obj_get(v, "number"));
-    var name = bayan_json_v_str(bayan_json_v_obj_get(v, "name"));
-    var lon = bayan_json_v_float(bayan_json_v_obj_get(v, "ecliptic_longitude"));
+    var number = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "number"));
+    var name = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "name"));
+    var lon = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "ecliptic_longitude"));
     return decan_new(number, name, lon);
 }
 

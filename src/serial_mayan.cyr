@@ -76,9 +76,9 @@ fn mayan_numeral_to_json(p) {
 }
 #must_use
 fn mayan_numeral_from_json(v) {
-    var dots = bayan_json_v_int(bayan_json_v_obj_get(v, "dots"));
-    var bars = bayan_json_v_int(bayan_json_v_obj_get(v, "bars"));
-    var shell = bayan_json_v_bool(bayan_json_v_obj_get(v, "shell"));
+    var dots = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "dots"));
+    var bars = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "bars"));
+    var shell = bayan_json_v_bool(bayan_json_v_obj_get_by_cstr(v, "shell"));
     return mayan_numeral_make(dots, bars, shell);
 }
 #must_use
@@ -110,11 +110,11 @@ fn longcount_to_json(p) {
 }
 #must_use
 fn longcount_from_json(v) {
-    var baktun = bayan_json_v_int(bayan_json_v_obj_get(v, "baktun"));
-    var katun = bayan_json_v_int(bayan_json_v_obj_get(v, "katun"));
-    var tun = bayan_json_v_int(bayan_json_v_obj_get(v, "tun"));
-    var uinal = bayan_json_v_int(bayan_json_v_obj_get(v, "uinal"));
-    var kin = bayan_json_v_int(bayan_json_v_obj_get(v, "kin"));
+    var baktun = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "baktun"));
+    var katun = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "katun"));
+    var tun = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "tun"));
+    var uinal = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "uinal"));
+    var kin = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "kin"));
     return longcount_make(baktun, katun, tun, uinal, kin);
 }
 #must_use
@@ -142,8 +142,8 @@ fn tzolkin_to_json(p) {
 }
 #must_use
 fn tzolkin_from_json(v) {
-    var number = bayan_json_v_int(bayan_json_v_obj_get(v, "number"));
-    var signname = bayan_json_v_str(bayan_json_v_obj_get(v, "day_sign"));
+    var number = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "number"));
+    var signname = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "day_sign"));
     var sign = daysign_from_name(signname);
     return tzolkin_make(number, sign);
 }
@@ -169,8 +169,8 @@ fn haab_to_json(p) {
 }
 #must_use
 fn haab_from_json(v) {
-    var day = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
-    var monthname = bayan_json_v_str(bayan_json_v_obj_get(v, "month"));
+    var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
+    var monthname = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
     var month = haabmonth_from_name(monthname);
     return haab_make(day, month);
 }

@@ -43,8 +43,8 @@ they powered is ported and always present.
 - Every consumer of `dist/sankhya.cyr` links the varna, itihas, and avatara bundles whether
   or not they call into them. Unreached code is removed by `CYRIUS_DCE=1` builds, so the
   runtime cost is near zero; the build-time cost is real but bounded.
-- `cyrius.cyml` must keep the sibling deps pinned by git tag (varna 2.1.0, itihas 2.4.0,
-  avatara 2.9.0) so CI resolves without local checkouts.
+- `cyrius.cyml` must keep the sibling deps pinned by git tag (the current tags are in
+  `cyrius.cyml` and `cyrius.lock`) so CI resolves without local checkouts.
 - The stdlib list carries `net` + `http` transitively, because itihas's dist bundle ships a
   hoosh HTTP client we never call.
 - **This is a deferral, not a permanent decision.** Re-introducing optional/feature-gated

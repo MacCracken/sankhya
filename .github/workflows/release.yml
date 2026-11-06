@@ -40,8 +40,8 @@ jobs:
 
       - name: Resolve dependencies
         run: |
-          cyrius deps
           cyrius lib sync
+          cyrius deps
 
       - name: Build (DCE)
         run: |

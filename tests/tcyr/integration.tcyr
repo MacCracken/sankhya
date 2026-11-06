@@ -544,8 +544,8 @@ fn skerr_to_json(e) {
     return str_builder_build(sb);
 }
 fn skerr_from_json(v) {
-    var code = bayan_json_v_int(bayan_json_v_obj_get(v, "code"));
-    var msg = bayan_json_v_str(bayan_json_v_obj_get(v, "message"));
+    var code = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "code"));
+    var msg = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "message"));
     return sk_err(code, msg);
 }
 fn skerr_eq(a, b) {

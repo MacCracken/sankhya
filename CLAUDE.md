@@ -7,8 +7,8 @@ historical calendars, and archaeoastronomy for AGNOS.
 
 - **Type**: Cyrius library (ported from Rust v2.0.0 — original preserved at `rust-old/`)
 - **License**: GPL-3.0-only
-- **Compiler**: Cyrius 6.6.11 — pinned in `cyrius.cyml` `[package].cyrius`
-- **Version**: SemVer 3.0.2 — `VERSION` at the project root is the source of truth
+- **Compiler**: Cyrius 6.6.20 — pinned in `cyrius.cyml` `[package].cyrius`
+- **Version**: SemVer 3.0.3 — `VERSION` at the project root is the source of truth
   (`cyrius.cyml` derives it via `${file:VERSION}`); do not inline the number elsewhere
 - **Consumers**: hisab (higher mathematics, as an optional companion), and the wider AGNOS
   ecosystem needing historical/ancient computations, calendar systems, or archaeoastronomy
@@ -19,7 +19,7 @@ historical calendars, and archaeoastronomy for AGNOS.
 |--------|----------|
 | `error` | `SankhyaError` codes + `SkErr {code, msg}` record (message-preserving), `sk_fail`/`sk_result_code` |
 | `util` | Euclidean `rem_euclid`/`div_euclid`/`int_abs`, string case helpers, `vec_sort` |
-| `f64_util` | `f64_tan`/`f64_fmod`/`f64_approx_eq`/NaN·Inf guards, shared `J2000_JDN`/`JULIAN_YEAR_DAYS` |
+| `f64_util` | `f64_fmod`/`f64_approx_eq`/NaN·Inf guards, shared `J2000_JDN`/`JULIAN_YEAR_DAYS` |
 | `mayan` | Vigesimal numbers, Long Count, Tzolkin, Haab, Calendar Round, Venus tables |
 | `babylonian` | Sexagesimal numbers, Saros cycle, reciprocals, Plimpton 322, Heron's sqrt |
 | `egyptian` | Unit fractions, doubling multiplication, division, stellar decans, Sothic cycle |
@@ -45,7 +45,7 @@ historical calendars, and archaeoastronomy for AGNOS.
 
 - **bayan** (folded stdlib) — JSON serialize + parse, replacing serde/serde_json (round-trip).
 - **sakshi** (folded stdlib) — structured logging, replacing tracing.
-- **math** + **ganita** (stdlib) — f64 constants/parse and extended math (pow/hypot/asin/acos/atan2).
+- **math** + **ganita** (stdlib) — f64 constants/parse and extended math (pow/hypot/tan/asin/acos/atan2).
 - **varna** (git dep, always-on) — Unicode numeral rendering (chinese/egyptian/greek/vedic/babylonian).
 - **itihas** (git dep, always-on) — `epoch` historical context (eras/civilizations/events).
 - **avatara** (git dep, always-on) — `epoch` Saptarishi archetype profiles.

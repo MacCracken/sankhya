@@ -30,13 +30,14 @@ jobs:
           echo "$HOME/.cyrius/bin" >> "$GITHUB_PATH"
 
       - name: Resolve dependencies
-        # `deps` resolves the git-tagged sibling deps (varna / itihas / avatara)
-        # declared in cyrius.cyml into lib/; `lib sync` vendors the folded stdlib
-        # modules (bayan, sakshi, math, ganita, net/http, ...) from the toolchain
-        # pin. Both are always-on — the crate ships full parity, no feature gates.
+        # `lib sync` vendors the folded stdlib modules (bayan, sakshi, math, ganita,
+        # net/http, ...) from the toolchain pin; `deps` then resolves the git-tagged
+        # sibling deps (varna / itihas / avatara) declared in cyrius.cyml into lib/.
+        # In that order (cyrius 6.6.17+). Both are always-on — the crate ships full
+        # parity, no feature gates.
         run: |
-          cyrius deps
           cyrius lib sync
+          cyrius deps
 
       - name: Lint
         # Hard gate: any non-cosmetic `warn` line fails CI. Line-length warnings

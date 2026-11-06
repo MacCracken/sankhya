@@ -5,14 +5,14 @@
 
 ## Version
 
-**3.0.2** — cyrius pin 6.6.11; the CI bench builds with `CYRIUS_DCE=1` again. The
+**3.0.3** — cyrius pin 6.6.20, and the sibling deps at the tags that pin it. The
 Rust→Cyrius port completed at 3.0.0 (2026-07-21); 3.0.1 migrated to the cyrius 6.6.x
 `Result` value form. The original Rust crate (v2.0.0, 9,857 lines across 17 files) is
 preserved at `rust-old/` as the frozen parity oracle.
 
 ## Toolchain
 
-- **Cyrius pin**: `6.6.11` (in `cyrius.cyml [package].cyrius`)
+- **Cyrius pin**: `6.6.20` (in `cyrius.cyml [package].cyrius`)
 - `VERSION` is the single source of truth; `cyrius.cyml` derives it via `${file:VERSION}`
 
 ## Source
@@ -41,9 +41,12 @@ preserved at `rust-old/` as the frozen parity oracle.
 **Benchmarks**: 18 in `tests/sankhya.bcyr` (all 16 original criterion benches + coptic +
 aztec). Run with `cyrius bench tests/sankhya.bcyr`; history in `bench-history.csv`.
 
-**Build health**: clean — no duplicate-fn or undefined-function warnings; `cyrius fmt`
-passes. Remaining lint warnings are line-length only (astro 29, epoch 6, mayan 1) from
-deeply nested f64 expressions; CI exempts line-length.
+**Build health**: the only compiler warnings are the itihas/avatara `xalloc` duplicate
+and two undefined-function warnings in the `serial_chinese` suite (it links no gregorian
+module and never reaches them). `cyrfmt --check` passes except `src/gregorian.cyr`.
+Lint warnings in `src/` are line-length only (astro 29, epoch 6, mayan 1) from deeply
+nested f64 expressions; CI exempts line-length. `cyrius audit` exits 1 on fmt, lint and
+undocumented fns, as it did at 3.0.2 (see the roadmap); CI does not run it.
 
 ## Dependencies
 
@@ -53,7 +56,7 @@ Declared in `cyrius.cyml`:
   fnptr, hashmap, math, **ganita** (extended math), **bayan** (JSON), **sakshi** (logging),
   bench, net + http (transitive, for itihas's bundled hoosh client)
 - **Sibling deps** (git-tagged, always-on — see [ADR-006](../adr/006-always-on-dependencies.md)):
-  `varna` 2.1.0, `itihas` 2.4.0, `avatara` 2.9.0
+  `varna` 2.4.3, `itihas` 2.5.2, `avatara` 2.15.1
 
 ## Consumers
 

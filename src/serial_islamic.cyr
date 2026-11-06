@@ -161,12 +161,12 @@ fn aljabr_sol_to_json(p) {
 # AlJabrSolution via aljabr_sol_new.
 #must_use
 fn aljabr_sol_from_json(v) {
-    var form_name = bayan_json_v_str(bayan_json_v_obj_get(v, "form"));
+    var form_name = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "form"));
     var form = aljabr_form_from_name(form_name);
 
     # roots array → a fresh vec of f64 bit patterns.
     var rootsv = vec_new();
-    var rarr = bayan_json_v_obj_get(v, "roots");
+    var rarr = bayan_json_v_obj_get_by_cstr(v, "roots");
     var rn = bayan_json_v_arr_len(rarr);
     var ri = 0;
     while (ri < rn) {
@@ -175,7 +175,7 @@ fn aljabr_sol_from_json(v) {
     }
 
     # coefficients array → (a, b, c).
-    var carr = bayan_json_v_obj_get(v, "coefficients");
+    var carr = bayan_json_v_obj_get_by_cstr(v, "coefficients");
     var a = bayan_json_v_float(bayan_json_v_arr_get(carr, 0));
     var b = bayan_json_v_float(bayan_json_v_arr_get(carr, 1));
     var c = bayan_json_v_float(bayan_json_v_arr_get(carr, 2));
@@ -236,10 +236,10 @@ fn hijri_date_to_json(p) {
 # Deserialize a bayan value-tree node back into a HijriDate via hijri_date_new.
 #must_use
 fn hijri_date_from_json(v) {
-    var year = bayan_json_v_int(bayan_json_v_obj_get(v, "year"));
-    var month_name = bayan_json_v_str(bayan_json_v_obj_get(v, "month"));
+    var year = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
+    var month_name = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
     var month = hijri_month_from_name(month_name);
-    var day = bayan_json_v_int(bayan_json_v_obj_get(v, "day"));
+    var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return hijri_date_new(year, month, day);
 }
 

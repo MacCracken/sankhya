@@ -6,12 +6,14 @@ include "src/f64_util.cyr"
 include "src/logging.cyr"
 include "src/greek.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 var TOL_1E15 = 0;
 var TOL_1E10 = 0;
 var TOL_1E6 = 0;
 
+# Parse the f64 tolerances this suite compares against (call after alloc_init).
 fn tols_init() {
     TOL_1E15 = f64_parse("0.000000000000001");
     TOL_1E10 = f64_parse("0.0000000001");
@@ -19,6 +21,7 @@ fn tols_init() {
     return 0;
 }
 
+# Run every greek test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     tols_init();
@@ -124,6 +127,25 @@ fn main() {
     # ---- logging init does not crash ----
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs ----
+    # fibonacci_ratio stays finite past n = 1474 (Inf at 1475, NaN beyond, before the clamp).
+    var fr1474 = fibonacci_ratio(1474);
+    assert_eq(fibonacci_ratio(1475), fr1474, "fibonacci_ratio(1475) = the n=1474 value");
+    assert_eq(fibonacci_ratio(1099511627776), fr1474, "fibonacci_ratio(2^40) clamps, finite, fast");
+    assert_eq(f64_is_finite(fr1474), 1, "fibonacci_ratio(1474) finite");
+    # gcd / lcm on magnitudes (Rust u64); i64::MIN with -1 no longer traps.
+    assert_eq(greek_gcd(4, 0 - 6), 2, "gcd(4, -6) = 2");
+    assert_eq(greek_gcd(0 - 4, 6), 2, "gcd(-4, 6) = 2");
+    assert_eq(greek_gcd(0x7FFFFFFFFFFFFFFF + 1, 0 - 1), 1, "gcd(i64::MIN, -1) = 1, no trap");
+    assert_eq(greek_lcm(0 - 4, 6), 12, "lcm(-4, 6) = 12");
+    # A sieve too large for the heap is an empty vec, not a write through a 0 pointer.
+    assert_eq(vec_len(sieve(4611686018427387904)), 0, "sieve(2^62) -> empty (alloc fails)");
+    # varna >= 2.x maps the episemon letters, which varna 1.0 (the Rust oracle's) did not:
+    # stigma 6 + koppa 90 + sampi 900.
+    var ep_t, ep_v = isopsephy("ϛϟϡ");
+    ok(is_ok(ep_t), "isopsephy(stigma koppa sampi) ok");
+    if (is_ok(ep_t) == 1) { assert_eq(result_unwrap(ep_t, ep_v), 996, "isopsephy(ϛϟϡ) = 996"); }
 
     return assert_summary();
 }

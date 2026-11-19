@@ -8,6 +8,7 @@ include "src/f64_util.cyr"
 include "src/logging.cyr"
 include "src/astro.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 # Tolerances (parsed once).
@@ -17,6 +18,7 @@ var TOL_01 = 0;
 var TOL_1 = 0;
 var TOL_SMALL = 0;
 
+# Parse the f64 tolerances this suite compares against (call after alloc_init).
 fn tol_init() {
     TOL_1E12 = f64_parse("0.000000000001");
     TOL_001 = f64_parse("0.001");
@@ -26,6 +28,7 @@ fn tol_init() {
     return 0;
 }
 
+# Run every astro test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     tol_init();
@@ -173,6 +176,57 @@ fn main() {
     # -- logging init does not crash --
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs ----
+    var t9 = f64_parse("0.000000001");
+    # ADR-008: azimuth for dec 20, lat 40, hour angle +2h. An ENU-vector check gives
+    # az 240.938807, alt 57.485080; the Rust formula gave 224.046919.
+    var hz_jd = f64_from(2451545);
+    var hz_lst = local_sidereal_time(hz_jd, f64_from(0));
+    var hz_coord = celestial_new(f64_sub(hz_lst, f64_from(2)), f64_from(20));
+    var hz = equatorial_to_horizontal(hz_coord, hz_jd, f64_from(40), f64_from(0));
+    ok(f64_approx_eq(hc_azimuth(hz), f64_parse("240.938807"), f64_parse("0.000001")), "azimuth 240.938807");
+    ok(f64_approx_eq(hc_altitude(hz), f64_parse("57.485080"), f64_parse("0.000001")), "altitude 57.485080");
+    # Due south on the meridian (H = 0) is azimuth 180 for a star south of the zenith.
+    var mer = equatorial_to_horizontal(celestial_new(hz_lst, f64_from(0)), hz_jd, f64_from(40), f64_from(0));
+    ok(f64_approx_eq(hc_azimuth(mer), f64_from(180), f64_parse("0.0000001")), "meridian azimuth 180");
+    # ADR-008: Meeus 21.2 precession, against an independent Python evaluation.
+    var bce3000 = f64_sub(f64_from(2451545), f64_mul(f64_from(5000), f64_parse("365.25")));
+    var sp = precess_coordinates(star_j2000(SN_SIRIUS), f64_from(2451545), bce3000);
+    ok(f64_approx_eq(cc_ra_hours(sp), f64_parse("3.1141777633"), t9), "Sirius RA at 3000 BCE (Meeus 21.2)");
+    ok(f64_approx_eq(cc_dec_degrees(sp), f64_parse("-24.3482282405"), t9), "Sirius dec at 3000 BCE");
+    var tp = precess_coordinates(star_j2000(SN_THUBAN), f64_from(2451545), bce3000);
+    ok(f64_approx_eq(cc_dec_degrees(tp), f64_parse("88.7864969677"), t9), "Thuban near the pole at 3000 BCE");
+    var ce3000 = f64_add(f64_from(2451545), f64_mul(f64_from(1000), f64_parse("365.25")));
+    var pp = precess_coordinates(star_j2000(SN_POLARIS), f64_from(2451545), ce3000);
+    ok(f64_approx_eq(cc_ra_hours(pp), f64_parse("12.0385289921"), t9), "Polaris RA at 3000 CE");
+    ok(f64_approx_eq(cc_dec_degrees(pp), f64_parse("84.9558238162"), t9), "Polaris dec at 3000 CE");
+    # From a non-J2000 epoch (the T terms the Rust had wrong).
+    var from_e = f64_sub(f64_from(2451545), f64_mul(f64_from(2000), f64_parse("365.25")));
+    var to_e = f64_sub(f64_from(2451545), f64_mul(f64_from(3000), f64_parse("365.25")));
+    var sq = precess_coordinates(star_j2000(SN_SIRIUS), from_e, to_e);
+    ok(f64_approx_eq(cc_ra_hours(sq), f64_parse("6.0200703200"), t9), "precession with T != 0: RA");
+    ok(f64_approx_eq(cc_dec_degrees(sq), f64_parse("-16.1500648563"), t9), "precession with T != 0: dec");
+    # ADR-008: heliacal rising is the morning side. Sirius from 30 N after J2000 rises in
+    # July-August 2000 (the Rust found 6 June, the evening side, near heliacal setting).
+    var hr_t, hr_v = heliacal_rising(SN_SIRIUS, f64_from(2451545), f64_from(30), f64_parse("31.2"));
+    ok(is_ok(hr_t), "Sirius heliacal rising ok");
+    if (is_ok(hr_t) == 1) {
+        var hj = he_jdn(result_unwrap(hr_t, hr_v));
+        ok(f64_ge(hj, f64_from(2451727)) == 1 && f64_le(hj, f64_from(2451788)) == 1, "Sirius rises in Jul-Aug 2000");
+        # Starting the day after a rising finds the next year's, not the same window again.
+        var hr2_t, hr2_v = heliacal_rising(SN_SIRIUS, f64_add(hj, f64_from(1)), f64_from(30), f64_parse("31.2"));
+        if (is_ok(hr2_t) == 1) {
+            var gap = f64_sub(he_jdn(result_unwrap(hr2_t, hr2_v)), hj);
+            ok(f64_gt(gap, f64_from(360)) == 1 && f64_lt(gap, f64_from(370)) == 1, "next rising ~1 year later");
+        }
+    }
+    # ADR-007: Err or finite, never NaN.
+    var fnan = f64_div(f64_from(0), f64_from(0));
+    var sr_t, sr_v = star_rise_azimuth(SN_SIRIUS, fnan, f64_from(2451545));
+    assert_eq(is_ok(sr_t), 0, "star_rise_azimuth(NaN latitude) -> Err");
+    assert_eq(f64_is_finite(solstice_sunrise_azimuth(f64_from(80), 1)), 1, "solstice azimuth at 80 N finite");
+    assert_eq(f64_is_finite(solstice_sunrise_azimuth(f64_from(0 - 80), 0)), 1, "solstice azimuth at 80 S finite");
 
     return assert_summary();
 }

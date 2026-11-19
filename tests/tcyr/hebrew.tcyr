@@ -8,7 +8,9 @@ include "src/f64_util.cyr"
 include "src/logging.cyr"
 include "src/hebrew.cyr"
 
+# Assert that two values are equal, labelled name in the failure report.
 fn check(val, expected, name) { return assert_eq(val, expected, name); }
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 # HebrewDate structural equality (year, month, day).
@@ -20,6 +22,7 @@ fn hebdate_eq(a, b) {
 }
 
 # --- year_lengths_valid: first 100 years all 353/354/355/383/384/385 ---
+# Ported year_lengths cases from the Rust integration tests.
 fn test_year_lengths() {
     var bad = 0;
     for (var y = 1; y <= 100; y = y + 1) {
@@ -42,6 +45,7 @@ fn test_year_lengths() {
 }
 
 # --- roundtrip_sequential_days: 1500 consecutive days from 2460000.5 ---
+# Ported sequential cases from the Rust integration tests.
 fn test_sequential(tol) {
     var bad = 0;
     var base = f64_add(f64_from(2460000), F64_HALF);
@@ -59,6 +63,7 @@ fn test_sequential(tol) {
 }
 
 # --- roundtrip_across_leap_boundary: RH of years 5780..=5790 -> (y, Tishrei, 1) ---
+# Ported leap_boundary cases from the Rust integration tests.
 fn test_leap_boundary(tol) {
     var bad = 0;
     for (var y = 5780; y <= 5790; y = y + 1) {
@@ -77,6 +82,7 @@ fn test_leap_boundary(tol) {
     return bad;
 }
 
+# Run every hebrew test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     hebrew_init();
@@ -152,6 +158,47 @@ fn main() {
     # ---- logging init doesn't crash ----
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs (ADR-008: the epoch was a day early) ----
+    # Rosh Hashana 5785 was Thursday 3 Oct 2024 (JD 2460586.5), Passover (15 Nisan) 13 Apr 2025.
+    var rh_t, rh_v = hebrew_to_jdn(hebrewdate_new(5785, HM_TISHREI, 1));
+    ok(is_ok(rh_t), "1 Tishrei 5785 ok");
+    if (is_ok(rh_t) == 1) {
+        ok(f64_eq(result_unwrap(rh_t, rh_v), f64_add(f64_from(2460586), F64_HALF)), "1 Tishrei 5785 = 3 Oct 2024");
+    }
+    var rhd = jdn_to_hebrew(f64_add(f64_from(2460586), F64_HALF));
+    assert_eq(hebdate_year(rhd), 5785, "JD 2460586.5 -> year 5785");
+    assert_eq(hebdate_month(rhd), HM_TISHREI, "JD 2460586.5 -> Tishrei");
+    assert_eq(hebdate_day(rhd), 1, "JD 2460586.5 -> day 1");
+    var pn_t, pn_v = hebrew_to_jdn(hebrewdate_new(5785, HM_NISAN, 15));
+    if (is_ok(pn_t) == 1) {
+        ok(f64_eq(result_unwrap(pn_t, pn_v), f64_add(f64_from(2460778), F64_HALF)), "15 Nisan 5785 = 13 Apr 2025");
+    }
+    ok(f64_eq(HEBREW_EPOCH_JDN, f64_add(f64_from(347997), F64_HALF)), "HEBREW_EPOCH_JDN = 347997.5");
+    # Lo ADU Rosh: 1 Tishrei never falls on Sunday, Wednesday or Friday (weekday from the JDN).
+    var adu_bad = 0;
+    var hy = 5600;
+    while (hy <= 5900) {
+        var ry_t, ry_v = hebrew_to_jdn(hebrewdate_new(hy, HM_TISHREI, 1));
+        if (is_ok(ry_t) == 1) {
+            var noon = f64_to(f64_floor(f64_add(result_unwrap(ry_t, ry_v), F64_HALF)));
+            var wd = rem_euclid(noon + 1, 7);
+            if (wd == 0 || wd == 3 || wd == 5) { adu_bad = adu_bad + 1; }
+        } else { adu_bad = adu_bad + 1; }
+        hy = hy + 1;
+    }
+    assert_eq(adu_bad, 0, "Rosh Hashana 5600..5900 never on Sun/Wed/Fri");
+    # ADR-007: bad month / day are Err; huge JDNs terminate.
+    var hm_t, hm_v = hebrew_to_jdn(hebrewdate_new(5785, 14, 1));
+    assert_eq(sk_result_code(hm_t, hm_v), SKE_INVALID_DATE, "Hebrew month 14 -> InvalidDate");
+    var hn_t, hn_v = hebrew_to_jdn(hebrewdate_new(5785, 0 - 1, 1));
+    assert_eq(sk_result_code(hn_t, hn_v), SKE_INVALID_DATE, "Hebrew month -1 -> InvalidDate");
+    var hd_t, hd_v = hebrew_to_jdn(hebrewdate_new(5785, HM_TISHREI, 0 - 5));
+    assert_eq(sk_result_code(hd_t, hd_v), SKE_INVALID_DATE, "Hebrew day -5 -> InvalidDate");
+    var hbig = jdn_to_hebrew(f64_from(1000000000000000));
+    ok(hebdate_day(hbig) >= 1, "jdn_to_hebrew(1e15) terminates");
+    var hneg = jdn_to_hebrew(f64_neg(f64_from(1000000000000000)));
+    ok(hebdate_day(hneg) >= 1, "jdn_to_hebrew(-1e15) terminates");
 
     return assert_summary();
 }

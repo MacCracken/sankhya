@@ -26,6 +26,8 @@
 # Returns (0 - 1) when no variant matches.
 # ---------------------------------------------------------------------------
 
+# HeavenlyStem discriminant (0-9) for a serde identifier Str ("Jia" .. "Gui"), or (0 - 1)
+# when none matches. name must be a non-null Str (str_eq dereferences it).
 #must_use
 fn heavenly_stem_from_name(name) {
     var i = 0;
@@ -36,6 +38,8 @@ fn heavenly_stem_from_name(name) {
     return 0 - 1;
 }
 
+# EarthlyBranch discriminant (0-11) for a serde identifier Str ("Zi" .. "Hai"), or (0 - 1)
+# when none matches. name must be a non-null Str (str_eq dereferences it).
 #must_use
 fn earthly_branch_from_name(name) {
     var i = 0;
@@ -50,6 +54,7 @@ fn earthly_branch_from_name(name) {
 # RodNumeral { value: i64 }  →  {"value":N}
 # ---------------------------------------------------------------------------
 
+# Serialize a RodNumeral to a JSON Str (bayan helpers), serde-exact: {"value":N}.
 #must_use
 fn rod_numeral_to_json(p) {
     var sb = str_builder_new();
@@ -59,12 +64,15 @@ fn rod_numeral_to_json(p) {
     return str_builder_build(sb);
 }
 
+# Deserialize a bayan object node {"value":N} into a fresh RodNumeral. A missing or
+# non-numeric "value" reads as 0; a JSON float is converted to an integer (bayan_json_v_int).
 #must_use
 fn rod_numeral_from_json(v) {
     var val = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "value"));
     return rod_numeral_new(val);
 }
 
+# Structural equality of two RodNumerals (the value field): 1 if equal, else 0.
 #must_use
 fn rod_numeral_eq(a, b) {
     if (rod_value(a) != rod_value(b)) { return 0; }
@@ -76,6 +84,8 @@ fn rod_numeral_eq(a, b) {
 # A standalone serde unit enum serializes to a bare JSON string.
 # ---------------------------------------------------------------------------
 
+# Serialize a HeavenlyStem discriminant to a bare JSON string Str ("Jia" .. "Gui"), matching
+# serde's encoding of a unit variant.
 #must_use
 fn heavenly_stem_to_json(stem) {
     var sb = str_builder_new();
@@ -83,11 +93,14 @@ fn heavenly_stem_to_json(stem) {
     return str_builder_build(sb);
 }
 
+# Deserialize a bayan JSON-string node into a HeavenlyStem discriminant, or (0 - 1) for an
+# unknown name. v must be a string node: any other node gives a null Str to str_eq.
 #must_use
 fn heavenly_stem_from_json(v) {
-    return heavenly_stem_from_name(bayan_json_v_str(v));
+    return heavenly_stem_from_name(sk_json_v_str(v));
 }
 
+# HeavenlyStem equality on discriminants: 1 if a == b, else 0.
 #must_use
 fn heavenly_stem_eq(a, b) {
     if (a != b) { return 0; }
@@ -98,6 +111,8 @@ fn heavenly_stem_eq(a, b) {
 # EarthlyBranch (unit enum)  →  JSON string "Zi" .. "Hai"
 # ---------------------------------------------------------------------------
 
+# Serialize an EarthlyBranch discriminant to a bare JSON string Str ("Zi" .. "Hai"), matching
+# serde's encoding of a unit variant.
 #must_use
 fn earthly_branch_to_json(branch) {
     var sb = str_builder_new();
@@ -105,11 +120,14 @@ fn earthly_branch_to_json(branch) {
     return str_builder_build(sb);
 }
 
+# Deserialize a bayan JSON-string node into an EarthlyBranch discriminant, or (0 - 1) for an
+# unknown name. v must be a string node: any other node gives a null Str to str_eq.
 #must_use
 fn earthly_branch_from_json(v) {
-    return earthly_branch_from_name(bayan_json_v_str(v));
+    return earthly_branch_from_name(sk_json_v_str(v));
 }
 
+# EarthlyBranch equality on discriminants: 1 if a == b, else 0.
 #must_use
 fn earthly_branch_eq(a, b) {
     if (a != b) { return 0; }
@@ -122,6 +140,8 @@ fn earthly_branch_eq(a, b) {
 # Field order matches the Rust struct declaration (serde preserves it).
 # ---------------------------------------------------------------------------
 
+# Serialize a SexagenaryYear to a JSON Str in Rust field order, serde-exact, e.g.
+# {"stem":"Jia","branch":"Chen","cycle_position":41}.
 #must_use
 fn sexagenary_year_to_json(p) {
     var sb = str_builder_new();
@@ -135,16 +155,20 @@ fn sexagenary_year_to_json(p) {
     return str_builder_build(sb);
 }
 
+# Deserialize a bayan object node into a fresh SexagenaryYear. Unknown stem/branch names are
+# stored as (0 - 1); a missing "cycle_position" reads as 0. "stem" and "branch" must be
+# present JSON strings: otherwise a null Str reaches str_eq.
 #must_use
 fn sexagenary_year_from_json(v) {
-    var stem_name = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "stem"));
+    var stem_name = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "stem"));
     var stem = heavenly_stem_from_name(stem_name);
-    var branch_name = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "branch"));
+    var branch_name = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "branch"));
     var branch = earthly_branch_from_name(branch_name);
     var pos = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "cycle_position"));
     return sexagenary_year_new(stem, branch, pos);
 }
 
+# Structural equality of two SexagenaryYears (stem, branch, cycle_position): 1 or 0.
 #must_use
 fn sexagenary_year_eq(a, b) {
     if (sex_stem(a) != sex_stem(b)) { return 0; }

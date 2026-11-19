@@ -5,9 +5,11 @@
 # minimal on purpose — it does NOT include the library, only proves the toolchain
 # builds the package.
 
+# Smoke-test entry point: initialize the allocator, print the version banner and return
+# exit status 0 (passed to SYS_EXIT below).
 fn main() {
     alloc_init();
-    println("sankhya 3.1.2 (cyrius port)");
+    println("sankhya 3.1.3 (cyrius port)");
     return 0;
 }
 

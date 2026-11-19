@@ -7,6 +7,189 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.3] — 2026-11-18
+
+**A P(-1) sweep: every public fn documented, a review against `rust-old/` and primary
+sources, and the repairs it found.** No dependency moved; the cyrius pin stays at 6.7.18. 35
+suites and `tests/foundation.tcyr`: 1,549 assertions, 0 failed. ⚠ **Outputs change** where the
+Rust oracle was wrong (ADR-008) or accepted inputs its types ruled out (ADR-007). Every Hebrew
+date moves by a day, and stored output should be re-baselined.
+
+### Accuracy corrections (ADR-008)
+
+Each is a place where the Rust oracle disagrees with the source its own doc cites, or with a
+date anyone can look up. Each was confirmed with a check that does not reuse the questioned
+formula, and each is pinned by a test against an external value.
+
+- ⚠ **Hebrew dates were a day early.** The epoch offset was 347996; 1 Tishrei AM 1 (Mon 7 Oct
+  3761 BCE Julian) is noon JDN 347998, so the offset is 347997 and `HEBREW_EPOCH_JDN` is 347997.5.
+  The Rust put Rosh Hashana 5785 on Wed 2 Oct 2024, a weekday dehiyya Lo ADU forbids; it was Thu
+  3 Oct, and 15 Nisan 5785 was 13 Apr 2025. A test checks that Rosh Hashana never falls on Sun,
+  Wed or Fri for 5600..5900.
+- ⚠ **Aztec correlation JDN 2275856 → 2276828.** The Rust's doc names 13 Aug 1521 (Julian), but
+  2275856 is 15 Dec 1518. On 2276828 the GMT Tzolkin is 1 Chicchan, the serpent sign: 1 Coatl,
+  as Caso has it.
+- ⚠ **Persian: the last break year is 3178, not 2526** (jalaali-js, checked against 1.2.6).
+  Leap years were wrong from 2521 AP, and from 2624 AP 30 Esfand and 1 Farvardin of the next
+  year had the same JDN. A test checks continuity over the whole valid range, −61..3177 AP.
+- ⚠ **Hijri years before the epoch.** `hijri_to_jdn` summed years from 1 upward, so year ≤ 0
+  added nothing and no pre-epoch date round-tripped. Dershowitz & Reingold's closed form,
+  `354(y−1) + floor((3+11y)/30)`, equals the old sum for every year ≥ 1 (checked over 1..3000),
+  is right for year ≤ 0 (checked over −3000..0), and is O(1): year 1e10 took over 20 s.
+- ⚠ **Precession uses Meeus eq. 21.2** (IAU 1976, Lieske 1977), in arcseconds as printed. The
+  Rust's degree constants had the T coefficients, the t² terms and z's t³ term mixed up, about
+  0.27° of error by 3000 BCE from J2000. Results match an independent Python evaluation of
+  Meeus 21.2 and 21.4 to 1e-9°; Thuban sits at dec 88.79° in 3000 BCE.
+- ⚠ **Horizontal azimuth.** Only the cosine term was divided by cos(alt)·cos(lat), so azimuth
+  was exact only on the horizon: δ 20°, φ 40°, H 30° gave 224.05° where an east-north-up vector
+  check gives 240.94°. It is now `atan2(−cos δ sin H, sin δ cos φ − cos δ sin φ cos H)`, which also
+  needs no pole special case.
+- ⚠ **`heliacal_rising` finds the morning rising.** It accepted the star east of the Sun, the
+  evening sky, so Sirius from 30° N after J2000 came out on 6 June, near heliacal setting. It now
+  requires the star west of the Sun and a day outside the window first, so a start date inside
+  the window no longer returns day 0. Sirius rises in July. The arcus visionis model itself is
+  unchanged and is about three weeks early (roadmap).
+- ⚠ **The Long Count of a calendar date.** `correlate` truncated the JDN, so the midnight JDN that
+  `convert()` passes read as the day before: Gregorian 21 Dec 2012 gave 12.19.19.17.19 while
+  `convert(13.0.0.0.0)` gave 21 Dec 2012. It now takes the civil day, `floor(jdn + 0.5)`, as the
+  Hebrew and Aztec conversions do, and both directions agree on 13.0.0.0.0.
+- **Babylonian reciprocal table: 30 entries.** 75 (1,15 → 0;0,48) was the only regular number
+  ≤ 81 missing.
+- **Khayyam classifier:** x³ + bx = d now needs b > 0, as the Rust enum's docs say, so
+  x³ = 15x + 4 is CubeEqualThingAndNumber. Only the label changes; the roots do not.
+- **Solar mean anomaly 357.52811° → 357.52911°** (Meeus eq. 25.3); longitude moves by under
+  3.5e-5°.
+
+### Rust parity restored
+
+- **New `f64_rem`**, an exact truncating remainder ported from musl's integer-only `fmod`. It
+  matches C `fmod` bit for bit on 200,000 cases (raw bit patterns, NaN, ±Inf and subnormals
+  included). Every `((x % m) + m) % m` wrap in `src/` uses it in place of the floor-based
+  `f64_fmod`, which rounded and differed for many negative inputs.
+- **Obliquity keeps Rust's association**, `(c·t)·t` rather than `c·(t·t)`.
+- **Obliquity, GMST and LST now match the Rust formulas bit for bit** at all 45 sampled JDNs.
+  3.1.2 missed one each, so the 3.0.3 "bit for bit" claim held only near J2000.
+
+### Robustness: inputs the Rust types ruled out (ADR-007)
+
+The Rust's `u8`/`u32`/`u64`, enums and serde bounded its inputs; Cyrius has only `i64`. These
+values used to crash, hang or return a wrong `Ok`. They now return an `Err` where the function
+has a `Result`, and otherwise stay total. Every input the Rust could receive behaves as before.
+
+- **No crash on malformed JSON.** About 44 decoder sites read through the 0 that
+  `bayan_json_v_str` returns for a missing or non-string field. They now get `""` (new
+  `sk_json_v_str`), an unknown name decodes to −1, and every enum-name lookup renders −1 as `"?"`
+  (new `sk_name_at`) instead of aborting. `serial_malformed.tcyr` runs all 59 decoders on 12
+  hostile inputs and re-serializes each result.
+- **Calendars:** a month outside the calendar's range or a day below 1 is `InvalidDate` in
+  `gregorian_to_jdn`, `coptic_to_jdn`, `persian_to_jdn`, `hebrew_to_jdn`, `hijri_to_jdn` and
+  `babylonian_to_jdn`. Before, month 12 aborted in `vec_get`, month −1 or day −5 returned a JDN,
+  and Hijri month 12 read as Muharram. `calendar_to_jdn` and `convert` reject a null or unknown
+  `CalendarDate`, which was read as a Long Count.
+- **No hangs:** `correlate` rejects non-finite JDNs and |JDN| > 1e14, where it hung (and returned
+  NaN fields for NaN). `jdn_to_coptic` takes its year from D&R's closed form and clamps the day
+  count to ±2^52, where its one-year steps took 449 ms at 1e13 and never ended at 1e15.
+  `jdn_to_hebrew` clamps to ±1e14, where the molad overflows.
+- **Mayan:** `long_count_from_days(−1)`, `long_count_new(−1, …)` and
+  `mayan_numeral_from_value(−3)` are `Err`. A negative vigesimal digit is `InvalidBase`, not
+  `Overflow`. `tzolkin_from_days` and `haab_from_days` use `rem_euclid`, so pre-epoch days give
+  in-range values instead of an abort in the name lookup.
+- **Roman arithmetic is u32, as in Rust:** an operand below 0 or above `u32::MAX` is
+  `InvalidBase` (`roman_add(−1, 5)` gave IV), and add/multiply overflow is `Overflow` with Rust's
+  message ("Roman addition overflow: 4294967295 + 1"). A non-ASCII character in `from_roman` is
+  reported whole; it was its last byte, which is invalid UTF-8.
+- **Integer edge cases:** `i64::MIN / −1`, which trapped with SIGFPE, is unreachable in
+  `greek_gcd`, `roman_divide`, `egyptian_divide` and `decompose`. gcd/lcm take magnitudes.
+  `decompose(MAX, MAX−1)` is `Ok([1, MAX−1])` as in Rust: the ceil-div no longer wraps. Negative
+  operands to `decompose`, `egyptian_divide`, `to_cuneiform`, `to_hieroglyphic` and
+  `to_unicode_rods`, a negative sexagesimal digit, `babylonian_sqrt` iterations ≤ 0 and a
+  negative CRT residue are rejected. `egyptian_multiply` loops on `!= 0`, so a negative operand
+  (a u64 ≥ 2^63 to Rust) gives Rust's wrapped bits.
+- **Non-finite f64:** `complete_the_square`, `solve_al_jabr` and `classify_khayyam_cubic` reject
+  NaN/Inf coefficients instead of returning NaN roots. `next_sopdet_rising(NaN)` is an Err, as in
+  Rust. `star_rise_azimuth` rejects NaN. `solstice_sunrise_azimuth` is finite beyond the polar
+  circles (clamped; `monument_alignment` skips those latitudes, so its output is unchanged).
+  `fibonacci_ratio` stays finite past n = 1474.
+- **Smaller:** `katapayadi_decode` accepts 19 syllables, as the Rust's u64 did. A sieve too
+  large for the heap returns an empty vec instead of writing through a null pointer. Error
+  messages print f64 values as Rust's `Display` does (new `sk_f64_display`): "latitude 61.5",
+  not "61".
+
+### Changed
+
+- **Logging is opt-in, as it was in Rust.** sakshi emits INFO to stderr by default, so every
+  `convert()` and `monument_alignment()` printed a line, and the debug/trace sites formatted
+  their fields on every call. All sites now go through `sk_log_level` / `sk_trace` /
+  `sk_debug` / `sk_info` / `sk_log_kv` (`logging.cyr`), which do nothing until
+  `sankhya_log_init` or `sankhya_log_init_level` runs.
+- **Lazy module init:** `epoch_init()` and `babylonian_init()` are idempotent and called by the
+  fns that read their constants. Without them, `bp_to_jdn(0)` returned 0, `precessional_age(J2000)`
+  said Leo, and `saros_cycle` returned its input, all silently.
+- **Documentation:** all 878 public fns in `src/` and `tests/` have a doc comment
+  (`cyrdoc --check` reports 0 undocumented). The work was split across four writers on disjoint
+  files, and all 39 rebuilt binaries were byte-identical to the baseline, which proves the pass
+  changed no code. `docs/guides/usage.md` is rewritten for the 6.6 `Result` pair and real fn
+  names, and `tests/tcyr/usage_examples.tcyr` compiles every sample in it. README's quick start
+  is fixed the same way. The Persian algorithm is described as jalaali-js's breaks array, not a
+  "2820-year cycle". ADR-007 and ADR-008 are new, and CLAUDE.md points to them.
+- **`#must_use`** added to `sk_fail`, `sk_str_lower`, `sk_str_upper`, `sk_str_eq_lower`,
+  `heliacal_rising`, `star_rise_azimuth` and `nikhilam_new`. Stale comments fixed in mayan,
+  aztec, chinese, vedic and persian.
+- **Tests:** three new suites. `serial_malformed` covers every decoder on hostile JSON,
+  `lazy_init` makes no init calls and checks that logging is off, and `usage_examples` compiles
+  the guide. Regression tests cover every repair above. `tests/sankhya.fcyr`, which was a no-op
+  that could not fail, is now a 20,000-round xorshift fuzzer (malformed JSON, raw f64 JDNs with
+  round-trip checks, Roman and Katapayadi strings) that exits 1 on a violation. **CI runs it.**
+- **Benchmarks: 18 → 24.** New: `serial/mcd_json_roundtrip`, `mayan/find_calendar_round_full`,
+  `astro/heliacal_rising_sirius`, `babylonian/to_cuneiform`, `greek/isopsephy` and
+  `vedic/katapayadi_devanagari`.
+
+### Performance
+
+Interleaved A/B over 9 rounds against a control built from 3.1.2's code with the same
+24-bench file (DCE), comparing medians, twice, at load 1.0–2.5 on 16 threads. Every row below
+repeated in both runs:
+
+| Bench | 3.1.2 | 3.1.3 | Change | Why |
+|---|---|---|---|---|
+| `mayan/find_calendar_round_full` | 709 µs | 3.4 µs | −99.5 % | 260-day stepping, no per-day records (~600 KB per call before) |
+| `vedic/katapayadi_devanagari` | 18–19 µs | 1.06 µs | −94 % | varna's reverse map cached |
+| `hebrew/jdn_roundtrip_100` | 2.49 µs | 1.13 µs | −54 % | year length only for Cheshvan/Kislev; no eager trace formatting |
+| `coptic/jdn_roundtrip` | 93 ns | 67 ns | −28 % | closed-form year |
+| `epoch/correlate` | 3.53 µs | 2.64 µs | −25 % | the Hebrew and Coptic gains, and no INFO/DEBUG emission by default |
+| `epoch/convert_all_calendars` | 4.05–4.12 µs | 3.69 µs | −9 to −10 % | as above |
+| `astro/heliacal_rising_sirius` | 195 µs | 253 µs | +30 % | the corrected search runs to the July rising, not 6 June, and checks the day before |
+| `astro/precession_1000` | 546 ns | 565 ns | +3.5 % | Meeus 21.2's extra terms and the arcsecond conversion |
+| `gregorian/jdn_roundtrip_1000` | 84 ns | 86 ns | +2.4 % | the new month-range check |
+
+Everything else is within ±2 % (`roman/roundtrip_3999` +1 % and +2 %). Binary size: the
+smoke test is unchanged at 857,408 B (DCE); the 24-bench binary is 8,976 B larger than
+3.1.2's code built with the same bench file. The 3.1.3 rows in `bench-history.csv` carry
+`fdf6969` because they were recorded before the 3.1.3 commit.
+
+### Verified
+
+- **Doc pass changed no code:** 39 binaries (34 suites, bench, smoke, fuzz, two dumps) were
+  byte-identical before and after.
+- **Every output difference from 3.1.2 is accounted for.** In the first dump (1,771 lines) the
+  only lines that move are `correlate` (Hebrew by exactly one day at all 44 JDNs, both Aztec
+  fields, and `precessional_age`, because the dump never calls `epoch_init`), azimuth,
+  precession, solar longitude and declination (`SL_MA`), and one obliquity value (the
+  association fix). In the second dump (6,660 lines) the only change is 1,508 Gregorian inputs
+  with a day below 1, which used to return a JDN and now return an Err.
+- **Correction to 3.1.2's notes.** Its second dump passed month index 12, which aborted after
+  the first year, so the "Gregorian → JDN for years −5000 to 5000" check covered only part of
+  year −5000. Rebuilt with months 0..11, it shows 3.1.1 and 3.1.2 byte-identical over all 6,660
+  lines, which is what 3.1.2 claimed. Its `monument_alignment` lines also used a nonsense JDN
+  (`f64_from` of an f64), which both versions computed alike.
+- **All 35 suites and `tests/foundation.tcyr` pass when each is built with `CYRIUS_DCE=1`**
+  (1,549 assertions). The suite also passes under `cyrius test --bounds`, and the fuzz harness
+  passes.
+- **`cyrius audit` exits 0** for the first time: fmt clean, lint clean, docs complete. Its
+  "795 undocumented" was a cyrius miscount: the walkers share one directory list, so
+  `tests/tcyr/` was counted three times. The real figure was 533, and the bug is recorded in
+  the roadmap for cyrius.
+
 ## [3.1.2] — 2026-11-18
 
 **varna 2.5.2 → 2.6.0, and the roadmap's open clean-up items closed.** The cyrius pin stays at

@@ -15,9 +15,11 @@ include "src/lib.cyr"
 include "src/serial_util.cyr"
 include "src/serial_epoch.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 # ---- AgePosition round-trip (serde_roundtrip_age_position) ----
+# Ported age_position cases from the Rust integration tests.
 fn test_age_position() {
     var pos = precessional_age(J2000_JDN);
     var js = age_position_to_json(pos);
@@ -38,6 +40,7 @@ fn test_age_position() {
 }
 
 # ---- SagesTradition round-trip (serde_roundtrip_sages_tradition) ----
+# Ported sages_tradition cases from the Rust integration tests.
 fn test_sages_tradition() {
     var ved = sages_tradition(ECIV_VEDIC);
     var js = sages_tradition_to_json(ved);
@@ -61,6 +64,7 @@ fn test_sages_tradition() {
 }
 
 # ---- MultiCalendarDate round-trip (serde_roundtrip_multi_calendar_date) ----
+# Ported multi_calendar_date cases from the Rust integration tests.
 fn test_multi_calendar_date() {
     var cr_t, cr_v = correlate(f64_from(EPOCH_JDN));
     ok(is_ok(cr_t), "correlate at Mayan creation ok");
@@ -99,6 +103,7 @@ fn test_multi_calendar_date() {
 }
 
 # ---- CalendarDate round-trip (calendar_date_serde_roundtrip) ----
+# Ported calendar_date cases from the Rust integration tests.
 fn test_calendar_date() {
     var greg = gregorian_date_new(2025, GM_APRIL, 1);
     var cd = caldate_gregorian(greg);
@@ -139,6 +144,7 @@ fn test_calendar_date() {
 }
 
 # ---- unit enum serializers ----
+# Ported enums cases from the Rust integration tests.
 fn test_enums() {
     var aj = precessionalage_to_json(PA_LEO);
     ok(str_eq_cstr(aj, "\"Leo\""), "PrecessionalAge Leo -> bare string");
@@ -155,6 +161,7 @@ fn test_enums() {
 }
 
 # ---- CycleAlignment serializer ----
+# Ported cycle_alignment cases from the Rust integration tests.
 fn test_cycle_alignment() {
     var cyc = vec_new();
     vec_push(cyc, CN_METONIC);
@@ -176,6 +183,7 @@ fn test_cycle_alignment() {
     return 0;
 }
 
+# Run every serial_epoch test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     gregorian_init();

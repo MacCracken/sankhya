@@ -13,17 +13,23 @@
 #   ./build/_tt_adversarial
 include "src/lib.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
+# Assert that v is zero (falsy), labelled name in the failure report.
 fn no(v, name) { return assert_eq(v, 0, name); }
 
 # --- f64 finiteness + hostile-value constructors -------------------------------
+# Return 1 if v is a finite f64 (neither NaN nor +/-Inf), else 0.
 fn fin(v) {
     if (f64_is_nan(v) == 1) { return 0; }
     if (f64_is_inf(v) == 1) { return 0; }
     return 1;
 }
+# Build a quiet NaN (0/0) as an f64 for hostile-input cases.
 fn nan_f64()  { return f64_div(f64_from(0), f64_from(0)); }
+# Build +Infinity (1/0) as an f64 for hostile-input cases.
 fn pinf_f64() { return f64_div(f64_from(1), f64_from(0)); }
+# Build -Infinity (-(1/0)) as an f64 for hostile-input cases.
 fn ninf_f64() { return f64_neg(f64_div(f64_from(1), f64_from(0))); }
 
 # f64::MAX bit pattern; f64::EPSILON bit pattern (2.220446049250313e-16).
@@ -36,7 +42,9 @@ var TOL_1E6 = 0;
 var TOL_1E8 = 0;
 
 # --- small vec builders --------------------------------------------------------
+# Build a one-element vec holding a.
 fn vec1(a) { var v = vec_new(); vec_push(v, a); return v; }
+# Build a vec holding count copies of val.
 fn vecrep(val, count) {
     var v = vec_new();
     var i = 0;
@@ -45,6 +53,7 @@ fn vecrep(val, count) {
 }
 
 # --- generic "Result is Err, or Ok with a finite f64 payload" -------------------
+# Assert that the Result is Err, or an Ok whose f64 payload is finite.
 fn err_or_finite(r_tag, r, name) {
     var good = 0;
     if (is_ok(r_tag) == 0) { good = 1; }
@@ -55,6 +64,7 @@ fn err_or_finite(r_tag, r, name) {
 # ==============================================================================
 # Mayan
 # ==============================================================================
+# Adversarial mayan cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_mayan() {
     # fuzz_from_vigesimal_empty: from_vigesimal(&[]).unwrap() == 0
     var rve_t, rve_v = from_vigesimal(vec_new());
@@ -103,6 +113,7 @@ fn test_mayan() {
 # ==============================================================================
 # Babylonian
 # ==============================================================================
+# Adversarial Babylonian cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_babylonian() {
     # fuzz_from_sexagesimal_invalid_digit
     no(is_ok(from_sexagesimal(vec1(60))),  "from_sexagesimal([60]) err");
@@ -148,6 +159,7 @@ fn test_babylonian() {
 # ==============================================================================
 # Egyptian
 # ==============================================================================
+# Sum the unit fractions 1/d over the denominators in fracs, as an f64.
 fn frac_sum(fracs) {
     var s = f64_from(0);
     var n = vec_len(fracs);
@@ -159,6 +171,7 @@ fn frac_sum(fracs) {
     return s;
 }
 
+# Adversarial Egyptian cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_egyptian() {
     # fuzz_decompose_zero_denominator
     no(is_ok(decompose(1, 0)), "decompose(1,0) err");
@@ -200,6 +213,7 @@ fn test_egyptian() {
 # ==============================================================================
 # Vedic
 # ==============================================================================
+# Adversarial Vedic cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_vedic() {
     # fuzz_katapayadi_decode_invalid
     no(is_ok(katapayadi_decode(str_from("xyz"))),         "katapayadi 'xyz' err");
@@ -224,6 +238,7 @@ fn test_vedic() {
 # ==============================================================================
 # Chinese
 # ==============================================================================
+# Adversarial Chinese cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_chinese() {
     # fuzz_chinese_remainder_empty
     var oe = 0;
@@ -271,6 +286,7 @@ fn test_chinese() {
 # ==============================================================================
 # Greek
 # ==============================================================================
+# Adversarial Greek cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_greek() {
     # fuzz_sieve_zero
     no(vec_len(sieve(0)), "sieve(0) empty");
@@ -294,6 +310,7 @@ fn test_greek() {
 # ==============================================================================
 # Roman
 # ==============================================================================
+# Adversarial Roman cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_roman() {
     # fuzz_roman_zero
     no(is_ok(to_roman_str(0)),        "to_roman_str(0) err");
@@ -345,6 +362,7 @@ fn test_roman() {
 # ==============================================================================
 # Islamic
 # ==============================================================================
+# Return 1 if the al-Jabr result is an Err or every root it holds is finite, else 0.
 fn roots_all_finite(r_tag, r) {
     if (is_ok(r_tag) == 0) { return 1; }
     var roots = aljabr_sol_roots(result_unwrap(r_tag, r));
@@ -356,6 +374,7 @@ fn roots_all_finite(r_tag, r) {
     }
     return 1;
 }
+# Return 1 if the Khayyam result is an Err or every root it holds is finite, else 0.
 fn khroots_all_finite(r_tag, r) {
     if (is_ok(r_tag) == 0) { return 1; }
     var roots = khres_roots(result_unwrap(r_tag, r));
@@ -368,6 +387,7 @@ fn khroots_all_finite(r_tag, r) {
     return 1;
 }
 
+# Adversarial Islamic cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_islamic() {
     # fuzz_solve_al_jabr_all_zero
     no(is_ok(solve_al_jabr(f64_from(0), f64_from(0), f64_from(0))), "al_jabr(0,0,0) err");
@@ -400,9 +420,11 @@ fn test_islamic() {
 # ==============================================================================
 # Epoch
 # ==============================================================================
+# Return 1 if bp survives a bp_to_jdn / jdn_to_bp round trip within tol, else 0.
 fn bp_roundtrip_ok(bp, tol) {
     return f64_approx_eq(jdn_to_bp(bp_to_jdn(bp)), bp, tol);
 }
+# Return 1 if vernal_point_longitude(jdn) lies in [0, 360), else 0.
 fn vpl_ok(jdn) {
     var lon = vernal_point_longitude(jdn);
     var g = f64_ge(lon, f64_from(0));
@@ -411,6 +433,7 @@ fn vpl_ok(jdn) {
     return 0;
 }
 
+# Adversarial Epoch cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_epoch() {
     # fuzz_find_cycle_alignments_invalid_range: start >= end
     var cyc = vec_new();
@@ -474,6 +497,7 @@ fn test_epoch() {
 # ==============================================================================
 # Gregorian / Coptic / Persian / Hebrew
 # ==============================================================================
+# Adversarial Gregorian cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_gregorian() {
     # fuzz_gregorian_day_zero / _overflow
     no(is_ok(gregorian_to_jdn(gregorian_date_new(2000, GM_JANUARY, 0))),  "greg Jan 0 err");
@@ -485,6 +509,7 @@ fn test_gregorian() {
     return 0;
 }
 
+# Adversarial Coptic cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_coptic() {
     # fuzz_coptic_day_zero / _nasie_overflow
     no(is_ok(coptic_to_jdn(coptic_date_new(1, CM_THOUT, 0))), "coptic Thout 0 err");
@@ -495,6 +520,7 @@ fn test_coptic() {
     return 0;
 }
 
+# Adversarial Persian cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_persian() {
     # fuzz_persian_day_zero / _esfand_overflow / _farvardin_32
     no(is_ok(persian_to_jdn(persian_date_new(1400, PM_FARVARDIN, 0))),  "persian day 0 err");
@@ -503,6 +529,7 @@ fn test_persian() {
     return 0;
 }
 
+# Return 1 if years 1..1000 realise all six Hebrew year lengths (353/354/355/383/384/385).
 fn hebrew_year_types_ok() {
     var s353 = 0;
     var s354 = 0;
@@ -525,6 +552,7 @@ fn hebrew_year_types_ok() {
     return 0;
 }
 
+# Adversarial Hebrew cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_hebrew() {
     # fuzz_hebrew_day_zero
     no(is_ok(hebrew_to_jdn(hebrewdate_new(5785, HM_TISHREI, 0))), "hebrew day 0 err");
@@ -546,6 +574,7 @@ fn test_hebrew() {
 # ==============================================================================
 # Aztec
 # ==============================================================================
+# Return 1 if the tonalpohualli number stays in 1..13 for 260 days from J2000, else 0.
 fn aztec_tonal_range_ok() {
     var i = 0;
     var allok = 1;
@@ -559,6 +588,7 @@ fn aztec_tonal_range_ok() {
     }
     return allok;
 }
+# Return 1 if xiuhpohualli_from_jdn gives an in-range day and month for 365 days from J2000.
 fn aztec_xiuh_range_ok() {
     var i = 0;
     var allok = 1;
@@ -576,6 +606,7 @@ fn aztec_xiuh_range_ok() {
     return allok;
 }
 
+# Adversarial Aztec cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_aztec() {
     # fuzz_aztec_tonalpohualli_number_range
     ok(aztec_tonal_range_ok(), "tonalpohualli number in [1,13]");
@@ -587,6 +618,7 @@ fn test_aztec() {
 # ==============================================================================
 # Astro
 # ==============================================================================
+# Return 1 if the obliquity at jdn is finite and strictly between 20 and 27 degrees, else 0.
 fn obl_ok(jdn) {
     var eps = obliquity_of_ecliptic(jdn);
     if (fin(eps) == 0) { return 0; }
@@ -595,6 +627,7 @@ fn obl_ok(jdn) {
     if (g == 1) { if (l == 1) { return 1; } }
     return 0;
 }
+# Return 1 if solar_longitude stays in [0, 360) for 3650 days from J2000, else 0.
 fn solar_lon_range_ok() {
     var off = 0;
     var allok = 1;
@@ -608,6 +641,7 @@ fn solar_lon_range_ok() {
     }
     return allok;
 }
+# Return 1 if |solar_declination| stays below 24 degrees for 3650 days from J2000, else 0.
 fn solar_dec_range_ok() {
     var off = 0;
     var allok = 1;
@@ -619,6 +653,7 @@ fn solar_dec_range_ok() {
     return allok;
 }
 
+# Adversarial Astro cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_astro() {
     # fuzz_astro_obliquity_finite: finite AND in (20, 27) for extreme jdns
     ok(obl_ok(f64_from(0)),                "obliquity(0) finite & in range");
@@ -644,6 +679,7 @@ fn test_astro() {
 # ==============================================================================
 # Epoch convert()
 # ==============================================================================
+# Adversarial convert cases (ports of the Rust fuzz_* tests): bad input must give Err or finite values.
 fn test_convert() {
     # fuzz_convert_invalid_gregorian: Feb 30 2025
     no(is_ok(convert(caldate_gregorian(gregorian_date_new(2025, GM_FEBRUARY, 30)))), "convert invalid greg err");
@@ -653,6 +689,7 @@ fn test_convert() {
     return 0;
 }
 
+# Run every adversarial never-panic case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     egyptian_init();

@@ -46,7 +46,7 @@ fn hebrewmonth_to_json(m) {
 # Deserialize a bayan value node (a JSON string) to a HebrewMonth discriminant.
 #must_use
 fn hebrewmonth_from_json(v) {
-    var name = bayan_json_v_str(v);
+    var name = sk_json_v_str(v);
     return hebrewmonth_from_name(name);
 }
 
@@ -86,7 +86,7 @@ fn hebrewdate_to_json(p) {
 fn hebrewdate_from_json(v) {
     var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
     var mv = bayan_json_v_obj_get_by_cstr(v, "month");
-    var mname = bayan_json_v_str(mv);
+    var mname = sk_json_v_str(mv);
     var m = hebrewmonth_from_name(mname);
     var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return hebrewdate_new(y, m, d);

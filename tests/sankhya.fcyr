@@ -1,13 +1,190 @@
-# sankhya fuzz harness
+# sankhya fuzz harness (3.1.3: was a no-op placeholder that could not fail).
+#
+# A deterministic xorshift64 stream drives the library with hostile inputs. Each check
+# is "no crash, no hang, and the documented invariant holds":
+#   - random bytes -> sk_json_parse -> a sample of the <type>_from_json decoders, each
+#     result re-serialized (the serial layer crashed on such input before 3.1.3);
+#   - random f64 bit patterns (NaN, +/-Inf, subnormals, huge) -> every jdn_to_<calendar>
+#     and correlate(); for an ordinary JDN, <calendar>_to_jdn(jdn_to_<calendar>(j)) == j;
+#   - random ASCII -> from_roman; an Ok value v must satisfy to_roman(v) == upper(s);
+#   - random syllable strings -> katapayadi_decode, which must round-trip what it accepts.
+# Run: cyrius build tests/sankhya.fcyr build/sankhya_fuzz && ./build/sankhya_fuzz
+# It prints "fuzz: ok" and exits 0, or "fuzz: N failures" and exits 1.
+include "src/lib.cyr"
 
-fn fuzz_main(data, len) {
-    if (len == 0) { return 0; }
+var FZ_STATE = 0x9E3779B97F4A7C15;
+var FZ_FAIL = 0;
+
+# Next value of the xorshift64 stream (any i64 bit pattern).
+fn fz_next() {
+    var x = FZ_STATE;
+    x = x ^ (x << 13);
+    x = x ^ (x >> 7);
+    x = x ^ (x << 17);
+    FZ_STATE = x;
+    return x;
+}
+
+# A pseudo-random value in 0..n-1 (n > 0).
+fn fz_below(n) { return rem_euclid(fz_next(), n); }
+
+# Count an invariant violation and say which.
+fn fz_fail(what) {
+    FZ_FAIL = FZ_FAIL + 1;
+    println(what);
     return 0;
 }
 
+# A random Str of len bytes; JSON-ish bytes are weighted so parses sometimes succeed.
+fn fz_bytes(len) {
+    var alphabet = "{}[]\":,0123456789.-eE ntrufalsxyz\\";
+    var alen = strlen(alphabet);
+    var buf = alloc(len + 1);
+    var i = 0;
+    while (i < len) {
+        var c = load8(alphabet + fz_below(alen));
+        if (fz_below(8) == 0) { c = fz_below(256); }
+        store8(buf + i, c);
+        i = i + 1;
+    }
+    store8(buf + len, 0);
+    return str_new(buf, len);
+}
+
+# Feed one input to a sample of decoders and re-serialize each result.
+fn fz_json(js) {
+    var v = sk_json_parse(js);
+    var a = multi_calendar_date_from_json(v);
+    if (a != 0) { var sa = multi_calendar_date_to_json(a); }
+    var b = calendar_date_from_json(v);
+    if (b != 0) { var sb = calendar_date_to_json(b); }
+    var c = heliacal_event_from_json(v);
+    if (c != 0) { var sc = heliacal_event_to_json(c); }
+    var d = sages_tradition_from_json(v);
+    if (d != 0) { var sd = sages_tradition_to_json(d); }
+    var e = longcount_from_json(v);
+    if (e != 0) { var se = longcount_to_json(e); }
+    var f = starname_from_json(v);
+    var sf = starname_to_json(f);
+    # A decoded CalendarDate must convert to Ok or Err, never crash.
+    var cv_t, cv_v = convert(b);
+    return 0;
+}
+
+# A random f64: raw bits a quarter of the time, else an ordinary JDN in about +/-1e7.
+fn fz_jdn() {
+    if (fz_below(4) == 0) { return fz_next(); }
+    return f64_add(f64_from(fz_below(20000000) - 10000000), F64_HALF);
+}
+
+# Every calendar conversion on one JDN; round-trips for ordinary midnight JDNs.
+fn fz_calendars(j) {
+    var g = jdn_to_gregorian(j);
+    var c = jdn_to_coptic(j);
+    var p = jdn_to_persian(j);
+    var h = jdn_to_hebrew(j);
+    var i = jdn_to_hijri(j);
+    var cr_t, cr_v = correlate(j);
+    if (f64_is_finite(j) == 0) { return 0; }
+    if (f64_gt(f64_abs(j), f64_from(10000000)) == 1) { return 0; }
+    # The conversions name the day containing j; <calendar>_to_jdn gives that day's
+    # midnight, floor(j - 0.5) + 0.5, which is j itself only for an x.5 input.
+    j = f64_add(f64_floor(f64_sub(j, F64_HALF)), F64_HALF);
+    var g_t, g_v = gregorian_to_jdn(g);
+    if (is_ok(g_t) == 0) { fz_fail("fuzz: gregorian round trip Err"); }
+    if (is_ok(g_t) == 1) { if (f64_eq(result_unwrap(g_t, g_v), j) == 0) { fz_fail("fuzz: gregorian round trip"); } }
+    var c_t, c_v = coptic_to_jdn(c);
+    if (is_ok(c_t) == 0) { fz_fail("fuzz: coptic round trip Err"); }
+    if (is_ok(c_t) == 1) { if (f64_eq(result_unwrap(c_t, c_v), j) == 0) { fz_fail("fuzz: coptic round trip"); } }
+    var h_t, h_v = hebrew_to_jdn(h);
+    if (is_ok(h_t) == 0) { fz_fail("fuzz: hebrew round trip Err"); }
+    if (is_ok(h_t) == 1) { if (f64_eq(result_unwrap(h_t, h_v), j) == 0) { fz_fail("fuzz: hebrew round trip"); } }
+    var i_t, i_v = hijri_to_jdn(i);
+    if (is_ok(i_t) == 0) { fz_fail("fuzz: hijri round trip Err"); }
+    if (is_ok(i_t) == 1) { if (f64_eq(result_unwrap(i_t, i_v), j) == 0) { fz_fail("fuzz: hijri round trip"); } }
+    # Persian is valid for -61..3177 AP (jalaali-js); check the round trip inside it.
+    if (pd_year(p) >= 0 - 61 && pd_year(p) <= 3177) {
+        var p_t, p_v = persian_to_jdn(p);
+        if (is_ok(p_t) == 0) { fz_fail("fuzz: persian round trip Err"); }
+        if (is_ok(p_t) == 1) { if (f64_eq(result_unwrap(p_t, p_v), j) == 0) { fz_fail("fuzz: persian round trip"); } }
+    }
+    if (is_ok(cr_t) == 0) { fz_fail("fuzz: correlate Err on an ordinary JDN"); }
+    return 0;
+}
+
+# from_roman on random letters: an accepted string must be canonical.
+fn fz_roman() {
+    var letters = "IVXLCDMivxlcdmQ ";
+    var len = fz_below(9);
+    var buf = alloc(len + 1);
+    var i = 0;
+    while (i < len) {
+        store8(buf + i, load8(letters + fz_below(16)));
+        i = i + 1;
+    }
+    store8(buf + len, 0);
+    var s = str_new(buf, len);
+    var r_t, r_v = from_roman(s);
+    if (is_ok(r_t) == 1) {
+        var v = result_unwrap(r_t, r_v);
+        if (v < 1 || v > 3999) { fz_fail("fuzz: from_roman out of range"); }
+        if (str_eq(to_roman(v), sk_str_upper(s)) == 0) { fz_fail("fuzz: from_roman accepted a non-canonical numeral"); }
+    }
+    return 0;
+}
+
+# katapayadi_decode on random syllable strings; what it accepts must encode back.
+fn fz_katapayadi() {
+    var syl = vec_new();
+    vec_push(syl, "ka"); vec_push(syl, "kha"); vec_push(syl, "ga"); vec_push(syl, "nya");
+    vec_push(syl, "ta"); vec_push(syl, "pa"); vec_push(syl, "ya"); vec_push(syl, "zz");
+    var sb = str_builder_new();
+    var n = fz_below(22);
+    var i = 0;
+    while (i < n) {
+        if (i > 0) { str_builder_add_cstr(sb, "-"); }
+        str_builder_add_cstr(sb, vec_get(syl, fz_below(8)));
+        i = i + 1;
+    }
+    var s = str_builder_build(sb);
+    var r_t, r_v = katapayadi_decode(s);
+    if (is_ok(r_t) == 1) {
+        var v = result_unwrap(r_t, r_v);
+        if (v < 0) { fz_fail("fuzz: katapayadi_decode negative"); }
+        var back_t, back_v = katapayadi_decode(katapayadi_encode(v));
+        if (is_ok(back_t) == 0) { fz_fail("fuzz: katapayadi re-decode Err"); }
+        if (is_ok(back_t) == 1) { if (result_unwrap(back_t, back_v) != v) { fz_fail("fuzz: katapayadi round trip"); } }
+    }
+    return 0;
+}
+
+# Fuzz entry point for one input buffer: parse it as JSON and run the decoders.
+fn fuzz_main(data, len) {
+    if (len < 0) { return 0; }
+    fz_json(str_new(data, len));
+    return 0;
+}
+
+# Drive every target from the xorshift stream; exit 1 on any invariant violation.
 fn main() {
     alloc_init();
-    fuzz_main("test", 4);
+    var k = 0;
+    while (k < 20000) {
+        var js = fz_bytes(fz_below(48));
+        fuzz_main(str_data(js), str_len(js));
+        fz_calendars(fz_jdn());
+        fz_roman();
+        fz_katapayadi();
+        k = k + 1;
+    }
+    if (FZ_FAIL != 0) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "fuzz: ");
+        str_builder_add_int(sb, FZ_FAIL);
+        str_builder_add_cstr(sb, " failures");
+        str_println(str_builder_build(sb));
+        return 1;
+    }
     println("fuzz: ok");
     return 0;
 }

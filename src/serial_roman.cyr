@@ -31,7 +31,7 @@ fn romannum_to_json(p) {
 #must_use
 fn romannum_from_json(v) {
     var value = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "value"));
-    var text = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "text"));
+    var text = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "text"));
     return romannum_new(value, text);
 }
 

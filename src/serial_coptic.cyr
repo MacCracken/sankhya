@@ -45,7 +45,7 @@ fn coptic_month_to_json(m) {
 # (or 0 - 1 if the variant name is unknown).
 #must_use
 fn coptic_month_from_json(v) {
-    var mname = bayan_json_v_str(v);
+    var mname = sk_json_v_str(v);
     return coptic_month_from_name(str_data(mname));
 }
 
@@ -81,7 +81,7 @@ fn coptic_date_to_json(p) {
 fn coptic_date_from_json(v) {
     var year = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
     var mnode = bayan_json_v_obj_get_by_cstr(v, "month");
-    var mstr = bayan_json_v_str(mnode);
+    var mstr = sk_json_v_str(mnode);
     var month = coptic_month_from_name(str_data(mstr));
     var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return coptic_date_new(year, month, day);

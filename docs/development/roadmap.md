@@ -1,9 +1,26 @@
 # Development Roadmap
 
-> **Status**: v3.1.2 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.1.2 | **Compiler**: cyrius 6.7.18
+> **Status**: v3.1.3 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.1.3 | **Compiler**: cyrius 6.7.18
 
 Completed items are in [CHANGELOG.md](../../CHANGELOG.md).
-`VERSION` is the single source of truth (`3.1.2`); `cyrius.cyml` derives it via `${file:VERSION}`.
+`VERSION` is the single source of truth (`3.1.3`); `cyrius.cyml` derives it via `${file:VERSION}`.
+
+## Completed in 3.1.3 — P(-1) sweep
+
+- [x] **All 878 public fns documented** (`cyrdoc --check` 0 undocumented in `src/` and `tests/`;
+      the 795 the roadmap carried was a `cyrius audit` miscount, 533 in fact)
+- [x] Internal review against `rust-old/` and primary sources: three parallel reviews, every finding
+      reproduced before it was fixed
+- [x] **Input-domain guards** (ADR-007): no crash, hang or garbage `Ok` from negative counts, bad
+      months/days, `i64::MIN / -1`, non-finite f64, or malformed JSON
+- [x] **Accuracy corrections** (ADR-008): Hebrew epoch (+1 day), Aztec correlation, Persian last break,
+      Hijri pre-epoch years, reciprocal 75, Khayyam classifier, precession (Meeus 21.2), azimuth,
+      heliacal side, solar mean anomaly, the Long Count of a calendar date
+- [x] Exact `f64_rem` (Rust's `%`): obliquity, GMST and LST match the Rust formulas bit for bit
+- [x] Logging opt-in, as in Rust; lazy module init (epoch, babylonian)
+- [x] Perf: alloc-free Calendar Round search, cached Devanagari reverse map, Hebrew year estimate and
+      month lengths, no eager log formatting
+- [x] Tests: `serial_malformed`, `lazy_init`, `usage_examples` suites; a real fuzz harness (CI); 6 benches
 
 ## Completed in 3.1.2
 
@@ -68,10 +85,28 @@ at `rust-old/` as the parity oracle.
 
 ## Deferred / Backlog
 
+**Recorded at 3.1.3:**
+- **Upstream, cyrius:** `cyrius audit`'s fmt, lint and docs walkers share one directory vec, and each
+  appends the subdirectories it descends into, so the docs walk visits `tests/tcyr/` three times and the
+  lint walk twice. The "795 undocumented" was 533 (533 + 2 × 131); the "16 lint warnings" in `tests/` were 8.
+  Not yet filed with cyrius.
+- **API (next minor):** `<type>_from_json` returns a record, not a `Result`. Malformed input no longer
+  crashes it (3.1.3), but a missing field reads as 0 / "" / -1 where serde returned an Err. A
+  `Result`-returning decoder set changes every signature, so it is 3.2.0 work.
+- **Upstream accuracy, models left as the Rust has them** (ADR-008 lists what was corrected):
+  - the arcus visionis heliacal model puts Sirius's first sighting about three weeks before the observed
+    date;
+  - `solar_longitude` uses a two-term equation of centre (Meeus 25.4 has three, with T terms);
+  - `to_unicode_rods` uses the vertical (unit) glyphs in every place, where rod numerals alternate
+    with the horizontal forms U+1D369–71.
+- `MultiCalendarDate` writes 3 of the avatara profile fields for each Saptarishi entry (name, tradition,
+  description), where serde wrote the whole profile. Full fidelity needs an avatara serializer.
+- `sk_f64_display` (error messages) writes |x| >= 1e21 and |x| < 1e-6 in exponent form, where Rust's
+  `Display` prints every digit.
+- Persian dates outside jalaali-js's -61..3177 AP are extrapolated, as the Rust did; jalaali-js rejects them.
+
 **Recorded at 3.0.3 to 3.1.2 (re-checked 2026-11-18):**
-- `cyrius audit` exits 1, as it has since at least 3.0.2, and CI does not run it. From 3.1.2 its fmt and lint
-  steps pass across `src/` and `tests/`; what keeps it red is the docs step (795 undocumented public fns, the
-  same at 3.1.1 and 3.1.2). Documenting them is the remaining work to make `audit` a usable gate. Not blocked.
+- `cyrius audit` was red through 3.1.2. At 3.1.3 it exits 0 (fmt, lint and docs). CI could now run it as a gate.
 - bayan's `lib/bayan.cyr` keeps about 350 KB of Unicode tables that DCE cannot drop, so a DCE binary here is
   282 KB larger than at 3.1.0 (smoke 520,104 → 802,432 B). sankhya uses only bayan's JSON layer, but it cannot
   take the thin `dist/bayan-json.cyr` while itihas's sidecar and `# Requires` block name the monolith; both
@@ -105,8 +140,10 @@ its own work-loop cycle behind the cleanliness + benchmark gates.
 
 | Gate | Command | Expected |
 |------|---------|----------|
-| Tests | `cyrius test tests/tcyr` | `32 passed, 0 failed` (1,353 assertions; `tests/foundation.tcyr` adds 22) |
-| Benchmarks | `cyrius bench tests/sankhya.bcyr` | 18 benches; recorded via `scripts/bench-history.sh` |
-| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.1.2 (cyrius port)` |
+| Tests | `cyrius test tests/tcyr` | `35 passed, 0 failed` (1,527 assertions; `tests/foundation.tcyr` adds 22) |
+| Fuzz | `cyrius build tests/sankhya.fcyr build/f && ./build/f` | `fuzz: ok` (20,000 rounds) |
+| Benchmarks | `cyrius bench tests/sankhya.bcyr` | 24 benches; recorded via `scripts/bench-history.sh` |
+| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.1.3 (cyrius port)` |
+| Docs | `cyrdoc --check <file>` | 0 undocumented in every `src/` and `tests/` file |
 | Lint / format | `cyrius lint <file>` / `cyrius fmt <file> --check` | 0 warnings and clean for every `src/*.cyr` (CI gates both) |
 | Bundle | `cyrius distlib` | regenerates `dist/sankhya.cyr` |

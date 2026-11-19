@@ -1,6 +1,7 @@
 # sankhya test suite
 # Stdlib auto-included via cyrius.cyml
 
+# Run the smoke assertions and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     test_group("smoke");

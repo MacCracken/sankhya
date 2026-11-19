@@ -25,22 +25,30 @@
 # MONTH_PARTS = 29*25920 + 12*1080 + 793 = 765433 (mean synodic month);
 # MOLAD_EPOCH offset = PARTS_PER_DAY + 5*PARTS_PER_HOUR + 204 = 31524
 #   (molad of Tishrei year 1: day 1 (Monday), 5h, 204 parts from Sunday 0h);
-# JDN_OFFSET: molad day 1 = JDN 347997, so JDN = day + 347996;
+# JDN_OFFSET: day 1 (1 Tishrei AM 1, Monday 7 October 3761 BCE proleptic Julian) is noon
+#   JDN 347998, so JDN = day + 347997. The Rust oracle used 347996, which put every date a
+#   day early (Rosh Hashana 5785 on Wednesday 2 Oct 2024, a day dehiyya Lo ADU forbids);
+#   with 347997, day mod 7 is the real weekday of that JDN (ADR-008);
 # MONTHS_PER_CYCLE = 235 (12*19 + 7 leap months per 19-year cycle).
 enum HebConst {
     HEB_PARTS_PER_HOUR = 1080;
     HEB_PARTS_PER_DAY = 25920;
     HEB_MONTH_PARTS = 765433;
-    HEB_JDN_OFFSET = 347996;
+    HEB_JDN_OFFSET = 347997;
     HEB_MONTHS_PER_CYCLE = 235;
+    HEB_JDN_LIMIT = 100000000000000;
 }
 
 # Julian Day Number of the Hebrew epoch (1 Tishrei year 1 AM), midnight-based:
-# 347996.5. Set by hebrew_init() (called by the test harness / consumer init).
+# 347997.5 (Dershowitz & Reingold: R.D. -1373427). Set by hebrew_init().
+# The Rust oracle had 347996.5, one day early (ADR-008).
 var HEBREW_EPOCH_JDN = 0;
 
+# Set HEBREW_EPOCH_JDN = 347997.5 (f64): midnight-based JDN of 1 Tishrei, Year 1 AM, Monday
+# 7 October 3761 BCE proleptic Julian (noon JDN 347998). The conversion fns do not read the
+# global. Returns 0.
 fn hebrew_init() {
-    HEBREW_EPOCH_JDN = f64_add(f64_from(347996), F64_HALF);
+    HEBREW_EPOCH_JDN = f64_add(f64_from(347997), F64_HALF);
     return 0;
 }
 
@@ -69,6 +77,8 @@ enum HebrewMonth {
 var hm_names_vec = 0;
 var hm_names_done = 0;
 
+# Build a fresh vec of the 14 HebrewMonth serde identifiers (Tishrei .. Elul; "AdarI"/"AdarII",
+# no spaces). Prefer hebrewmonth_name, which caches it.
 fn build_hm_names() {
     var v = vec_new();
     vec_push(v, str_from("Tishrei"));
@@ -88,16 +98,20 @@ fn build_hm_names() {
     return v;
 }
 
+# Serde identifier Str for HebrewMonth i (0-13), e.g. "AdarI". Shared cached Str from a lazily
+# built vec: do not mutate. Aborts if i is not 0-13.
 #must_use
 fn hebrewmonth_name(i) {
     if (hm_names_done == 0) { hm_names_vec = build_hm_names(); hm_names_done = 1; }
-    return vec_get(hm_names_vec, i);
+    return sk_name_at(hm_names_vec, i);
 }
 
 # --- Display names (with spaces: "Adar I"/"Adar II") ---
 var hm_disp_vec = 0;
 var hm_disp_done = 0;
 
+# Build a fresh vec of the 14 HebrewMonth Display names ("Adar I"/"Adar II", with spaces).
+# Prefer hebrewmonth_display, which caches it.
 fn build_hm_disp() {
     var v = vec_new();
     vec_push(v, str_from("Tishrei"));
@@ -117,10 +131,11 @@ fn build_hm_disp() {
     return v;
 }
 
+# Display Str for HebrewMonth i (0-13), e.g. "Adar I". Shared cached Str: do not mutate.
 #must_use
 fn hebrewmonth_display(i) {
     if (hm_disp_done == 0) { hm_disp_vec = build_hm_disp(); hm_disp_done = 1; }
-    return vec_get(hm_disp_vec, i);
+    return sk_name_at(hm_disp_vec, i);
 }
 
 # Display impl for HebrewMonth (returns the Display string, e.g. "Adar I").
@@ -133,6 +148,8 @@ fn hebrewmonth_to_str(m) { return hebrewmonth_display(m); }
 # ---------------------------------------------------------------------------
 enum HebDateOff { HD_YEAR = 0; HD_MONTH = 8; HD_DAY = 16; HD_SIZE = 24; }
 
+# Construct a HebrewDate record {year (Anno Mundi; 1 AM = 3761 BCE), month (HebrewMonth 0-13),
+# day (1-30)}. Stored unvalidated; hebrew_to_jdn checks month-vs-year-type and the day.
 #must_use
 fn hebrewdate_new(year, month, day) {
     var p = alloc(HD_SIZE);
@@ -142,10 +159,13 @@ fn hebrewdate_new(year, month, day) {
     return p;
 }
 
+# HebrewDate field: the year (Anno Mundi; year 1 = 3761 BCE).
 #must_use
 fn hebdate_year(p) { return load64(p + HD_YEAR); }
+# HebrewDate field: the month (HebrewMonth discriminant, 0 = Tishrei .. 13 = Elul).
 #must_use
 fn hebdate_month(p) { return load64(p + HD_MONTH); }
+# HebrewDate field: the day of month (1-30).
 #must_use
 fn hebdate_day(p) { return load64(p + HD_DAY); }
 
@@ -169,6 +189,8 @@ fn hebrewdate_to_str(p) {
 var common_months_vec = 0;
 var common_months_done = 0;
 
+# Build a fresh vec of the 12 common-year months in order (Tishrei .. Elul, with a single
+# HM_ADAR). Prefer common_months(), which caches it.
 fn build_common_months() {
     var v = vec_new();
     vec_push(v, HM_TISHREI);
@@ -186,6 +208,8 @@ fn build_common_months() {
     return v;
 }
 
+# Shared, lazily built common-year month order: vec of 12 HebrewMonth discriminants, Tishrei
+# .. Elul with a single Adar. Do not mutate.
 #must_use
 fn common_months() {
     if (common_months_done == 0) { common_months_vec = build_common_months(); common_months_done = 1; }
@@ -195,6 +219,8 @@ fn common_months() {
 var leap_months_vec = 0;
 var leap_months_done = 0;
 
+# Build a fresh vec of the 13 leap-year months in order (Adar replaced by HM_ADAR_I and
+# HM_ADAR_II). Prefer leap_months(), which caches it.
 fn build_leap_months() {
     var v = vec_new();
     vec_push(v, HM_TISHREI);
@@ -213,6 +239,8 @@ fn build_leap_months() {
     return v;
 }
 
+# Shared, lazily built leap-year month order: vec of 13 HebrewMonth discriminants, Tishrei
+# .. Elul with Adar I + Adar II. Do not mutate.
 #must_use
 fn leap_months() {
     if (leap_months_done == 0) { leap_months_vec = build_leap_months(); leap_months_done = 1; }
@@ -277,7 +305,7 @@ fn rosh_hashana_jdn(year) {
     # Day of week (0=Sunday .. 6=Saturday)
     var dow = rem_euclid(day, 7);
 
-    # molad day 1 = JDN 347997, so JDN = day + 347996
+    # day 1 = noon JDN 347998, so JDN = day + 347997 (HEB_JDN_OFFSET)
     var jdn = day + HEB_JDN_OFFSET;
 
     # Dehiyya 1 (Lo ADU Rosh): cannot fall on Sunday(0), Wednesday(3), Friday(5).
@@ -324,16 +352,17 @@ fn hebrew_year_days(year) {
 # Days in a specific Hebrew month for a given year.
 #must_use
 fn hebrew_month_days(year, month) {
-    var year_len = hebrew_year_days(year);
     if (month == HM_TISHREI) { return 30; }
+    # Only Cheshvan and Kislev depend on the year length (two Rosh Hashana calculations),
+    # so it is computed for them alone.
     if (month == HM_CHESHVAN) {
         # 30 in "complete" years (355 or 385), 29 otherwise.
-        if (rem_euclid(year_len, 10) == 5) { return 30; }
+        if (rem_euclid(hebrew_year_days(year), 10) == 5) { return 30; }
         return 29;
     }
     if (month == HM_KISLEV) {
         # 29 in "deficient" years (353 or 383), 30 otherwise.
-        if (rem_euclid(year_len, 10) == 3) { return 29; }
+        if (rem_euclid(hebrew_year_days(year), 10) == 3) { return 29; }
         return 30;
     }
     if (month == HM_TEVET) { return 29; }
@@ -358,14 +387,26 @@ fn hebrew_month_days(year, month) {
 fn jdn_to_hebrew(jdn) {
     # (jdn + 0.5).floor() as i64
     var jdn_int = f64_to(f64_floor(f64_add(jdn, F64_HALF)));
+    # Beyond about |JDN| 3.5e14 the molad (in parts) overflows i64, Rosh Hashana stops
+    # increasing and the year search below never settles (Rust hangs too). Clamp to
+    # +/-1e14 days (~2.7e11 years) so every input terminates (ADR-007).
+    if (jdn_int > HEB_JDN_LIMIT) { jdn_int = HEB_JDN_LIMIT; }
+    if (jdn_int < 0 - HEB_JDN_LIMIT) { jdn_int = 0 - HEB_JDN_LIMIT; }
 
     # trace!(jdn, "JDN to Hebrew")
-    var tv = str_from_int(jdn_int);
-    sakshi_log_kv(SK_TRACE, "JDN to Hebrew", 13, "jdn", 3, str_data(tv), str_len(tv));
+    if (SK_TRACE <= sk_log_level()) {
+        var tv = str_from_int(jdn_int);
+        sk_log_kv(SK_TRACE, "JDN to Hebrew", 13, "jdn", 3, str_data(tv), str_len(tv));
+    }
 
-    # Estimate year: ((jdn_int - 347996) as f64 / 365.25).floor() as i64 + 1
+    # Estimate the year from the mean Hebrew year, 235 * 765433 parts per 19 years =
+    # 179876755 / 492480 = 365.2468... days. The Rust divided by 365.25, which drifts a
+    # year every ~1e5 years, so the correction loops below walked ~2.4e6 years one at a
+    # time near the clamp; with the true mean they take at most a step or two. They still
+    # decide the year, so every result is the Rust's.
     var diff = jdn_int - HEB_JDN_OFFSET;
-    var approx_f = f64_div(f64_from(diff), JULIAN_YEAR_DAYS);
+    var heb_mean_year = f64_div(f64_from(179876755), f64_from(492480));
+    var approx_f = f64_div(f64_from(diff), heb_mean_year);
     var year = f64_to(f64_floor(approx_f)) + 1;
 
     # Correct: find the year whose Rosh Hashana is <= jdn_int.
@@ -441,8 +482,20 @@ fn hebrew_to_jdn(date) {
     var day = hebdate_day(date);
 
     # trace!(year, ?month, day, "Hebrew to JDN")
-    var yv = str_from_int(year);
-    sakshi_log_kv(SK_TRACE, "Hebrew to JDN", 13, "year", 4, str_data(yv), str_len(yv));
+    if (SK_TRACE <= sk_log_level()) {
+        var yv = str_from_int(year);
+        sk_log_kv(SK_TRACE, "Hebrew to JDN", 13, "year", 4, str_data(yv), str_len(yv));
+    }
+
+    # ADR-007: Rust's HebrewMonth enum and u8 day ruled these out. A month outside the 14
+    # variants (an unknown JSON name decodes to -1) or a day < 1 is an Err.
+    if (month < HM_TISHREI || month > HM_ELUL) {
+        var sbm = str_builder_new();
+        str_builder_add_cstr(sbm, "month index ");
+        str_builder_add_int(sbm, month);
+        str_builder_add_cstr(sbm, " is not a Hebrew month");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbm));
+    }
 
     var is_leap = hebrew_is_leap(year);
 
@@ -456,7 +509,7 @@ fn hebrew_to_jdn(date) {
     }
 
     var max_day = hebrew_month_days(year, month);
-    if (day == 0) { return _heb_err_day(day, month, year, max_day); }
+    if (day <= 0) { return _heb_err_day(day, month, year, max_day); }
     if (day > max_day) { return _heb_err_day(day, month, year, max_day); }
 
     var months = common_months();

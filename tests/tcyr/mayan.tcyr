@@ -8,6 +8,7 @@ include "src/f64_util.cyr"
 include "src/logging.cyr"
 include "src/mayan.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 # Build a vec of digits from up to 5 most-significant-first values (unused
@@ -31,6 +32,7 @@ fn vig_roundtrip(n, name) {
     return assert_eq(result_unwrap(r_t, r_v), n, name);
 }
 
+# Run every mayan test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     println("=== sankhya mayan test suite ===");
@@ -186,6 +188,55 @@ fn main() {
     # ---- logging init does not crash ----
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs ----
+    # ADR-007: inputs Rust's u64/u32/u8 types ruled out are Err.
+    var lcn_t, lcn_v = long_count_from_days(0 - 1);
+    assert_eq(sk_result_code(lcn_t, lcn_v), SKE_INVALID_DATE, "long_count_from_days(-1) -> InvalidDate");
+    var lce_t, lce_v = long_count_new(0 - 1, 0, 0, 0, 0);
+    assert_eq(sk_result_code(lce_t, lce_v), SKE_INVALID_DATE, "long_count_new(-1, ...) -> InvalidDate");
+    var mn_t, mn_v = mayan_numeral_from_value(0 - 3);
+    assert_eq(sk_result_code(mn_t, mn_v), SKE_INVALID_BASE, "mayan_numeral_from_value(-3) -> InvalidBase");
+    var vgd = vec_new();
+    vec_push(vgd, 1);
+    vec_push(vgd, 0 - 1);
+    var vg_t, vg_v = from_vigesimal(vgd);
+    assert_eq(sk_result_code(vg_t, vg_v), SKE_INVALID_BASE, "from_vigesimal([1,-1]) -> InvalidBase");
+    # Pre-epoch day counts give in-range Tzolkin / Haab values (rem_euclid), so the name
+    # lookups no longer abort.
+    var tzn = tzolkin_from_days(0 - 30);
+    ok(tz_number(tzn) >= 1 && tz_number(tzn) <= 13, "tzolkin_from_days(-30) number in 1..13");
+    ok(str_len(tzolkin_to_str(tzn)) > 0, "tzolkin_to_str(tzolkin_from_days(-30)) does not abort");
+    var hbn = haab_from_days(0 - 30);
+    ok(hb_day(hbn) >= 0 && hb_month(hbn) >= 0, "haab_from_days(-30) in range");
+    # The 260-day-stepping Calendar Round search returns the brute-force scan's first match.
+    var cr_bad = 0;
+    var ci = 0;
+    while (ci < 40) {
+        var sday = ci * 4111 + 7;
+        var target = sday + rem_euclid(ci * 977 + 13, 18980);
+        var ttz = tzolkin_from_days(target);
+        var thb = haab_from_days(target);
+        var brute = 0 - 1;
+        var off = 0;
+        while (off < 18980 && brute < 0) {
+            var dd = sday + off;
+            var a = tzolkin_from_days(dd);
+            var h = haab_from_days(dd);
+            if (tz_number(a) == tz_number(ttz) && tz_daysign(a) == tz_daysign(ttz)) {
+                if (hb_day(h) == hb_day(thb) && hb_month(h) == hb_month(thb)) { brute = dd; }
+            }
+            off = off + 1;
+        }
+        var fc_t, fc_v = find_calendar_round(tz_number(ttz), tz_daysign(ttz), hb_day(thb), hb_month(thb), sday);
+        if (is_ok(fc_t) == 0) { cr_bad = cr_bad + 1; }
+        if (is_ok(fc_t) == 1) { if (result_unwrap(fc_t, fc_v) != brute) { cr_bad = cr_bad + 1; } }
+        ci = ci + 1;
+    }
+    assert_eq(cr_bad, 0, "find_calendar_round == brute-force scan (40 cases)");
+    # No matching Haab day in the cycle (day 19 of Wayeb does not exist) is still an Err.
+    var fe_t, fe_v = find_calendar_round(4, DS_AHAU, 3, HM_WAYEB, 1);
+    ok(is_ok(fe_t) == 1 || sk_result_code(fe_t, fe_v) != SKE_OK, "find_calendar_round(Wayeb 3) returns");
 
     return assert_summary();
 }

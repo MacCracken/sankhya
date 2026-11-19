@@ -15,6 +15,8 @@
 var _coptic_epoch = 0;
 var _coptic_epoch_done = 0;
 
+# JDN of the Coptic epoch as an f64: 1825029.5 = 1 Thout, Year 1 AM (Anno Martyrum) =
+# August 29, 284 CE Julian. Parsed on first call, then cached.
 #must_use
 fn coptic_epoch_jdn() {
     if (_coptic_epoch_done == 0) {
@@ -50,6 +52,8 @@ fn _build_coptic_month_days() {
     return a;
 }
 
+# Common-year days in Coptic month idx (0 = Thout .. 12 = Nasie): 30 for months 0-11, 5 for
+# Nasie (6 in leap years; callers apply that). Lazily built raw table; idx is not bounds-checked.
 #must_use
 fn coptic_month_days(idx) {
     if (_coptic_month_days_done == 0) {
@@ -82,13 +86,15 @@ fn _build_coptic_month_names() {
     return v;
 }
 
+# Name Str of Coptic month idx (0 = Thout .. 12 = Nasie); serde identifier and Display string
+# alike. Shared cached Str from a lazily built vec: do not mutate. Aborts if idx is not 0-12.
 #must_use
 fn coptic_month_name(idx) {
     if (_coptic_month_names_done == 0) {
         _coptic_month_names = _build_coptic_month_names();
         _coptic_month_names_done = 1;
     }
-    return vec_get(_coptic_month_names, idx);
+    return sk_name_at(_coptic_month_names, idx);
 }
 
 # Display impl for CopticMonth: `write!(f, "{name}")`.
@@ -103,6 +109,8 @@ fn coptic_month_to_str(m) {
 # ---------------------------------------------------------------------------
 enum CopticDateOff { CD_YEAR = 0; CD_MONTH = 8; CD_DAY = 16; CD_SIZE = 24; }
 
+# Construct a CopticDate record {year (Anno Martyrum, 1 AM = 284 CE), month (CopticMonth 0-12),
+# day (1-30, or 1-5/1-6 for Nasie)}. Stored unvalidated; coptic_to_jdn checks the day.
 #must_use
 fn coptic_date_new(year, month, day) {
     var p = alloc(CD_SIZE);
@@ -112,10 +120,13 @@ fn coptic_date_new(year, month, day) {
     return p;
 }
 
+# CopticDate field: the year (Anno Martyrum; year 1 = 284 CE).
 #must_use
 fn coptic_date_year(p) { return load64(p + CD_YEAR); }
+# CopticDate field: the month (CopticMonth index, 0 = Thout .. 12 = Nasie).
 #must_use
 fn coptic_date_month(p) { return load64(p + CD_MONTH); }
+# CopticDate field: the day of month (1-30; 1-5 or 1-6 for Nasie).
 #must_use
 fn coptic_date_day(p) { return load64(p + CD_DAY); }
 
@@ -166,16 +177,24 @@ fn _coptic_year_start(year) {
 #must_use
 fn jdn_to_coptic(jdn) {
     # tracing::trace!(jdn, "JDN to Coptic")
-    if (sakshi_get_level() >= SK_TRACE) {
+    if (sk_log_level() >= SK_TRACE) {
         var jval = str_from_int(f64_to(jdn));
-        sakshi_log_kv(SK_TRACE, "JDN to Coptic", 13, "jdn", 3, str_data(jval), str_len(jval));
+        sk_log_kv(SK_TRACE, "JDN to Coptic", 13, "jdn", 3, str_data(jval), str_len(jval));
     }
 
     var delta = f64_sub(jdn, coptic_epoch_jdn());
     var days_since_epoch = f64_to(f64_floor(delta));
+    # f64_to saturates a huge or non-finite JDN to +/-i64::MAX, where the year arithmetic
+    # below would overflow. Clamp to +/-2^52 days (f64 JDNs carry no whole-day precision
+    # past that) so every input terminates (ADR-007).
+    if (days_since_epoch > 4503599627370496) { days_since_epoch = 4503599627370496; }
+    if (days_since_epoch < 0 - 4503599627370496) { days_since_epoch = 0 - 4503599627370496; }
 
-    # Estimate year (366 divisor avoids overestimating), then correct.
-    var year = div_euclid(days_since_epoch, 366) + 1;
+    # Year from Dershowitz & Reingold's closed form, floor((4d + 1463) / 1461), which is
+    # exact for this leap rule. The Rust estimated with d / 366 and stepped one year at a
+    # time, which took ~1e15 / 366 / 1461 * 5 steps for a JDN of 1e15 (and hung beyond).
+    # The two loops below are kept as a check and run zero times.
+    var year = div_euclid(4 * days_since_epoch + 1463, 1461);
 
     # Correct upward while next year's start is still <= our day count.
     var next_start = _coptic_year_start(year + 1);
@@ -209,9 +228,19 @@ fn coptic_to_jdn(date) {
     var day = coptic_date_day(date);
 
     # tracing::trace!(year, ?month, day, "Coptic to JDN")
-    if (sakshi_get_level() >= SK_TRACE) {
+    if (sk_log_level() >= SK_TRACE) {
         var yval = str_from_int(year);
-        sakshi_log_kv(SK_TRACE, "Coptic to JDN", 13, "year", 4, str_data(yval), str_len(yval));
+        sk_log_kv(SK_TRACE, "Coptic to JDN", 13, "year", 4, str_data(yval), str_len(yval));
+    }
+
+    # ADR-007: Rust's month enum and u8 day ruled these out. A month index outside 0..12
+    # (an unknown JSON month name decodes to -1) or a day < 1 is an Err, not a table overrun.
+    if (month_idx < 0 || month_idx > 12) {
+        var sbm = str_builder_new();
+        str_builder_add_cstr(sbm, "month index ");
+        str_builder_add_int(sbm, month_idx);
+        str_builder_add_cstr(sbm, " out of range 0..12");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbm));
     }
 
     # max_day = 6 only for Nasie (idx 12) in a leap year; else the table value.
@@ -221,7 +250,7 @@ fn coptic_to_jdn(date) {
     }
 
     var too_big = day > max_day;
-    if (day == 0) { too_big = 1; }
+    if (day <= 0) { too_big = 1; }
     if (too_big == 1) {
         # format!: "day {} out of range for {} in year {} AM (max {max_day})"
         var sb = str_builder_new();

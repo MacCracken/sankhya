@@ -10,8 +10,8 @@
 #
 # Self-contained: NO include lines (the distlib bundler resolves stdlib + varna
 # from the consumer's [deps]). All `%` here operate on non-negative operands
-# (u32/u64 in Rust); the float positive-modulo idioms use the floor-based
-# f64_fmod, which already returns the canonical [0, turn) representative.
+# (u32/u64 in Rust); the float positive-modulo idioms ((x % m) + m) % m use f64_rem,
+# Rust's exact truncating `%`, so they match the Rust bit for bit (3.1.3).
 
 # ---------------------------------------------------------------------------
 # Constants (Sothic cycle)
@@ -38,6 +38,9 @@ var EGY_F64_200 = 0;
 
 var egy_consts_done = 0;
 
+# Initialise the module's f64 constants: SOTHIC_DRIFT_PER_YEAR = 0.25, CENSORINUS_EPOCH_JDN =
+# 1772028.5 (1 Thoth = Sopdet rising, July 20, 139 CE Julian) and the EGY_F64_* whole numbers.
+# Safe to repeat; egy_ensure() runs it lazily for the Sothic/decan fns. Returns 0.
 fn egyptian_init() {
     SOTHIC_DRIFT_PER_YEAR = f64_parse("0.25");
     CENSORINUS_EPOCH_JDN = f64_parse("1772028.5");
@@ -83,10 +86,14 @@ fn egy_gcd(a, b) {
 #must_use
 fn decompose(numerator, denominator) {
     # tracing::debug!(numerator, denominator, "Egyptian fraction decomposition")
-    sakshi_debug("Egyptian fraction decomposition", 31);
+    sk_debug("Egyptian fraction decomposition", 31);
 
     if (denominator == 0) {
         return sk_fail(SKE_INVALID_FRACTION, str_from("denominator cannot be zero"));
+    }
+    # Rust took u64, so a negative operand never reached it (ADR-007).
+    if (numerator < 0 || denominator < 0) {
+        return sk_fail(SKE_INVALID_FRACTION, str_from("numerator and denominator must be non-negative"));
     }
     if (numerator == 0) {
         return Ok(vec_new());
@@ -118,8 +125,10 @@ fn decompose(numerator, denominator) {
             break;
         }
 
-        # d = ceil(den / num)
-        var d = (den + num - 1) / num;
+        # d = ceil(den / num), as Rust's div_ceil: no `den + num - 1`, which wraps
+        # when num + den exceeds i64::MAX.
+        var d = den / num;
+        if (den % num != 0) { d = d + 1; }
         vec_push(result, d);
 
         # new_num = num*d - den ; new_den = den*d  (checked, in Rust order)
@@ -175,7 +184,9 @@ fn egyptian_multiply(a, b) {
     var result = 0;
     var multiplicand = a;
     var multiplier = b;
-    while (multiplier > 0) {
+    # `!= 0`, not `> 0`: Rust's multiplier is a u64, and `>>` here is a logical shift, so
+    # a negative b (a u64 >= 2^63 to Rust) runs its <= 64 halvings to the same bits.
+    while (multiplier != 0) {
         var bit = multiplier & 1;
         if (bit == 1) { result = result + multiplicand; }
         multiplicand = multiplicand << 1;
@@ -191,6 +202,8 @@ fn egyptian_multiply(a, b) {
 # Result record for egyptian_divide: { quotient, fractions(vec) } — 16 bytes.
 enum EgyDivOff { ED_QUOT = 0; ED_FRACS = 8; ED_SIZE = 16; }
 
+# Construct an EgyDiv result record {quotient, fractions: vec of unit-fraction denominators
+# of the remainder}. The fractions vec is stored by reference.
 #must_use
 fn egydiv_new(quotient, fractions) {
     var p = alloc(ED_SIZE);
@@ -198,8 +211,10 @@ fn egydiv_new(quotient, fractions) {
     store64(p + ED_FRACS, fractions);
     return p;
 }
+# EgyDiv field: the integer quotient.
 #must_use
 fn egydiv_quotient(p) { return load64(p + ED_QUOT); }
+# EgyDiv field: vec of unit-fraction denominators of the remainder (empty when exact).
 #must_use
 fn egydiv_fractions(p) { return load64(p + ED_FRACS); }
 
@@ -209,6 +224,10 @@ fn egydiv_fractions(p) { return load64(p + ED_FRACS); }
 fn egyptian_divide(dividend, divisor) {
     if (divisor == 0) {
         return sk_fail(SKE_INVALID_FRACTION, str_from("divisor cannot be zero"));
+    }
+    # Rust took u64 (ADR-007); this also rules out i64::MIN / -1, which traps.
+    if (dividend < 0 || divisor < 0) {
+        return sk_fail(SKE_INVALID_FRACTION, str_from("dividend and divisor must be non-negative"));
     }
 
     var quotient = dividend / divisor;
@@ -231,6 +250,8 @@ fn egyptian_divide(dividend, divisor) {
 # Decan record: { number(u8), name(Str), ecliptic_longitude(f64) } — 24 bytes.
 enum DecanOff { DEC_NUMBER = 0; DEC_NAME = 8; DEC_LON = 16; DEC_SIZE = 24; }
 
+# Construct a Decan record {number (1-36), name (Str), ecliptic_longitude (f64 degrees, the
+# decan's starting longitude, 0-360)}.
 #must_use
 fn decan_new(number, name, ecliptic_longitude) {
     var p = alloc(DEC_SIZE);
@@ -239,10 +260,13 @@ fn decan_new(number, name, ecliptic_longitude) {
     store64(p + DEC_LON, ecliptic_longitude);
     return p;
 }
+# Decan field: the decan number (1-36).
 #must_use
 fn decan_number(p) { return load64(p + DEC_NUMBER); }
+# Decan field: the traditional decan name (Str).
 #must_use
 fn decan_name(p) { return load64(p + DEC_NAME); }
+# Decan field: starting ecliptic longitude in degrees (f64).
 #must_use
 fn decan_longitude(p) { return load64(p + DEC_LON); }
 
@@ -251,6 +275,9 @@ fn decan_longitude(p) { return load64(p + DEC_LON); }
 var decans_vec = 0;
 var decans_done = 0;
 
+# Build a fresh vec of the 36 stellar decans (Kenmet .. Akhui, longitudes 0-350 in 10-degree
+# steps; names reconstructed from the Seti I cenotaph at Abydos and the tomb of Senenmut).
+# Prefer all_decans(), which caches this.
 fn build_decans() {
     var v = vec_new();
     vec_push(v, decan_new(1, str_from("Kenmet"), f64_from(0)));
@@ -292,6 +319,8 @@ fn build_decans() {
     return v;
 }
 
+# Shared, lazily built vec of the 36 Decan records; index i is decan #(i+1). Longitudes are
+# approximate (the Egyptian decan system was sidereal, not tropical). Do not mutate.
 #must_use
 fn all_decans() {
     if (decans_done == 0) {
@@ -306,13 +335,13 @@ fn all_decans() {
 #must_use
 fn decan_from_longitude(degrees) {
     egy_ensure();
-    # normalized = ((degrees % 360) + 360) % 360  (floor-based fmod gives [0,360))
-    var m1 = f64_fmod(degrees, EGY_F64_360);
-    var normalized = f64_fmod(f64_add(m1, EGY_F64_360), EGY_F64_360);
+    # normalized = ((degrees % 360) + 360) % 360  (f64_rem = Rust's %)
+    var m1 = f64_rem(degrees, EGY_F64_360);
+    var normalized = f64_rem(f64_add(m1, EGY_F64_360), EGY_F64_360);
     # index = (normalized / 10.0) as usize  (truncate toward zero)
-    # Rust's `as usize` saturates negatives (and NaN) to 0; f64_to does not, so
-    # guard the lower bound too (matches Rust's [0,35] clamp; avoids a negative
-    # vec_get abort on non-finite/extreme inputs).
+    # Rust's `as usize` saturates negatives (and NaN) to 0. f64_to saturates too on
+    # cyrius 6.7.18 (NaN -> 0, ±Inf -> i64 max/min) but keeps the sign, so clamp to
+    # Rust's [0,35] here (a negative index would abort vec_get).
     var idx = f64_to(f64_div(normalized, EGY_F64_10));
     if (idx < 0) { idx = 0; }
     if (idx >= 36) { idx = 35; }
@@ -342,6 +371,8 @@ fn sothic_drift(years_since_epoch) {
 # drift_days(f64) } — 24 bytes.
 enum SothicPosOff { SP_CYCLE = 0; SP_YEAR = 8; SP_DRIFT = 16; SP_SIZE = 24; }
 
+# Construct a SothicPos record {cycle_number, year_in_cycle (civil year 0-1460), drift_days
+# (f64)} (the Rust (i32, u32, f64) tuple of sothic_position).
 #must_use
 fn sothicpos_new(cycle, year, drift) {
     var p = alloc(SP_SIZE);
@@ -350,10 +381,13 @@ fn sothicpos_new(cycle, year, drift) {
     store64(p + SP_DRIFT, drift);
     return p;
 }
+# SothicPos field: Sothic cycle number (0 = the cycle containing 139 CE; negative before it).
 #must_use
 fn sothicpos_cycle(p) { return load64(p + SP_CYCLE); }
+# SothicPos field: civil year within the cycle (0-1460).
 #must_use
 fn sothicpos_year(p) { return load64(p + SP_YEAR); }
+# SothicPos field: accumulated civil-calendar drift against Sopdet's rising, in days (f64).
 #must_use
 fn sothicpos_drift(p) { return load64(p + SP_DRIFT); }
 
@@ -368,9 +402,9 @@ fn sothic_position(jdn) {
     var cycle_f = f64_floor(f64_div(civil_years, EGY_F64_1461));
     var cycle_number = f64_to(cycle_f);
 
-    # year_in_cycle = ((civil_years % 1461) + 1461) % 1461  (floor-based fmod)
-    var m1 = f64_fmod(civil_years, EGY_F64_1461);
-    var year_in_cycle = f64_fmod(f64_add(m1, EGY_F64_1461), EGY_F64_1461);
+    # year_in_cycle = ((civil_years % 1461) + 1461) % 1461  (f64_rem = Rust's %)
+    var m1 = f64_rem(civil_years, EGY_F64_1461);
+    var year_in_cycle = f64_rem(f64_add(m1, EGY_F64_1461), EGY_F64_1461);
     var year_u32 = f64_to(year_in_cycle);
 
     var drift = sothic_drift(year_u32);
@@ -382,21 +416,16 @@ fn sothic_position(jdn) {
 #must_use
 fn next_sopdet_rising(jdn, latitude) {
     egy_ensure();
-    var below = f64_lt(latitude, EGY_F64_NEG60);
-    var above = f64_gt(latitude, EGY_F64_60);
-    if (below == 1) {
+    # Rust: !(-60.0..=60.0).contains(&latitude), which a NaN latitude also fails.
+    var outside = f64_is_nan(latitude);
+    if (f64_lt(latitude, EGY_F64_NEG60) == 1) { outside = 1; }
+    if (f64_gt(latitude, EGY_F64_60) == 1) { outside = 1; }
+    if (outside == 1) {
         var sb1 = str_builder_new();
         str_builder_add_cstr(sb1, "latitude ");
-        str_builder_add_int(sb1, f64_to(latitude));
+        str_builder_add(sb1, sk_f64_display(latitude));
         str_builder_add_cstr(sb1, " outside observable range for Sirius (-60 to +60)");
         return sk_fail(SKE_INVALID_DATE, str_builder_build(sb1));
-    }
-    if (above == 1) {
-        var sb2 = str_builder_new();
-        str_builder_add_cstr(sb2, "latitude ");
-        str_builder_add_int(sb2, f64_to(latitude));
-        str_builder_add_cstr(sb2, " outside observable range for Sirius (-60 to +60)");
-        return sk_fail(SKE_INVALID_DATE, str_builder_build(sb2));
     }
 
     var latitude_offset = f64_sub(latitude, EGY_F64_30);
@@ -423,6 +452,8 @@ fn next_sopdet_rising(jdn, latitude) {
 var egy_powers_vec = 0;
 var egy_powers_done = 0;
 
+# Shared, lazily built vec of the powers of ten 1000000 down to 1 (one hieroglyph each:
+# god Heh .. stroke) used by to_hieroglyphic. Do not mutate.
 fn egy_powers() {
     if (egy_powers_done == 0) {
         var v = vec_new();
@@ -443,6 +474,10 @@ fn egy_powers() {
 # Returns Ok("") for 0; Err(OverflowError) for n > 9_999_999.
 #must_use
 fn to_hieroglyphic(n) {
+    # Rust took u64 (ADR-007).
+    if (n < 0) {
+        return sk_fail(SKE_INVALID_BASE, str_from("negative number has no hieroglyphic representation"));
+    }
     if (n == 0) {
         return Ok(str_from(""));
     }

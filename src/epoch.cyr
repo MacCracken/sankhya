@@ -50,7 +50,17 @@ var YOUNGER_DRYAS_BP = 0;
 # BP_REFERENCE_JDN = 2_433_282.5 — JDN of Jan 0.5, 1950 CE (radiocarbon BP zero).
 var BP_REFERENCE_JDN = 0;
 
+var _epoch_init_done = 0;
+
+# Populate the epoch f64 constants (Great Year, precession rate, precessional age, Younger
+# Dryas JDN/BP, BP reference JDN) from f64_util's J2000_JDN / JULIAN_YEAR_DAYS. Idempotent;
+# the fns that read the constants call it themselves, so calling it is optional. Returns 0.
 fn epoch_init() {
+    # Idempotent, and called lazily by every fn that reads these globals (3.1.3): before,
+    # a consumer that skipped epoch_init got zeros, so bp_to_jdn(0) was 0 and
+    # precessional_age(J2000) said Leo, silently.
+    if (_epoch_init_done == 1) { return 0; }
+    _epoch_init_done = 1;
     GREAT_YEAR_YEARS = f64_from(25920);
     GREAT_YEAR_DAYS = f64_mul(GREAT_YEAR_YEARS, JULIAN_YEAR_DAYS);
     PRECESSION_RATE_DEG_PER_YEAR = f64_div(f64_from(1), f64_from(72));
@@ -67,6 +77,7 @@ fn epoch_init() {
 # colliding with babylonian.cyr's SYNODIC_MONTH_DAYS global. Lazy-parsed once.
 var _epoch_synodic_val = 0;
 var _epoch_synodic_done = 0;
+# Mean synodic month in days as f64 (29.53058886), parsed on first call and then cached.
 #must_use
 fn epoch_synodic_month_days() {
     if (_epoch_synodic_done == 0) {
@@ -107,6 +118,8 @@ fn _build_pa_names() {
     vec_push(v, str_from("Virgo"));
     return v;
 }
+# Shared, lazily built vec of the PrecessionalAge serde names indexed by PA_* (Leo..Virgo).
+# Returns the same cached vec every call; do not mutate it.
 #must_use
 fn precessionalage_names() {
     if (_pa_names_done == 0) {
@@ -115,8 +128,10 @@ fn precessionalage_names() {
     }
     return _pa_names_vec;
 }
+# Serde name Str of PrecessionalAge `i` (e.g. PA_PISCES -> "Pisces"), from the shared table.
+# `i` must be 0..11 (vec_get aborts out of range).
 #must_use
-fn precessionalage_name(i) { return vec_get(precessionalage_names(), i); }
+fn precessionalage_name(i) { return sk_name_at(precessionalage_names(), i); }
 
 # Civilizations covered by the Seven Sages tradition. (ECIV_ prefix avoids the
 # itihas bundle's CIV_* offset-enum members.)
@@ -136,6 +151,8 @@ fn _build_civ_names() {
     vec_push(v, str_from("Chinese"));
     return v;
 }
+# Shared, lazily built vec of the Civilization serde names indexed by ECIV_* (Vedic..Chinese).
+# Returns the same cached vec every call; do not mutate it.
 #must_use
 fn civilization_names() {
     if (_civ_names_done == 0) {
@@ -144,8 +161,10 @@ fn civilization_names() {
     }
     return _civ_names_vec;
 }
+# Serde name Str of Civilization `i` (e.g. ECIV_MAYAN -> "Mayan"), from the shared table.
+# `i` must be 0..5 (vec_get aborts out of range).
 #must_use
-fn civilization_name(i) { return vec_get(civilization_names(), i); }
+fn civilization_name(i) { return sk_name_at(civilization_names(), i); }
 
 # Named astronomical cycles that can be queried and compared.
 enum CycleName {
@@ -166,6 +185,8 @@ fn _build_cn_names() {
     vec_push(v, str_from("PrecessionalAge"));
     return v;
 }
+# Shared, lazily built vec of the CycleName serde names indexed by CN_* (Precession..
+# PrecessionalAge). Returns the same cached vec every call; do not mutate it.
 #must_use
 fn cyclename_names() {
     if (_cn_names_done == 0) {
@@ -174,8 +195,10 @@ fn cyclename_names() {
     }
     return _cn_names_vec;
 }
+# Serde name Str of CycleName `i` (e.g. CN_VENUS_SYNODIC -> "VenusSynodic"), from the shared
+# table. `i` must be 0..6 (vec_get aborts out of range).
 #must_use
-fn cyclename_name(i) { return vec_get(cyclename_names(), i); }
+fn cyclename_name(i) { return sk_name_at(cyclename_names(), i); }
 
 # Tag values for the CalendarDate tagged union (input to convert()).
 enum CalDateTag {
@@ -198,6 +221,9 @@ enum SgtOff {
     SGT_STARS = 32; SGT_NARR = 40; SGT_SIZE = 48;
 }
 
+# Construct a SagesTradition record (fresh 48-byte alloc) storing: civilization (ECIV_*),
+# group_name Str, sage_names vec<Str>, source_texts vec<Str>, associated_stars Str and
+# catastrophe_narrative Str. The Str/vec pointers are stored as-is, not copied.
 #must_use
 fn sgt_new(civ, group, names, texts, stars, narr) {
     var p = alloc(SGT_SIZE);
@@ -209,16 +235,22 @@ fn sgt_new(civ, group, names, texts, stars, narr) {
     store64(p + SGT_NARR, narr);
     return p;
 }
+# SagesTradition field: the civilization that preserves the tradition (ECIV_*).
 #must_use
 fn sgt_civ(p) { return load64(p + SGT_CIV); }
+# SagesTradition field: name of the sage group Str (e.g. "Saptarishi", "Apkallu").
 #must_use
 fn sgt_group(p) { return load64(p + SGT_GROUP); }
+# SagesTradition field: vec<Str> of individual sage names, where known from the texts.
 #must_use
 fn sgt_names(p) { return load64(p + SGT_NAMES); }
+# SagesTradition field: vec<Str> of the primary source texts.
 #must_use
 fn sgt_texts(p) { return load64(p + SGT_TEXTS); }
+# SagesTradition field: the associated star or constellation (Str).
 #must_use
 fn sgt_stars(p) { return load64(p + SGT_STARS); }
+# SagesTradition field: brief description of the flood/catastrophe narrative (Str).
 #must_use
 fn sgt_narr(p) { return load64(p + SGT_NARR); }
 
@@ -375,12 +407,14 @@ fn all_sages_traditions() {
 # BP (Present = 1950 CE) -> JDN.
 #must_use
 fn bp_to_jdn(years_bp) {
+    epoch_init();
     return f64_sub(BP_REFERENCE_JDN, f64_mul(years_bp, JULIAN_YEAR_DAYS));
 }
 
 # JDN -> years Before Present.
 #must_use
 fn jdn_to_bp(jdn) {
+    epoch_init();
     return f64_div(f64_sub(BP_REFERENCE_JDN, jdn), JULIAN_YEAR_DAYS);
 }
 
@@ -402,14 +436,14 @@ fn jdn_to_julian_year(jdn) {
 
 # Ecliptic longitude (0..360) of the vernal-equinox point for a JDN.
 # 150 deg at the Younger Dryas, drifting westward at 1 deg / 72 yr; normalized
-# via ((x % 360) + 360) % 360 (floor-based f64_fmod composition, matching the
-# egyptian.cyr Sothic idiom).
+# via ((x % 360) + 360) % 360 with f64_rem, Rust's truncating `%` exactly (3.1.3).
 #must_use
 fn vernal_point_longitude(jdn) {
+    epoch_init();
     var years_since_yd = f64_div(f64_sub(jdn, YOUNGER_DRYAS_JDN), JULIAN_YEAR_DAYS);
     var longitude = f64_sub(f64_from(150), f64_mul(years_since_yd, PRECESSION_RATE_DEG_PER_YEAR));
-    var m1 = f64_fmod(longitude, f64_from(360));
-    return f64_fmod(f64_add(m1, f64_from(360)), f64_from(360));
+    var m1 = f64_rem(longitude, f64_from(360));
+    return f64_rem(f64_add(m1, f64_from(360)), f64_from(360));
 }
 
 # ---------------------------------------------------------------------------
@@ -417,6 +451,8 @@ fn vernal_point_longitude(jdn) {
 #                       vernal_point_longitude: f64 } — 32 bytes.
 enum ApOff { AP_AGE = 0; AP_YEARS = 8; AP_FRACTION = 16; AP_LON = 24; AP_SIZE = 32; }
 
+# Construct an AgePosition record (fresh 32-byte alloc) storing: age (PA_*), years_into_age
+# (f64 Julian years), fraction of the age elapsed (f64) and vernal-point longitude (f64 deg).
 #must_use
 fn ap_new(age, years_into_age, fraction, lon) {
     var p = alloc(AP_SIZE);
@@ -426,12 +462,16 @@ fn ap_new(age, years_into_age, fraction, lon) {
     store64(p + AP_LON, lon);
     return p;
 }
+# AgePosition field: the current precessional age (PA_*).
 #must_use
 fn ap_age(p) { return load64(p + AP_AGE); }
+# AgePosition field: Julian years elapsed within the age, f64 (0.0 to ~2160.0).
 #must_use
 fn ap_years(p) { return load64(p + AP_YEARS); }
+# AgePosition field: fraction of the current age elapsed, f64 (0.0 to 1.0).
 #must_use
 fn ap_fraction(p) { return load64(p + AP_FRACTION); }
+# AgePosition field: ecliptic longitude of the vernal equinox point, f64 degrees (0..360).
 #must_use
 fn ap_lon(p) { return load64(p + AP_LON); }
 
@@ -439,11 +479,12 @@ fn ap_lon(p) { return load64(p + AP_LON); }
 # period, Age of Leo beginning at the Younger Dryas.
 #must_use
 fn precessional_age(jdn) {
+    epoch_init();
     var years_since_yd = f64_div(f64_sub(jdn, YOUNGER_DRYAS_JDN), JULIAN_YEAR_DAYS);
 
     # cycle_years = ((years_since_yd % GREAT_YEAR) + GREAT_YEAR) % GREAT_YEAR.
-    var m1 = f64_fmod(years_since_yd, GREAT_YEAR_YEARS);
-    var cycle_years = f64_fmod(f64_add(m1, GREAT_YEAR_YEARS), GREAT_YEAR_YEARS);
+    var m1 = f64_rem(years_since_yd, GREAT_YEAR_YEARS);
+    var cycle_years = f64_rem(f64_add(m1, GREAT_YEAR_YEARS), GREAT_YEAR_YEARS);
 
     # age_index = (cycle_years / 2160) as usize, clamped to <= 11.
     var age_index = f64_to(f64_div(cycle_years, PRECESSIONAL_AGE_YEARS));
@@ -461,6 +502,7 @@ fn precessional_age(jdn) {
 # the Younger Dryas anchor). AGE_ORDER.position(age) == age.
 #must_use
 fn age_start_jdn(age) {
+    epoch_init();
     return f64_add(YOUNGER_DRYAS_JDN, f64_mul(f64_from(age), PRECESSIONAL_AGE_DAYS));
 }
 
@@ -474,9 +516,10 @@ fn age_start_jdn(age) {
 # babylonian_init(); venus_synodic_period() is mayan's f64 accessor).
 #must_use
 fn cycle_period(cycle) {
+    epoch_init();
     if (cycle == CN_PRECESSION) { return GREAT_YEAR_DAYS; }
     if (cycle == CN_SOTHIC) { return f64_from(SOTHIC_CYCLE_DAYS); }
-    if (cycle == CN_SAROS) { return SAROS_DAYS; }
+    if (cycle == CN_SAROS) { babylonian_init(); return SAROS_DAYS; }
     if (cycle == CN_VENUS_SYNODIC) { return venus_synodic_period(); }
     if (cycle == CN_CALENDAR_ROUND) { return f64_from(CALENDAR_ROUND_DAYS); }
     if (cycle == CN_METONIC) { return f64_mul(f64_from(19), JULIAN_YEAR_DAYS); }
@@ -486,6 +529,8 @@ fn cycle_period(cycle) {
 # CyclesElapsed row: { cycle, complete: u64, remainder_days: f64 } — 24 bytes.
 enum CeOff { CE_CYCLE = 0; CE_COMPLETE = 8; CE_REMAINDER = 16; CE_SIZE = 24; }
 
+# Construct a CyclesElapsed row (fresh 24-byte alloc) storing: cycle (CN_*), complete
+# (i64 whole-cycle count) and remainder_days (f64).
 #must_use
 fn ce_new(cycle, complete, remainder) {
     var p = alloc(CE_SIZE);
@@ -494,10 +539,13 @@ fn ce_new(cycle, complete, remainder) {
     store64(p + CE_REMAINDER, remainder);
     return p;
 }
+# CyclesElapsed field: the cycle (CN_*).
 #must_use
 fn ce_cycle(p) { return load64(p + CE_CYCLE); }
+# CyclesElapsed field: complete cycles elapsed, i64 (cycles_elapsed clamps negatives to 0).
 #must_use
 fn ce_complete(p) { return load64(p + CE_COMPLETE); }
+# CyclesElapsed field: days past the last whole-cycle boundary, f64.
 #must_use
 fn ce_remainder(p) { return load64(p + CE_REMAINDER); }
 
@@ -532,6 +580,8 @@ fn cycles_elapsed(jdn, reference_jdn, cycles) {
 #                          max_residual_days: f64 } — 24 bytes.
 enum CalgnOff { CALG_JDN = 0; CALG_CYCLES = 8; CALG_MAXRES = 16; CALG_SIZE = 24; }
 
+# Construct a CycleAlignment record (fresh 24-byte alloc) storing: jdn (f64), cycles (vec of
+# CN_*, stored as-is) and max_residual_days (f64).
 #must_use
 fn calgn_new(jdn, cycles, max_residual) {
     var p = alloc(CALG_SIZE);
@@ -540,10 +590,13 @@ fn calgn_new(jdn, cycles, max_residual) {
     store64(p + CALG_MAXRES, max_residual);
     return p;
 }
+# CycleAlignment field: JDN of the alignment (f64).
 #must_use
 fn calgn_jdn(p) { return load64(p + CALG_JDN); }
+# CycleAlignment field: vec of the CN_* cycles that align at this point.
 #must_use
 fn calgn_cycles(p) { return load64(p + CALG_CYCLES); }
+# CycleAlignment field: maximum residual error in days across the aligned cycles (f64).
 #must_use
 fn calgn_maxres(p) { return load64(p + CALG_MAXRES); }
 
@@ -629,6 +682,8 @@ fn find_cycle_alignments(cycles, start_jdn, end_jdn, tolerance_days) {
 # Matches the Rust Vec<(String, avatara::ArchetypeProfile)> shape.
 enum SapOff { SAP_NAME = 0; SAP_PROFILE = 8; SAP_SIZE = 16; }
 
+# Construct a Saptarishi profile pair (fresh 16-byte alloc) storing: name and the avatara
+# ArchetypeProfile pointer. correlate() passes avatara's prof_name (a C-string) as the name.
 #must_use
 fn sap_new(name, profile) {
     var p = alloc(SAP_SIZE);
@@ -636,8 +691,10 @@ fn sap_new(name, profile) {
     store64(p + SAP_PROFILE, profile);
     return p;
 }
+# Saptarishi pair field: the sage name (a C-string from avatara prof_name in correlate()).
 #must_use
 fn sap_name(p) { return load64(p + SAP_NAME); }
+# Saptarishi pair field: the avatara ArchetypeProfile pointer.
 #must_use
 fn sap_profile(p) { return load64(p + SAP_PROFILE); }
 
@@ -669,40 +726,58 @@ enum McdOff {
     MCD_SIZE = 144;
 }
 
+# MultiCalendarDate field: the Julian Day Number (f64), the common currency.
 #must_use
 fn mcd_jdn(p) { return load64(p + MCD_JDN); }
+# MultiCalendarDate field: Mayan LongCount record, or 0 (None) before the Mayan epoch.
 #must_use
 fn mcd_mayan_lc(p) { return load64(p + MCD_MAYAN_LC); }
+# MultiCalendarDate field: Mayan Tzolkin record, or 0 (None) before the Mayan epoch.
 #must_use
 fn mcd_tzolkin(p) { return load64(p + MCD_TZOLKIN); }
+# MultiCalendarDate field: Mayan Haab record, or 0 (None) before the Mayan epoch.
 #must_use
 fn mcd_haab(p) { return load64(p + MCD_HAAB); }
+# MultiCalendarDate field: Egyptian SothicPos record (cycle, year_in_cycle, f64 drift days).
 #must_use
 fn mcd_sothic(p) { return load64(p + MCD_SOTHIC); }
+# MultiCalendarDate field: the AgePosition record (precessional age and position).
 #must_use
 fn mcd_age(p) { return load64(p + MCD_AGE); }
+# MultiCalendarDate field: approximate Julian calendar year, f64 (negative = BCE).
 #must_use
 fn mcd_julian_year(p) { return load64(p + MCD_JULIAN_YEAR); }
+# MultiCalendarDate field: the proleptic Gregorian date record (GregorianDate).
 #must_use
 fn mcd_gregorian(p) { return load64(p + MCD_GREGORIAN); }
+# MultiCalendarDate field: the Coptic (Alexandrian) date record (CopticDate).
 #must_use
 fn mcd_coptic(p) { return load64(p + MCD_COPTIC); }
+# MultiCalendarDate field: the Persian (Solar Hijri / Jalaali) date record (PersianDate).
 #must_use
 fn mcd_persian(p) { return load64(p + MCD_PERSIAN); }
+# MultiCalendarDate field: the Hebrew date record (HebrewDate).
 #must_use
 fn mcd_hebrew(p) { return load64(p + MCD_HEBREW); }
+# MultiCalendarDate field: the Chinese sexagenary (60-year) cycle year (SexagenaryYear).
 #must_use
 fn mcd_chinese(p) { return load64(p + MCD_CHINESE); }
+# MultiCalendarDate field: the Aztec Tonalpohualli (260-day sacred cycle) record.
 #must_use
 fn mcd_tonalpohualli(p) { return load64(p + MCD_TONAL); }
+# MultiCalendarDate field: the Aztec Xiuhpohualli (365-day solar cycle) record.
 #must_use
 fn mcd_xiuhpohualli(p) { return load64(p + MCD_XIUH); }
+# MultiCalendarDate field: vec of itihas eras containing the rounded Julian year.
 #must_use
 fn mcd_eras(p) { return load64(p + MCD_ERAS); }
+# MultiCalendarDate field: vec of itihas civilizations active at the rounded Julian year.
 #must_use
 fn mcd_civs(p) { return load64(p + MCD_CIVS); }
+# MultiCalendarDate field: vec of itihas events at the rounded Julian year.
 #must_use
 fn mcd_events(p) { return load64(p + MCD_EVENTS); }
+# MultiCalendarDate field: vec of Saptarishi (name, ArchetypeProfile) pair records (sap_*).
 #must_use
 fn mcd_saptarishi(p) { return load64(p + MCD_SAPTARISHI); }
 
@@ -712,20 +787,35 @@ fn mcd_saptarishi(p) { return load64(p + MCD_SAPTARISHI); }
 # dates, re-wrapped as ComputationError to mirror the Rust map_err).
 #must_use
 fn correlate(jdn) {
+    # ADR-007: a NaN JDN came back Ok with NaN fields, and |JDN| beyond ~1e14 hung in the
+    # Coptic/Hebrew year searches (as in Rust). Both are Err now.
+    if (f64_is_finite(jdn) == 0) {
+        return sk_fail(SKE_INVALID_DATE, str_from("JDN must be finite"));
+    }
+    if (f64_gt(f64_abs(jdn), f64_from(100000000000000)) == 1) {
+        var sbl = str_builder_new();
+        str_builder_add_cstr(sbl, "JDN ");
+        str_builder_add(sbl, sk_f64_display(jdn));
+        str_builder_add_cstr(sbl, " outside the supported range +/-1e14");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbl));
+    }
     # tracing::debug!(jdn, "correlating JDN to multi-calendar date")
-    if (SK_DEBUG <= sakshi_get_level()) {
+    if (SK_DEBUG <= sk_log_level()) {
         var _ds = str_from_int(f64_to(jdn));
-        sakshi_log_kv(SK_DEBUG, "correlating JDN to multi-calendar date", 38, "jdn", 3, str_data(_ds), str_len(_ds));
+        sk_log_kv(SK_DEBUG, "correlating JDN to multi-calendar date", 38, "jdn", 3, str_data(_ds), str_len(_ds));
     }
 
-    # Mayan calendars (None if before the Mayan epoch).
-    var mayan_epoch = f64_from(EPOCH_JDN);
+    # Mayan calendars (None if before the Mayan epoch). The day is the civil day containing
+    # jdn, floor(jdn + 0.5), as the Hebrew and Aztec conversions take it. The Rust
+    # truncated (`jdn as u64`), so every midnight JDN, which is what convert() passes for
+    # a calendar date, read as the day before: Gregorian 21 Dec 2012 gave 12.19.19.17.19
+    # while convert(13.0.0.0.0) gave 21 Dec 2012 (ADR-008).
+    var jdn_civil = f64_to(f64_floor(f64_add(jdn, F64_HALF)));
     var mayan_lc = 0;
     var tzolkin = 0;
     var haab = 0;
-    if (f64_ge(jdn, mayan_epoch) == 1) {
-        var jdn_u64 = f64_to(jdn);
-        var days = jdn_u64 - EPOCH_JDN;
+    if (jdn_civil >= EPOCH_JDN) {
+        var days = jdn_civil - EPOCH_JDN;
         var lc_res_t, lc_res_v = long_count_from_days(days);
         if (is_ok(lc_res_t) == 0) {
             # map_err(|e| ComputationError(format!("Mayan Long Count: {e}")))
@@ -796,6 +886,8 @@ fn correlate(jdn) {
 # the value is an f64 bit pattern; otherwise it is a date-record pointer.
 enum CdvOff { CDV_TAG = 0; CDV_VAL = 8; CDV_SIZE = 16; }
 
+# Construct a CalendarDate tagged-union record (fresh 16-byte alloc) storing: tag (CDT_*)
+# and value (an f64 JDN for CDT_JDN, otherwise a date-record pointer, stored as-is).
 #must_use
 fn cdv_new(tag, val) {
     var p = alloc(CDV_SIZE);
@@ -803,24 +895,33 @@ fn cdv_new(tag, val) {
     store64(p + CDV_VAL, val);
     return p;
 }
+# CalendarDate field: the variant tag (CDT_*).
 #must_use
 fn cdv_tag(p) { return load64(p + CDV_TAG); }
+# CalendarDate field: the payload (f64 JDN for CDT_JDN, otherwise a date-record pointer).
 #must_use
 fn cdv_val(p) { return load64(p + CDV_VAL); }
 
 # CalendarDate variant constructors.
+# CalendarDate::Jdn: wrap an f64 Julian Day Number in a fresh CalendarDate.
 #must_use
 fn caldate_jdn(jdn) { return cdv_new(CDT_JDN, jdn); }
+# CalendarDate::Gregorian: wrap a proleptic GregorianDate record in a fresh CalendarDate.
 #must_use
 fn caldate_gregorian(date) { return cdv_new(CDT_GREGORIAN, date); }
+# CalendarDate::Coptic: wrap a CopticDate record in a fresh CalendarDate.
 #must_use
 fn caldate_coptic(date) { return cdv_new(CDT_COPTIC, date); }
+# CalendarDate::Persian: wrap a Solar Hijri (Jalaali) PersianDate in a fresh CalendarDate.
 #must_use
 fn caldate_persian(date) { return cdv_new(CDT_PERSIAN, date); }
+# CalendarDate::Hebrew: wrap a HebrewDate record in a fresh CalendarDate.
 #must_use
 fn caldate_hebrew(date) { return cdv_new(CDT_HEBREW, date); }
+# CalendarDate::Hijri: wrap a tabular Islamic HijriDate record in a fresh CalendarDate.
 #must_use
 fn caldate_hijri(date) { return cdv_new(CDT_HIJRI, date); }
+# CalendarDate::MayanLongCount: wrap a Mayan LongCount record in a fresh CalendarDate.
 #must_use
 fn caldate_mayan_long_count(lc) { return cdv_new(CDT_MAYAN_LC, lc); }
 
@@ -830,12 +931,18 @@ fn caldate_mayan_long_count(lc) { return cdv_new(CDT_MAYAN_LC, lc); }
 #must_use
 fn calendar_to_jdn(date) {
     # tracing::debug!(?date, "converting calendar date to JDN")
-    if (SK_DEBUG <= sakshi_get_level()) {
+    if (SK_DEBUG <= sk_log_level()) {
         var _dm = str_from("converting calendar date to JDN");
-        sakshi_debug(str_data(_dm), str_len(_dm));
+        sk_debug(str_data(_dm), str_len(_dm));
     }
+    # A null date (calendar_date_from_json returns 0 when no variant key matches) or a tag
+    # outside the six variants was read as a Mayan Long Count record (ADR-007).
+    if (date == 0) { return sk_fail(SKE_INVALID_DATE, str_from("no calendar date")); }
     var tag = cdv_tag(date);
     var val = cdv_val(date);
+    if (tag < CDT_JDN || tag > CDT_MAYAN_LC) {
+        return sk_fail(SKE_INVALID_DATE, str_from("unknown calendar date variant"));
+    }
     if (tag == CDT_JDN) { return Ok(val); }
     if (tag == CDT_GREGORIAN) { return gregorian_to_jdn(val); }
     if (tag == CDT_COPTIC) { return coptic_to_jdn(val); }
@@ -843,6 +950,7 @@ fn calendar_to_jdn(date) {
     if (tag == CDT_HEBREW) { return hebrew_to_jdn(val); }
     if (tag == CDT_HIJRI) { return hijri_to_jdn(val); }
     # CDT_MAYAN_LC: to_julian_day() as f64 - 0.5.
+    if (val == 0) { return sk_fail(SKE_INVALID_DATE, str_from("no Long Count record")); }
     var jd = long_count_to_julian_day(val);
     return Ok(f64_sub(f64_from(jd), F64_HALF));
 }
@@ -852,9 +960,9 @@ fn calendar_to_jdn(date) {
 #must_use
 fn convert(date) {
     # tracing::info!(?date, "unified calendar conversion")
-    if (SK_INFO <= sakshi_get_level()) {
+    if (SK_INFO <= sk_log_level()) {
         var _im = str_from("unified calendar conversion");
-        sakshi_info(str_data(_im), str_len(_im));
+        sk_info(str_data(_im), str_len(_im));
     }
     var jr_t, jr_v = calendar_to_jdn(date);
     if (is_ok(jr_t) == 0) { return Err(jr_v); }

@@ -17,8 +17,10 @@ include "src/gregorian.cyr"
 include "src/persian.cyr"
 include "src/serial_persian.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Run every serial_persian test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     println("=== sankhya serial_persian test suite ===");

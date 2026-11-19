@@ -8,11 +8,13 @@ include "src/f64_util.cyr"
 include "src/logging.cyr"
 include "src/coptic.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 var TOL = 0;
 var HALF = 0;
 
+# Run every coptic test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     coptic_init();
@@ -121,6 +123,30 @@ fn main() {
     # ---- logging init doesn't crash ----
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs (ADR-007) ----
+    var cm_t, cm_v = coptic_to_jdn(coptic_date_new(1740, 13, 1));
+    assert_eq(sk_result_code(cm_t, cm_v), SKE_INVALID_DATE, "Coptic month 13 -> InvalidDate");
+    var cd_t, cd_v = coptic_to_jdn(coptic_date_new(1740, 0, 0 - 5));
+    assert_eq(sk_result_code(cd_t, cd_v), SKE_INVALID_DATE, "Coptic day -5 -> InvalidDate");
+    # The closed-form year: extreme JDNs return at once (1e15 took >20 s before) and the
+    # ordinary range still round-trips.
+    var cbig = jdn_to_coptic(f64_from(1000000000000000));
+    ok(coptic_date_day(cbig) >= 1, "jdn_to_coptic(1e15) terminates");
+    var cneg = jdn_to_coptic(f64_neg(f64_from(1000000000000000)));
+    ok(coptic_date_day(cneg) >= 1, "jdn_to_coptic(-1e15) terminates");
+    var cinf = jdn_to_coptic(f64_div(f64_from(1), f64_from(0)));
+    ok(coptic_date_day(cinf) >= 1, "jdn_to_coptic(+Inf) terminates");
+    var crt_bad = 0;
+    var cj = 0 - 2000000;
+    while (cj < 3500000) {
+        var cjd = f64_add(f64_from(cj), F64_HALF);
+        var cr_t, cr_v = coptic_to_jdn(jdn_to_coptic(cjd));
+        if (is_ok(cr_t) == 0) { crt_bad = crt_bad + 1; }
+        if (is_ok(cr_t) == 1) { if (f64_eq(result_unwrap(cr_t, cr_v), cjd) == 0) { crt_bad = crt_bad + 1; } }
+        cj = cj + 9973;
+    }
+    assert_eq(crt_bad, 0, "Coptic round-trips JDN -2e6..3.5e6");
 
     return assert_summary();
 }

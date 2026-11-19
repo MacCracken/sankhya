@@ -1,4 +1,4 @@
-# mayan.cyr — Mayan mathematics and calendar systems (ported from src/mayan.rs).
+# mayan.cyr — Mayan mathematics and calendar systems (ported from rust-old/src/mayan.rs).
 #
 # Vigesimal (base-20) numbers, dot/bar/shell numeral glyphs (0-19), the
 # five-position Long Count calendar (kin/uinal/tun/katun/baktun) with JDN
@@ -12,7 +12,7 @@
 # Parity: Rust returns Result<T, SankhyaError> with an interpolated format!
 # message on each error variant. We preserve BOTH the code AND the message
 # text via sk_fail(code, str) — see src/error.cyr. Display impls become
-# <type>_to_str(p) returning a Str. JSON (de)serialization lives in serial.cyr.
+# <type>_to_str(p) returning a Str. JSON (de)serialization lives in serial_mayan.cyr.
 
 # --- Integer constants (enum members: no global-init cost) ---
 # EPOCH_JDN: GMT correlation JDN of the Mayan creation date (Aug 11, 3114 BCE).
@@ -66,7 +66,7 @@ fn from_vigesimal(digits) {
     var i = 0;
     while (i < n) {
         var d = vec_get(digits, i);
-        if (d >= 20) {
+        if (d >= 20 || d < 0) {   # a negative digit (Rust: u8) is invalid, not an overflow
             var sbd = str_builder_new();
             str_builder_add_cstr(sbd, "vigesimal digit ");
             str_builder_add_int(sbd, d);
@@ -92,6 +92,8 @@ fn from_vigesimal(digits) {
 # Offsets: dots(0) bars(8) shell(16) = 24 bytes. shell is a bool (0/1).
 enum MayanNumeralOff { MN_DOTS = 0; MN_BARS = 8; MN_SHELL = 16; MN_SIZE = 24; }
 
+# Allocate a MayanNumeral record: dots (0-4, each 1), bars (0-3, each 5) and
+# shell (1 = zero glyph). Unvalidated; see mayan_numeral_from_value.
 #must_use
 fn mayan_numeral_make(dots, bars, shell) {
     var p = alloc(MN_SIZE);
@@ -100,10 +102,13 @@ fn mayan_numeral_make(dots, bars, shell) {
     store64(p + MN_SHELL, shell);
     return p;
 }
+# MayanNumeral field: number of dots (0-4), each worth 1.
 #must_use
 fn mayan_numeral_dots(p) { return load64(p + MN_DOTS); }
+# MayanNumeral field: number of bars (0-3), each worth 5.
 #must_use
 fn mayan_numeral_bars(p) { return load64(p + MN_BARS); }
+# MayanNumeral field: 1 if this is the shell (zero) glyph, else 0.
 #must_use
 fn mayan_numeral_shell(p) { return load64(p + MN_SHELL); }
 
@@ -111,7 +116,7 @@ fn mayan_numeral_shell(p) { return load64(p + MN_SHELL); }
 # value 0 => shell=true; else dots=value%5, bars=value/5. Returns Result.
 #must_use
 fn mayan_numeral_from_value(value) {
-    if (value > 19) {
+    if (value > 19 || value < 0) {   # Rust's u8 ruled out negatives (ADR-007)
         var sbm = str_builder_new();
         str_builder_add_cstr(sbm, "Mayan numeral value ");
         str_builder_add_int(sbm, value);
@@ -139,6 +144,8 @@ fn mayan_numeral_value(p) {
 # Offsets: baktun(0) katun(8) tun(16) uinal(24) kin(32) = 40 bytes.
 enum LongCountOff { LC_BAKTUN = 0; LC_KATUN = 8; LC_TUN = 16; LC_UINAL = 24; LC_KIN = 32; LC_SIZE = 40; }
 
+# Allocate a LongCount record from its five periods with no range checks
+# (long_count_new is the validating constructor).
 #must_use
 fn longcount_make(baktun, katun, tun, uinal, kin) {
     var p = alloc(LC_SIZE);
@@ -149,14 +156,19 @@ fn longcount_make(baktun, katun, tun, uinal, kin) {
     store64(p + LC_KIN, kin);
     return p;
 }
+# LongCount field: baktun (144,000 days each).
 #must_use
 fn lc_baktun(p) { return load64(p + LC_BAKTUN); }
+# LongCount field: katun (7,200 days each; 0-19).
 #must_use
 fn lc_katun(p) { return load64(p + LC_KATUN); }
+# LongCount field: tun (360 days each; 0-19).
 #must_use
 fn lc_tun(p) { return load64(p + LC_TUN); }
+# LongCount field: uinal (20 days each; 0-17).
 #must_use
 fn lc_uinal(p) { return load64(p + LC_UINAL); }
+# LongCount field: kin (1 day each; 0-19).
 #must_use
 fn lc_kin(p) { return load64(p + LC_KIN); }
 
@@ -164,6 +176,10 @@ fn lc_kin(p) { return load64(p + LC_KIN); }
 # kin>=20 (baktun unbounded). Returns Result.
 #must_use
 fn long_count_new(baktun, katun, tun, uinal, kin) {
+    # Rust's fields are u32/u8 (ADR-007).
+    if (baktun < 0 || katun < 0 || tun < 0 || uinal < 0 || kin < 0) {
+        return sk_fail(SKE_INVALID_DATE, str_from("Long Count components must be non-negative"));
+    }
     if (katun >= 20) {
         var sbk = str_builder_new();
         str_builder_add_cstr(sbk, "katun ");
@@ -200,6 +216,15 @@ fn long_count_new(baktun, katun, tun, uinal, kin) {
 # Returns Result.
 #must_use
 fn long_count_from_days(days) {
+    # Rust took u64 (ADR-007): a negative count is a date before the epoch, which the Long
+    # Count cannot write (it gave "0.0.0.0.-1" here).
+    if (days < 0) {
+        var sbn = str_builder_new();
+        str_builder_add_cstr(sbn, "day count ");
+        str_builder_add_int(sbn, days);
+        str_builder_add_cstr(sbn, " is before the Long Count epoch");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbn));
+    }
     var d = days;
     var baktun = d / 144000;
     d = d % 144000;
@@ -277,6 +302,8 @@ enum DaySign {
 # Lazy-singleton name table (serde identifier == Display via {:?}).
 var daysign_names_vec = 0;
 var daysign_names_done = 0;
+# Build the 20 DaySign names (Imix..Ahau) as a fresh vec of Str in
+# discriminant order. Called once by all_daysign_names.
 fn build_daysign_names() {
     var v = vec_new();
     vec_push(v, str_from("Imix"));
@@ -301,6 +328,8 @@ fn build_daysign_names() {
     vec_push(v, str_from("Ahau"));
     return v;
 }
+# The shared DaySign name table (vec of 20 Str), built on first call and
+# returned by reference afterwards.
 #must_use
 fn all_daysign_names() {
     if (daysign_names_done == 0) {
@@ -309,12 +338,15 @@ fn all_daysign_names() {
     }
     return daysign_names_vec;
 }
+# serde/Display identifier Str (e.g. "Ahau") for DaySign code i in [0, 20).
 #must_use
-fn daysign_name(i) { return vec_get(all_daysign_names(), i); }
+fn daysign_name(i) { return sk_name_at(all_daysign_names(), i); }
 
 # Tzolkin { number, day_sign }. Offsets: number(0) day_sign(8) = 16 bytes.
 enum TzolkinOff { TZ_NUMBER = 0; TZ_DAYSIGN = 8; TZ_SIZE = 16; }
 
+# Allocate a Tzolkin record: number (trecena 1-13) and day_sign (DaySign
+# code). Unvalidated; tzolkin_from_days computes one from a day count.
 #must_use
 fn tzolkin_make(number, day_sign) {
     var p = alloc(TZ_SIZE);
@@ -322,8 +354,10 @@ fn tzolkin_make(number, day_sign) {
     store64(p + TZ_DAYSIGN, day_sign);
     return p;
 }
+# Tzolkin field: trecena number (1-13).
 #must_use
 fn tz_number(p) { return load64(p + TZ_NUMBER); }
+# Tzolkin field: day sign (DaySign code, 0-19).
 #must_use
 fn tz_daysign(p) { return load64(p + TZ_DAYSIGN); }
 
@@ -331,10 +365,16 @@ fn tz_daysign(p) { return load64(p + TZ_DAYSIGN); }
 # Base at day 0 = 4 Ahau: number = (days+3)%13 + 1; sign = (days+19)%20.
 #must_use
 fn tzolkin_from_days(days) {
-    var number = (days + 3) % 13 + 1;
-    var sign_index = (days + 19) % 20;
-    return tzolkin_make(number, sign_index);
+    return tzolkin_make(_tz_number_of(days), _tz_sign_of(days));
 }
+
+# Tzolkin number (1-13), day sign index (0-19) and Haab day of year (0-364) for a day count
+# since the epoch. rem_euclid, not bare %: Rust took u64, and a negative count (a pre-epoch
+# day) gave a negative index here, which the name lookups abort on (ADR-007). For
+# non-negative counts the values are the Rust's.
+fn _tz_number_of(days) { return rem_euclid(days + 3, 13) + 1; }
+fn _tz_sign_of(days) { return rem_euclid(days + 19, 20); }
+fn _haab_doy_of(days) { return rem_euclid(days + 348, 365); }
 
 # Display: "{number} {DaySign}" (day sign via its variant identifier).
 #must_use
@@ -358,6 +398,8 @@ enum HaabMonth {
 
 var haabmonth_names_vec = 0;
 var haabmonth_names_done = 0;
+# Build the 19 HaabMonth names (Pop..Kumku, then Wayeb) as a fresh vec of
+# Str in discriminant order. Called once by all_haabmonth_names.
 fn build_haabmonth_names() {
     var v = vec_new();
     vec_push(v, str_from("Pop"));
@@ -381,6 +423,8 @@ fn build_haabmonth_names() {
     vec_push(v, str_from("Wayeb"));
     return v;
 }
+# The shared HaabMonth name table (vec of 19 Str), built on first call and
+# returned by reference afterwards.
 #must_use
 fn all_haabmonth_names() {
     if (haabmonth_names_done == 0) {
@@ -389,12 +433,15 @@ fn all_haabmonth_names() {
     }
     return haabmonth_names_vec;
 }
+# serde/Display identifier Str (e.g. "Kumku") for HaabMonth code i in [0, 19).
 #must_use
-fn haabmonth_name(i) { return vec_get(all_haabmonth_names(), i); }
+fn haabmonth_name(i) { return sk_name_at(all_haabmonth_names(), i); }
 
 # Haab { day, month }. Offsets: day(0) month(8) = 16 bytes.
 enum HaabOff { HB_DAY = 0; HB_MONTH = 8; HB_SIZE = 16; }
 
+# Allocate a Haab record: day within the month (0-19, or 0-4 in Wayeb) and
+# month (HaabMonth code). Unvalidated; haab_from_days computes one.
 #must_use
 fn haab_make(day, month) {
     var p = alloc(HB_SIZE);
@@ -402,8 +449,10 @@ fn haab_make(day, month) {
     store64(p + HB_MONTH, month);
     return p;
 }
+# Haab field: day within the month (0-19; 0-4 for Wayeb).
 #must_use
 fn hb_day(p) { return load64(p + HB_DAY); }
+# Haab field: month (HaabMonth code, 0-18).
 #must_use
 fn hb_month(p) { return load64(p + HB_MONTH); }
 
@@ -412,7 +461,7 @@ fn hb_month(p) { return load64(p + HB_MONTH); }
 # day = haab_day%20.
 #must_use
 fn haab_from_days(days) {
-    var haab_day = (days + 348) % 365;
+    var haab_day = _haab_doy_of(days);
     var month_index = haab_day / 20;
     var day = haab_day % 20;
     return haab_make(day, month_index);
@@ -434,6 +483,9 @@ fn haab_to_str(p) {
 # calendar_round returns a (Tzolkin, Haab) pair record. Offsets: tz(0) hb(8).
 enum CalRoundOff { CR_TZOLKIN = 0; CR_HAAB = 8; CR_SIZE = 16; }
 
+# Calendar Round for a day count since the Mayan epoch: a fresh pair record
+# holding fresh Tzolkin (cr_tzolkin) and Haab (cr_haab) records. Repeats
+# every CALENDAR_ROUND_DAYS = lcm(260, 365) = 18,980 days (~52 years).
 #must_use
 fn calendar_round(days) {
     var p = alloc(CR_SIZE);
@@ -441,8 +493,10 @@ fn calendar_round(days) {
     store64(p + CR_HAAB, haab_from_days(days));
     return p;
 }
+# Calendar Round pair field: the Tzolkin record.
 #must_use
 fn cr_tzolkin(p) { return load64(p + CR_TZOLKIN); }
+# Calendar Round pair field: the Haab record.
 #must_use
 fn cr_haab(p) { return load64(p + CR_HAAB); }
 
@@ -473,17 +527,24 @@ fn find_calendar_round(tzolkin_number, tzolkin_sign, haab_day, haab_month, start
         str_builder_add_cstr(sbh, ")");
         return sk_fail(SKE_INVALID_DATE, str_builder_build(sbh));
     }
+    # Same first match as scanning every day of the 18,980-day cycle, without building two
+    # records per day (the scan allocated ~600 KB per call). A Tzolkin (number, sign) pair
+    # recurs exactly every 260 days, so find its first day, then step by 260 (<= 73 steps).
     var offset = 0;
+    while (offset < 260) {
+        var d0 = start_day + offset;
+        if (_tz_number_of(d0) == tzolkin_number && _tz_sign_of(d0) == tzolkin_sign) { break; }
+        offset = offset + 1;
+    }
     while (offset < CALENDAR_ROUND_DAYS) {
         var day = start_day + offset;
-        var tz = tzolkin_from_days(day);
-        var hb = haab_from_days(day);
-        if (tz_number(tz) == tzolkin_number && tz_daysign(tz) == tzolkin_sign) {
-            if (hb_day(hb) == haab_day && hb_month(hb) == haab_month) {
+        if (_tz_number_of(day) == tzolkin_number && _tz_sign_of(day) == tzolkin_sign) {
+            var hd = _haab_doy_of(day);
+            if (hd % 20 == haab_day && hd / 20 == haab_month) {
                 return Ok(day);
             }
         }
-        offset = offset + 1;
+        offset = offset + 260;
     }
     return sk_fail(SKE_COMPUTATION, str_from("no matching Calendar Round date found within one cycle"));
 }
@@ -521,6 +582,9 @@ enum VenusPhase {
 
 var venusphase_names_vec = 0;
 var venusphase_names_done = 0;
+# Build the 4 VenusPhase serde names (MorningStar, SuperiorConjunction,
+# EveningStar, InferiorConjunction) as a fresh vec of Str. Called once by
+# all_venusphase_names.
 fn build_venusphase_names() {
     var v = vec_new();
     vec_push(v, str_from("MorningStar"));
@@ -529,6 +593,8 @@ fn build_venusphase_names() {
     vec_push(v, str_from("InferiorConjunction"));
     return v;
 }
+# The shared VenusPhase name table (vec of 4 Str), built on first call and
+# returned by reference afterwards.
 #must_use
 fn all_venusphase_names() {
     if (venusphase_names_done == 0) {
@@ -537,13 +603,16 @@ fn all_venusphase_names() {
     }
     return venusphase_names_vec;
 }
+# serde identifier Str (e.g. "MorningStar") for VenusPhase code i in [0, 4).
 #must_use
-fn venusphase_name(i) { return vec_get(all_venusphase_names(), i); }
+fn venusphase_name(i) { return sk_name_at(all_venusphase_names(), i); }
 
 # VENUS_SYNODIC_PERIOD = 583.92 (f64). Documentation-only: never used in any
 # computation (venus_phase uses the integer 584). Lazy-parsed once.
 var venus_synodic_period_val = 0;
 var venus_synodic_period_done = 0;
+# Maya synodic period of Venus: 583.92 days (f64). The Dresden Codex table
+# rounds it to 584 days (5 x 584 = 2920 = 8 x 365).
 #must_use
 fn venus_synodic_period() {
     if (venus_synodic_period_done == 0) {

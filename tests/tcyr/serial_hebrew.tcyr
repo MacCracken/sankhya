@@ -11,8 +11,10 @@ include "src/serial_util.cyr"
 include "src/hebrew.cyr"
 include "src/serial_hebrew.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Run every serial_hebrew test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
 

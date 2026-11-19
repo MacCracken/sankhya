@@ -8,7 +8,7 @@ historical calendars, and archaeoastronomy for AGNOS.
 - **Type**: Cyrius library (ported from Rust v2.0.0 — original preserved at `rust-old/`)
 - **License**: GPL-3.0-only
 - **Compiler**: Cyrius 6.7.18 — pinned in `cyrius.cyml` `[package].cyrius`
-- **Version**: SemVer 3.1.2 — `VERSION` at the project root is the source of truth
+- **Version**: SemVer 3.1.3 — `VERSION` at the project root is the source of truth
   (`cyrius.cyml` derives it via `${file:VERSION}`); do not inline the number elsewhere
 - **Consumers**: hisab (higher mathematics, as an optional companion), and the wider AGNOS
   ecosystem needing historical/ancient computations, calendar systems, or archaeoastronomy
@@ -30,7 +30,7 @@ historical calendars, and archaeoastronomy for AGNOS.
 | `islamic` | Al-Khwarizmi algebra, Khayyam cubics, completion of the square, Hijri calendar |
 | `gregorian` | Proleptic Gregorian calendar, JDN conversion, leap years |
 | `coptic` | 13-month Alexandrian calendar, Anno Martyrum |
-| `persian` | Solar Hijri (Jalaali), 2820-year leap cycle, Nowruz |
+| `persian` | Solar Hijri (Jalaali), jalaali-js breaks algorithm (valid −61..3177 AP), Nowruz |
 | `hebrew` | Lunisolar, Metonic cycle, molad, dehiyyot, 6 year types |
 | `aztec` | Tonalpohualli (260-day), Xiuhpohualli (365-day), Calendar Round |
 | `astro` | Coordinate systems, star catalog, precession, heliacal rising, monument alignment |
@@ -59,7 +59,8 @@ historical calendars, and archaeoastronomy for AGNOS.
 
 - **All math must be historically accurate** — real formulas, real correlations, cite primary sources.
 - **Cross-check against `rust-old/`** — the correctness bar is "matches what the Rust did". The
-  original tree is the parity oracle; do not modify it. Diverge only with an ADR.
+  original tree is the parity oracle; do not modify it. Diverge only with an ADR
+  (ADR-007 lists the input-domain guards, ADR-008 the accuracy corrections, as of 3.1.3).
 - **Zero panics** — no `unwrap`; every fallible path returns a `Result` (`Ok`/`sk_fail`) or a
   sentinel; check every fallible stdlib call. The adversarial suite enforces "Err or finite, never NaN/Inf".
 - **Euclidean modulo for calendars** — `rem_euclid`/`div_euclid` (not bare `%`/`/`) wherever an

@@ -8,9 +8,12 @@ include "src/egyptian.cyr"
 
 var TOL_1E15 = 0;
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
+# Assert that two values are equal, labelled name in the failure report.
 fn check(v, expected, name) { return assert_eq(v, expected, name); }
 
+# Run every egyptian test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     egyptian_init();
@@ -118,6 +121,45 @@ fn main() {
     # ---- logging init doesn't crash ----
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs ----
+    # Rust's egyptian_multiply is u64 with wrapping ops: a negative b is a u64 >= 2^63 and
+    # gives the same bits.
+    check(egyptian_multiply(3, 0 - 4), 0 - 12, "egyptian_multiply(3, -4) wraps like u64");
+    check(egyptian_multiply(12, 13), 156, "egyptian_multiply(12, 13) = 156");
+    # div_ceil: no wrap when num + den exceeds i64::MAX (Rust: Ok([1, MAX-1])).
+    var big = 0x7FFFFFFFFFFFFFFF;
+    var dz_t, dz_v = decompose(big, big - 1);
+    ok(is_ok(dz_t), "decompose(MAX, MAX-1) ok");
+    if (is_ok(dz_t) == 1) {
+        var dzv = result_unwrap(dz_t, dz_v);
+        check(vec_len(dzv), 2, "decompose(MAX, MAX-1) has 2 terms");
+        check(vec_get(dzv, 0), 1, "decompose(MAX, MAX-1)[0] = 1");
+        check(vec_get(dzv, 1), big - 1, "decompose(MAX, MAX-1)[1] = MAX-1");
+    }
+    # ADR-007: negative operands (Rust u64) are Err; i64::MIN / -1 no longer traps.
+    var dn_t, dn_v = decompose(0 - 1, 3);
+    check(sk_result_code(dn_t, dn_v), SKE_INVALID_FRACTION, "decompose(-1, 3) -> InvalidFraction");
+    var ed_t, ed_v = egyptian_divide(0 - 7, 2);
+    check(sk_result_code(ed_t, ed_v), SKE_INVALID_FRACTION, "egyptian_divide(-7, 2) -> InvalidFraction");
+    var em_t, em_v = egyptian_divide(0x7FFFFFFFFFFFFFFF + 1, 0 - 1);
+    check(sk_result_code(em_t, em_v), SKE_INVALID_FRACTION, "egyptian_divide(i64::MIN, -1) -> Err, no trap");
+    var hn_t, hn_v = to_hieroglyphic(0 - 5);
+    check(sk_result_code(hn_t, hn_v), SKE_INVALID_BASE, "to_hieroglyphic(-5) -> InvalidBase");
+    # Rust: !(-60.0..=60.0).contains(&lat) also rejects NaN; the message prints the value.
+    var sn_t, sn_v = next_sopdet_rising(f64_from(2451545), f64_div(f64_from(0), f64_from(0)));
+    check(sk_result_code(sn_t, sn_v), SKE_INVALID_DATE, "next_sopdet_rising(NaN latitude) -> InvalidDate");
+    if (is_ok(sn_t) == 0) { ok(str_contains_cstr(sk_err_msg(sn_v), "latitude NaN "), "NaN latitude message"); }
+    var s6_t, s6_v = next_sopdet_rising(f64_from(2451545), f64_parse("61.5"));
+    if (is_ok(s6_t) == 0) {
+        ok(str_contains_cstr(sk_err_msg(s6_v), "latitude 61.5 "), "latitude 61.5 printed in full");
+    }
+    var s7_t, s7_v = next_sopdet_rising(f64_from(2451545), f64_parse("-60.5"));
+    if (is_ok(s7_t) == 0) {
+        ok(str_contains_cstr(sk_err_msg(s7_v), "latitude -60.5 "), "latitude -60.5 printed in full");
+    }
+    var s8_t, s8_v = next_sopdet_rising(f64_from(2451545), f64_from(61));
+    if (is_ok(s8_t) == 0) { ok(str_contains_cstr(sk_err_msg(s8_v), "latitude 61 "), "integral latitude prints as 61"); }
 
     return assert_summary();
 }

@@ -80,6 +80,7 @@ fn _at_emit(sb, target, starcode) {
 # CelestialCoord { ra_hours: f64, dec_degrees: f64 }
 # ---------------------------------------------------------------------------
 
+# Serialize a CelestialCoord to a JSON Str: {"ra_hours":..,"dec_degrees":..}.
 #must_use
 fn celestial_coord_to_json(p) {
     var sb = str_builder_new();
@@ -91,6 +92,8 @@ fn celestial_coord_to_json(p) {
     return str_builder_build(sb);
 }
 
+# Rebuild a CelestialCoord (fresh record) from a parsed bayan object node v.
+# Missing or non-numeric members read as 0.0; JSON integers are coerced.
 #must_use
 fn celestial_coord_from_json(v) {
     var ra = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "ra_hours"));
@@ -98,6 +101,7 @@ fn celestial_coord_from_json(v) {
     return celestial_new(ra, dec);
 }
 
+# Structural equality of two CelestialCoords (f64_eq per field): 1 or 0.
 #must_use
 fn celestial_coord_eq(a, b) {
     if (f64_eq(cc_ra_hours(a), cc_ra_hours(b)) == 0) { return 0; }
@@ -109,6 +113,7 @@ fn celestial_coord_eq(a, b) {
 # EclipticCoord { longitude: f64, latitude: f64 }
 # ---------------------------------------------------------------------------
 
+# Serialize an EclipticCoord to a JSON Str: {"longitude":..,"latitude":..}.
 #must_use
 fn ecliptic_coord_to_json(p) {
     var sb = str_builder_new();
@@ -120,6 +125,8 @@ fn ecliptic_coord_to_json(p) {
     return str_builder_build(sb);
 }
 
+# Rebuild an EclipticCoord (fresh record) from a parsed bayan object node v.
+# Missing or non-numeric members read as 0.0; JSON integers are coerced.
 #must_use
 fn ecliptic_coord_from_json(v) {
     var lon = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "longitude"));
@@ -127,6 +134,7 @@ fn ecliptic_coord_from_json(v) {
     return ecliptic_new(lon, lat);
 }
 
+# Structural equality of two EclipticCoords (f64_eq per field): 1 or 0.
 #must_use
 fn ecliptic_coord_eq(a, b) {
     if (f64_eq(ec_longitude(a), ec_longitude(b)) == 0) { return 0; }
@@ -138,6 +146,7 @@ fn ecliptic_coord_eq(a, b) {
 # HorizontalCoord { azimuth: f64, altitude: f64 }
 # ---------------------------------------------------------------------------
 
+# Serialize a HorizontalCoord to a JSON Str: {"azimuth":..,"altitude":..}.
 #must_use
 fn horizontal_coord_to_json(p) {
     var sb = str_builder_new();
@@ -149,6 +158,8 @@ fn horizontal_coord_to_json(p) {
     return str_builder_build(sb);
 }
 
+# Rebuild a HorizontalCoord (fresh record) from a parsed bayan object node v.
+# Missing or non-numeric members read as 0.0; JSON integers are coerced.
 #must_use
 fn horizontal_coord_from_json(v) {
     var az = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "azimuth"));
@@ -156,6 +167,7 @@ fn horizontal_coord_from_json(v) {
     return horizontal_new(az, alt);
 }
 
+# Structural equality of two HorizontalCoords (f64_eq per field): 1 or 0.
 #must_use
 fn horizontal_coord_eq(a, b) {
     if (f64_eq(hc_azimuth(a), hc_azimuth(b)) == 0) { return 0; }
@@ -168,6 +180,8 @@ fn horizontal_coord_eq(a, b) {
 #        visual_magnitude: f64 }
 # ---------------------------------------------------------------------------
 
+# Serialize a Star to a JSON Str: name, bayer, constellation (strings) then
+# ra_j2000, dec_j2000, visual_magnitude (numbers), in Rust field order.
 #must_use
 fn star_to_json(p) {
     var sb = str_builder_new();
@@ -187,17 +201,21 @@ fn star_to_json(p) {
     return str_builder_build(sb);
 }
 
+# Rebuild a Star (fresh record) from a parsed bayan object node v. Missing
+# string members become a null (0) Str; missing numbers read as 0.0.
 #must_use
 fn star_from_json(v) {
-    var nm = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "name"));
-    var by = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "bayer"));
-    var co = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "constellation"));
+    var nm = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "name"));
+    var by = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "bayer"));
+    var co = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "constellation"));
     var ra = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "ra_j2000"));
     var dec = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "dec_j2000"));
     var mag = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "visual_magnitude"));
     return star_rec_new(nm, by, co, ra, dec, mag);
 }
 
+# Structural equality of two Stars (str_eq on the Str fields, f64_eq on the
+# f64 fields): 1 or 0.
 #must_use
 fn star_eq(a, b) {
     if (str_eq(star_name(a), star_name(b)) == 0) { return 0; }
@@ -213,6 +231,7 @@ fn star_eq(a, b) {
 # StarName (unit-variant enum → JSON string).
 # ---------------------------------------------------------------------------
 
+# Serialize a StarName code as a JSON string Str (its serde name, "Vega").
 #must_use
 fn starname_to_json(sncode) {
     var sb = str_builder_new();
@@ -220,12 +239,15 @@ fn starname_to_json(sncode) {
     return str_builder_build(sb);
 }
 
+# StarName code for a parsed bayan string node v, or -1 if the name is
+# unknown. v must be a string node (a null Str is dereferenced unguarded).
 #must_use
 fn starname_from_json(v) {
-    var c = str_cstr(bayan_json_v_str(v));
+    var c = str_cstr(sk_json_v_str(v));
     return starname_from_name(c);
 }
 
+# Equality of two StarName codes: 1 or 0.
 #must_use
 fn starname_eq(a, b) {
     if (a == b) { return 1; }
@@ -236,6 +258,7 @@ fn starname_eq(a, b) {
 # HeliacalEventType (unit-variant enum → JSON string).
 # ---------------------------------------------------------------------------
 
+# Serialize a HeliacalEventType code as a JSON string Str ("Rising"/"Setting").
 #must_use
 fn heltype_to_json(etcode) {
     var sb = str_builder_new();
@@ -243,12 +266,15 @@ fn heltype_to_json(etcode) {
     return str_builder_build(sb);
 }
 
+# HeliacalEventType code for a parsed bayan string node v, or -1 if unknown.
+# v must be a string node (a null Str is dereferenced unguarded).
 #must_use
 fn heltype_from_json(v) {
-    var c = str_cstr(bayan_json_v_str(v));
+    var c = str_cstr(sk_json_v_str(v));
     return heltype_from_name(c);
 }
 
+# Equality of two HeliacalEventType codes: 1 or 0.
 #must_use
 fn heltype_eq(a, b) {
     if (a == b) { return 1; }
@@ -259,6 +285,8 @@ fn heltype_eq(a, b) {
 # HeliacalEvent { jdn: f64, star: StarName, event_type: HeliacalEventType }
 # ---------------------------------------------------------------------------
 
+# Serialize a HeliacalEvent to a JSON Str: {"jdn":..,"star":"..",
+# "event_type":".."} with both enums as their serde names.
 #must_use
 fn heliacal_event_to_json(p) {
     var sb = str_builder_new();
@@ -272,14 +300,19 @@ fn heliacal_event_to_json(p) {
     return str_builder_build(sb);
 }
 
+# Rebuild a HeliacalEvent (fresh record) from a parsed bayan object node v.
+# A missing jdn reads as 0.0; unknown star / event_type names map to -1; both
+# members must be present JSON strings (a null Str is not guarded).
 #must_use
 fn heliacal_event_from_json(v) {
     var jdn = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "jdn"));
-    var sncode = starname_from_name(str_cstr(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "star"))));
-    var etcode = heltype_from_name(str_cstr(bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "event_type"))));
+    var sncode = starname_from_name(str_cstr(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "star"))));
+    var etcode = heltype_from_name(str_cstr(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "event_type"))));
     return heliacal_event_new(jdn, sncode, etcode);
 }
 
+# Structural equality of two HeliacalEvents (jdn via f64_eq, codes via ==):
+# 1 or 0.
 #must_use
 fn heliacal_event_eq(a, b) {
     if (f64_eq(he_jdn(a), he_jdn(b)) == 0) { return 0; }
@@ -295,6 +328,8 @@ fn heliacal_event_eq(a, b) {
 # variants.
 # ---------------------------------------------------------------------------
 
+# Serialize an AlignmentTarget (target code + starcode) to a JSON Str: unit
+# variants as their name string, AT_STAR_RISING as {"StarRising":"<star>"}.
 #must_use
 fn alignmenttarget_to_json(target, starcode) {
     var sb = str_builder_new();
@@ -307,13 +342,15 @@ fn alignmenttarget_to_json(target, starcode) {
 fn alignmenttarget_from_json(v) {
     if (bayan_json_v_is_obj(v) == 1) {
         var svnode = bayan_json_v_obj_get_by_cstr(v, "StarRising");
-        var scode = starname_from_name(str_cstr(bayan_json_v_str(svnode)));
+        var scode = starname_from_name(str_cstr(sk_json_v_str(svnode)));
         return (AT_STAR_RISING, scode);
     }
-    var tcode = alignmenttarget_from_name(str_cstr(bayan_json_v_str(v)));
+    var tcode = alignmenttarget_from_name(str_cstr(sk_json_v_str(v)));
     return (tcode, 0 - 1);
 }
 
+# Equality of two (target, starcode) AlignmentTarget pairs: 1 or 0. The
+# starcodes are compared only when the target is AT_STAR_RISING.
 #must_use
 fn alignmenttarget_eq(ta, sa, tb, sb) {
     if (ta != tb) { return 0; }
@@ -327,6 +364,8 @@ fn alignmenttarget_eq(ta, sa, tb, sb) {
 # AlignmentResult { target: AlignmentTarget, azimuth: f64, deviation: f64 }
 # ---------------------------------------------------------------------------
 
+# Serialize an AlignmentResult to a JSON Str: {"target":..,"azimuth":..,
+# "deviation":..}, target encoded as in alignmenttarget_to_json.
 #must_use
 fn alignment_result_to_json(p) {
     var sb = str_builder_new();
@@ -341,6 +380,8 @@ fn alignment_result_to_json(p) {
     return str_builder_build(sb);
 }
 
+# Rebuild an AlignmentResult (fresh record) from a parsed bayan object node
+# v: target/star via alignmenttarget_from_json; missing numbers read as 0.0.
 #must_use
 fn alignment_result_from_json(v) {
     var tnode = bayan_json_v_obj_get_by_cstr(v, "target");
@@ -350,6 +391,8 @@ fn alignment_result_from_json(v) {
     return alignment_result_new(tcode, scode, az, dev);
 }
 
+# Structural equality of two AlignmentResults (target pair via
+# alignmenttarget_eq, azimuth and deviation via f64_eq): 1 or 0.
 #must_use
 fn alignment_result_eq(a, b) {
     if (alignmenttarget_eq(ar_target(a), ar_star(a), ar_target(b), ar_star(b)) == 0) { return 0; }

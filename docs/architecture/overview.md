@@ -29,7 +29,7 @@ sankhya/
 │   ├── islamic.cyr              — Al-Khwarizmi algebra, Khayyam cubics, completion of the square, Hijri calendar
 │   ├── gregorian.cyr            — Proleptic Gregorian calendar, JDN conversion, leap years
 │   ├── coptic.cyr               — 13-month Alexandrian calendar, Anno Martyrum
-│   ├── persian.cyr              — Solar Hijri (Jalaali), 2820-year leap cycle, Nowruz
+│   ├── persian.cyr              — Solar Hijri (Jalaali), jalaali-js breaks algorithm, Nowruz
 │   ├── hebrew.cyr               — Lunisolar, Metonic cycle, molad, dehiyyot, 6 year types
 │   ├── aztec.cyr                — Tonalpohualli (260-day), Xiuhpohualli (365-day), Calendar Round
 │   ├── astro.cyr                — Coordinate systems, star catalog, precession, heliacal rising, alignment

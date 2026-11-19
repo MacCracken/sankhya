@@ -7,7 +7,9 @@ include "src/logging.cyr"
 include "src/gregorian.cyr"
 include "src/chinese.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
+# Assert that two values are equal, labelled name in the failure report.
 fn check(a, b, name) { return assert_eq(a, b, name); }
 
 # Sum the first n entries of a row-vec.
@@ -28,6 +30,7 @@ fn rods_str(n) {
     return result_unwrap(r_t, r_v);
 }
 
+# Run every chinese test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     println("=== chinese test suite ===");
@@ -154,6 +157,15 @@ fn main() {
     # ---- logging init doesn't crash ----
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs ----
+    # ADR-007: a negative residue (Rust took u64 pairs) is None, not a sign-dependent answer.
+    var neg_pairs = vec_new();
+    vec_push(neg_pairs, crt_pair(0 - 3, 5));
+    var crt_out = alloc(8);
+    check(chinese_remainder(neg_pairs, crt_out), 0, "CRT [(-3, 5)] -> None");
+    var nr_t, nr_v = to_unicode_rods(0 - 5);
+    check(sk_result_code(nr_t, nr_v), SKE_INVALID_BASE, "to_unicode_rods(-5) -> InvalidBase");
 
     return assert_summary();
 }

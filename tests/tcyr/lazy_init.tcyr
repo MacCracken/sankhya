@@ -1,0 +1,35 @@
+# lazy_init.tcyr — what a consumer sees without calling any *_init or log init (3.1.3).
+#
+# Every other suite calls the module inits first. Before 3.1.3 a consumer that skipped
+# epoch_init() got zero-valued constants (bp_to_jdn(0) = 0, precessional_age(J2000) =
+# Leo), and sankhya logged INFO lines to stderr without ever being asked to. This suite
+# calls neither, so it checks the lazy epoch init and the opt-in logging gate.
+include "src/lib.cyr"
+
+# Assert that v is non-zero (truthy), labelled name in the failure report.
+fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# Run the no-init checks and print the assert_summary; returns its exit code.
+fn main() {
+    alloc_init();
+
+    # Logging is off until sankhya_log_init*: every level check fails.
+    assert_eq(sk_log_level(), 0 - 1, "sk_log_level is -1 before sankhya_log_init");
+    var g_t, g_v = convert(caldate_gregorian(gregorian_date_new(2025, GM_JANUARY, 1)));
+    ok(is_ok(g_t), "convert works without any init");
+
+    # The epoch constants are filled in on first use.
+    ok(f64_eq(bp_to_jdn(f64_from(0)), f64_add(f64_from(2433282), F64_HALF)), "bp_to_jdn(0) = 1950 reference");
+    assert_eq(ap_age(precessional_age(f64_from(2451545))), PA_PISCES, "precessional_age(J2000) = Pisces");
+
+    # After sankhya_log_init_level the gate follows sakshi's level.
+    sankhya_log_init_level(SK_ERROR);
+    assert_eq(sk_log_level(), SK_ERROR, "sk_log_level follows sakshi after init");
+    # babylonian's constants fill in on first use too (saros_cycle returned its input).
+    ok(f64_gt(saros_cycle(f64_from(2451545)), f64_from(2451545)), "saros_cycle works without babylonian_init");
+
+    return assert_summary();
+}
+
+var rc = main();
+syscall(SYS_EXIT, rc);

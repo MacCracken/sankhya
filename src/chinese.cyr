@@ -32,6 +32,7 @@
 
 enum RodNumOff { ROD_VALUE = 0; ROD_SIZE = 8; }
 
+# Construct a fresh RodNumeral record {value: i64}; any i64, sign kept.
 #must_use
 fn rod_numeral_new(value) {
     var p = alloc(ROD_SIZE);
@@ -39,6 +40,7 @@ fn rod_numeral_new(value) {
     return p;
 }
 
+# RodNumeral field: the integer value represented (i64).
 #must_use
 fn rod_value(p) { return load64(p + ROD_VALUE); }
 
@@ -55,7 +57,8 @@ fn rod_subtract(a, b) { return rod_numeral_new(rod_value(a) - rod_value(b)); }
 fn rod_multiply(a, b) { return rod_numeral_new(rod_value(a) * rod_value(b)); }
 
 # Display: ASCII rod-art. Zero -> "[ ]". Otherwise sign + "[" + per-digit rods
-# ("|" in odd places-from-right, "-" in even; "+" prefix for digits > 5) + "]".
+# ("|" in odd places-from-right, "-" in even; a digit over 5 is five rods, "+", then the
+# rest, e.g. 8 -> "|||||+|||") + "]".
 #must_use
 fn rod_numeral_to_str(p) {
     var value = rod_value(p);
@@ -165,10 +168,13 @@ fn chinese_remainder(pairs, out) {
     var count = vec_len(pairs);
     if (count == 0) { return 0; }
 
+    # Zero modulus -> None (as Rust). Rust took (u64, u64) pairs, so a negative residue or
+    # modulus is also None here rather than a sign-dependent answer (ADR-007).
     var i = 0;
     while (i < count) {
         var pr = vec_get(pairs, i);
-        if (load64(pr + 8) == 0) { return 0; }
+        if (load64(pr + 8) <= 0) { return 0; }
+        if (load64(pr) < 0) { return 0; }
         i = i + 1;
     }
 
@@ -506,26 +512,26 @@ fn _zodiac_table() {
 
 # Display string for a HeavenlyStem discriminant, e.g. "Jiǎ (甲)".
 #must_use
-fn heavenly_stem_to_str(stem) { return vec_get(_stem_disp_table(), stem); }
+fn heavenly_stem_to_str(stem) { return sk_name_at(_stem_disp_table(), stem); }
 
 # {:?} identifier for a HeavenlyStem discriminant, e.g. "Jia".
 #must_use
-fn heavenly_stem_debug(stem) { return vec_get(_stem_dbg_table(), stem); }
+fn heavenly_stem_debug(stem) { return sk_name_at(_stem_dbg_table(), stem); }
 
 # {:?} identifier for an EarthlyBranch discriminant, e.g. "Chen".
 #must_use
-fn earthly_branch_debug(branch) { return vec_get(_branch_dbg_table(), branch); }
+fn earthly_branch_debug(branch) { return sk_name_at(_branch_dbg_table(), branch); }
 
 # Zodiac animal name for an EarthlyBranch discriminant, e.g. "Dragon".
 #must_use
-fn zodiac_animal(branch) { return vec_get(_zodiac_table(), branch); }
+fn zodiac_animal(branch) { return sk_name_at(_zodiac_table(), branch); }
 
 # Display string for an EarthlyBranch discriminant, e.g. "Chén (辰) — Dragon"
 # (note the em-dash U+2014 with surrounding spaces).
 #must_use
 fn earthly_branch_to_str(branch) {
     var sb = str_builder_new();
-    str_builder_add(sb, vec_get(_branch_disp_table(), branch));
+    str_builder_add(sb, sk_name_at(_branch_disp_table(), branch));
     str_builder_add_cstr(sb, " — ");
     str_builder_add(sb, zodiac_animal(branch));
     return str_builder_build(sb);
@@ -534,6 +540,8 @@ fn earthly_branch_to_str(branch) {
 # SexagenaryYear { stem, branch, cycle_position } — 24 bytes.
 enum SexOff { SX_STEM = 0; SX_BRANCH = 8; SX_POS = 16; SX_SIZE = 24; }
 
+# Construct a SexagenaryYear record {stem (HeavenlyStem 0-9), branch (EarthlyBranch 0-11),
+# cycle_position (1-60)}. Fields are stored unvalidated.
 #must_use
 fn sexagenary_year_new(stem, branch, cycle_position) {
     var p = alloc(SX_SIZE);
@@ -542,10 +550,13 @@ fn sexagenary_year_new(stem, branch, cycle_position) {
     store64(p + SX_POS, cycle_position);
     return p;
 }
+# SexagenaryYear field: the HeavenlyStem discriminant (0 = Jia .. 9 = Gui).
 #must_use
 fn sex_stem(p) { return load64(p + SX_STEM); }
+# SexagenaryYear field: the EarthlyBranch (zodiac animal) discriminant (0 = Zi .. 11 = Hai).
 #must_use
 fn sex_branch(p) { return load64(p + SX_BRANCH); }
+# SexagenaryYear field: position in the 60-year cycle (1-60).
 #must_use
 fn sex_cycle_position(p) { return load64(p + SX_POS); }
 
@@ -595,6 +606,10 @@ fn sexagenary_from_jdn(jdn) {
 fn to_unicode_rods(n) {
     if (n == 0) {
         return sk_fail(SKE_INVALID_BASE, str_from("zero has no rod numeral representation"));
+    }
+    # Rust took u64 (ADR-007).
+    if (n < 0) {
+        return sk_fail(SKE_INVALID_BASE, str_from("negative number has no rod numeral representation"));
     }
 
     var system = numerals_chinese_rod_numerals();

@@ -28,6 +28,9 @@ var roman_vals = 0;
 var roman_syms = 0;
 var roman_table_done = 0;
 
+# Allocate and fill ROMAN_TABLE: parallel 13-slot arrays roman_vals (i64) and roman_syms
+# (cstr), descending M=1000, CM=900 .. IV=4, I=1; then mark it built. Returns 0. Call via
+# ensure_roman_table, which builds it only once.
 fn build_roman_table() {
     roman_vals = alloc(13 * 8);
     roman_syms = alloc(13 * 8);
@@ -48,6 +51,7 @@ fn build_roman_table() {
     return 0;
 }
 
+# Build the Roman value/symbol table on first use (idempotent; needs alloc_init). Returns 0.
 fn ensure_roman_table() {
     if (roman_table_done == 0) { build_roman_table(); }
     return 0;
@@ -57,6 +61,8 @@ fn ensure_roman_table() {
 
 enum RomanOff { RN_VALUE = 0; RN_TEXT = 8; RN_SIZE = 16; }
 
+# Construct a RomanNumeral record {value (1-3999), text (canonical Roman numeral Str)}.
+# Unvalidated; romannum_from_value / romannum_parse are the checked constructors.
 #must_use
 fn romannum_new(value, text) {
     var p = alloc(RN_SIZE);
@@ -65,9 +71,11 @@ fn romannum_new(value, text) {
     return p;
 }
 
+# RomanNumeral field: the decimal value (1-3999).
 #must_use
 fn romannum_value(p) { return load64(p + RN_VALUE); }
 
+# RomanNumeral field: the canonical Roman numeral text (Str).
 #must_use
 fn romannum_text(p) { return load64(p + RN_TEXT); }
 
@@ -80,6 +88,8 @@ fn romannum_to_str(p) { return load64(p + RN_TEXT); }
 
 enum DivOff { DIV_Q = 0; DIV_R = 8; DIV_SIZE = 16; }
 
+# Construct a DivResult record {quotient: RomanNumeral ptr, remainder: RomanNumeral ptr, or 0
+# for None}: the Rust (Self, Option<Self>) pair returned by roman_divide.
 #must_use
 fn divresult_new(q, r) {
     var p = alloc(DIV_SIZE);
@@ -88,6 +98,7 @@ fn divresult_new(q, r) {
     return p;
 }
 
+# DivResult field: the quotient RomanNumeral.
 #must_use
 fn divresult_quotient(p) { return load64(p + DIV_Q); }
 
@@ -97,6 +108,8 @@ fn divresult_remainder(p) { return load64(p + DIV_R); }
 
 # --- Range helpers -----------------------------------------------------------
 
+# 1 if value is outside the standard Roman range 1..MAX_VALUE (3999), else 0. Rejects
+# negatives too.
 #must_use
 fn roman_out_of_range(value) {
     if (value < 1) { return 1; }
@@ -181,7 +194,12 @@ fn from_roman(s) {
         if (val == 0) {
             var sbc = str_builder_new();
             str_builder_add_cstr(sbc, "'");
-            str_builder_add_byte(sbc, ch);
+            # The scan runs right to left, so a non-ASCII character is met at its last byte:
+            # step back over continuation bytes (10xxxxxx) to emit the whole character.
+            var cs = i;
+            while (cs > 0 && (load8(ud + cs) & 0xC0) == 0x80) { cs = cs - 1; }
+            var cj = cs;
+            while (cj <= i) { str_builder_add_byte(sbc, load8(ud + cj)); cj = cj + 1; }
             str_builder_add_cstr(sbc, "' is not a valid Roman numeral character");
             return sk_fail(SKE_INVALID_BASE, str_builder_build(sbc));
         }
@@ -247,16 +265,51 @@ fn romannum_parse(s) {
 
 # --- Arithmetic --------------------------------------------------------------
 
+# Rust's arithmetic takes u32 operands. On i64, a negative or > u32::MAX operand is
+# rejected here instead of wrapping into a wrong numeral (ADR-007): Err(SKE_INVALID_BASE),
+# or 0 when both operands are in range.
+var ROMAN_U32_MAX = 4294967295;
+fn _roman_operands_bad(a, b) {
+    var bad = 0;
+    if (a < 0 || a > ROMAN_U32_MAX) { bad = 1; }
+    if (b < 0 || b > ROMAN_U32_MAX) { bad = 1; }
+    if (bad == 0) { return 0; }
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "Roman operands ");
+    str_builder_add_int(sb, a);
+    str_builder_add_cstr(sb, ", ");
+    str_builder_add_int(sb, b);
+    str_builder_add_cstr(sb, " out of range 0..4294967295");
+    return sk_err(SKE_INVALID_BASE, str_builder_build(sb));
+}
+
+# "Roman <op> overflow: a <sym> b", Rust's OverflowError text for checked_add/checked_mul.
+fn _roman_overflow(op, a, sym, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "Roman ");
+    str_builder_add_cstr(sb, op);
+    str_builder_add_cstr(sb, " overflow: ");
+    str_builder_add_int(sb, a);
+    str_builder_add_cstr(sb, sym);
+    str_builder_add_int(sb, b);
+    return sk_fail(SKE_OVERFLOW, str_builder_build(sb));
+}
+
 # Add two values → RomanNumeral. Sum > 3999 → InvalidBase (via from_value).
 #must_use
 fn roman_add(a, b) {
+    var bad = _roman_operands_bad(a, b);
+    if (bad != 0) { return Err(bad); }
     var sum = a + b;
+    if (sum > ROMAN_U32_MAX) { return _roman_overflow("addition", a, " + ", b); }
     return romannum_from_value(sum);
 }
 
 # Subtract b from a → RomanNumeral. a <= b → ComputationError.
 #must_use
 fn roman_subtract(a, b) {
+    var bad = _roman_operands_bad(a, b);
+    if (bad != 0) { return Err(bad); }
     if (a <= b) {
         var sb = str_builder_new();
         str_builder_add_cstr(sb, "Roman subtraction would produce zero or negative: ");
@@ -271,6 +324,11 @@ fn roman_subtract(a, b) {
 # Multiply two values → RomanNumeral. Product > 3999 → InvalidBase.
 #must_use
 fn roman_multiply(a, b) {
+    var bad = _roman_operands_bad(a, b);
+    if (bad != 0) { return Err(bad); }
+    if (b != 0) {
+        if (a > ROMAN_U32_MAX / b) { return _roman_overflow("multiplication", a, " * ", b); }
+    }
     var product = a * b;
     return romannum_from_value(product);
 }
@@ -282,6 +340,8 @@ fn roman_divide(a, b) {
     if (b == 0) {
         return sk_fail(SKE_INVALID_FRACTION, str_from("division by zero"));
     }
+    var bad = _roman_operands_bad(a, b);
+    if (bad != 0) { return Err(bad); }
     var quotient = a / b;
     var remainder = a % b;
     if (quotient == 0) {
@@ -307,15 +367,23 @@ fn roman_divide(a, b) {
 
 # --- RomanNumeral methods (delegate to the free functions) -------------------
 
+# RomanNumeral method: x + y. Returns Ok(fresh RomanNumeral) or Err(SKE_INVALID_BASE) when
+# the sum exceeds 3999 (see roman_add).
 #must_use
 fn romannum_add(x, y) { return roman_add(romannum_value(x), romannum_value(y)); }
 
+# RomanNumeral method: x - y. Returns Ok(fresh RomanNumeral) or Err(SKE_COMPUTATION) when the
+# result would be zero or negative (Roman numerals have no zero).
 #must_use
 fn romannum_subtract(x, y) { return roman_subtract(romannum_value(x), romannum_value(y)); }
 
+# RomanNumeral method: x * y. Returns Ok(fresh RomanNumeral) or Err(SKE_INVALID_BASE) when
+# the product exceeds 3999 (see roman_multiply).
 #must_use
 fn romannum_multiply(x, y) { return roman_multiply(romannum_value(x), romannum_value(y)); }
 
+# RomanNumeral method: x / y. Returns Ok(DivResult {quotient, remainder or 0}) or
+# Err(SKE_COMPUTATION) when x < y (zero quotient); see roman_divide.
 #must_use
 fn romannum_divide(x, y) { return roman_divide(romannum_value(x), romannum_value(y)); }
 

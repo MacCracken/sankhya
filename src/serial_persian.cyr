@@ -37,7 +37,7 @@ fn persian_month_to_json(m) {
 # Deserialize a bayan value node (a JSON string) to a PersianMonth discriminant.
 #must_use
 fn persian_month_from_json(v) {
-    var name = bayan_json_v_str(v);
+    var name = sk_json_v_str(v);
     return persian_month_from_name(name);
 }
 
@@ -77,7 +77,7 @@ fn persian_date_to_json(p) {
 fn persian_date_from_json(v) {
     var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
     var mv = bayan_json_v_obj_get_by_cstr(v, "month");
-    var mname = bayan_json_v_str(mv);
+    var mname = sk_json_v_str(mv);
     var m = persian_month_from_name(mname);
     var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return persian_date_new(y, m, d);

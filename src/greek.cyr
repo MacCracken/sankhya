@@ -29,6 +29,8 @@
 var _greek_phi = 0;
 var _greek_phi_done = 0;
 
+# The golden ratio phi = (1 + sqrt(5)) / 2 = 1.618033988749895 as an f64 (Euclid's "extreme
+# and mean ratio", Elements VI.30). Port of the Rust PHI const; parsed on first call, cached.
 #must_use
 fn greek_phi() {
     if (_greek_phi_done == 0) {
@@ -45,6 +47,10 @@ fn fibonacci_ratio(n) {
     if (n == 0) {
         return f64_from(1);
     }
+    # Past n = 1474 the Fibonacci doubles overflow (n = 1475 gave Inf, larger n NaN), and
+    # the ratio stopped moving long before; clamping keeps every n <= 1474 bit-identical
+    # and bounds the loop (ADR-007). A negative n (Rust's usize) iterates zero times.
+    if (n > 1474) { n = 1474; }
     var a = f64_from(1);
     var b = f64_from(1);
     var i = 0;
@@ -64,16 +70,19 @@ fn fibonacci_ratio(n) {
 # Primes <= limit. Empty vec if limit < 2. Uses a byte flag buffer (1 = prime).
 #must_use
 fn sieve(limit) {
-    var tmsg = "Sieve of Eratosthenes";
-    var tkey = "limit";
-    var tval = str_from_int(limit);
-    sakshi_log_kv(SK_TRACE, tmsg, strlen(tmsg), tkey, strlen(tkey), str_data(tval), str_len(tval));
+    if (SK_TRACE <= sk_log_level()) {
+        var tmsg = "Sieve of Eratosthenes";
+        var tkey = "limit";
+        var tval = str_from_int(limit);
+        sk_log_kv(SK_TRACE, tmsg, strlen(tmsg), tkey, strlen(tkey), str_data(tval), str_len(tval));
+    }
 
     if (limit < 2) {
         return vec_new();
     }
 
     var is_prime = alloc(limit + 1);
+    if (is_prime == 0) { return vec_new(); }   # limit too large for the heap
     var k = 0;
     while (k <= limit) {
         store8(is_prime + k, 1);
@@ -112,6 +121,11 @@ fn sieve(limit) {
 # Greatest common divisor via Euclid's algorithm. Returns 0 if both are 0.
 #must_use
 fn greek_gcd(a, b) {
+    # Rust took u64; on i64 the gcd is taken of the magnitudes (ADR-007). i64::MIN has no
+    # positive magnitude and stays as it is, but b can no longer be -1, so `a % b` cannot
+    # trap on i64::MIN / -1.
+    if (a < 0) { a = 0 - a; }
+    if (b < 0) { b = 0 - b; }
     while (b != 0) {
         var t = b;
         b = a % b;
@@ -130,6 +144,8 @@ fn greek_lcm(a, b) {
     if (b == 0) {
         return 0;
     }
+    if (a < 0) { a = 0 - a; }
+    if (b < 0) { b = 0 - b; }
     return (a / greek_gcd(a, b)) * b;
 }
 
@@ -265,6 +281,8 @@ fn to_greek_numeral(n) {
 # AntikytheraCycle record: name(Str) period_years(Str) gear_teeth(i64) desc(Str)
 enum AntiOff { ANTI_NAME = 0; ANTI_PERIOD = 8; ANTI_TEETH = 16; ANTI_DESC = 24; ANTI_SIZE = 32; }
 
+# Construct an AntikytheraCycle record {name (Str), period_years (Str, approximate, e.g.
+# "18.03"), gear_teeth (tooth count), description (Str)}.
 #must_use
 fn anti_new(name, period_years, gear_teeth, description) {
     var p = alloc(ANTI_SIZE);
@@ -275,12 +293,16 @@ fn anti_new(name, period_years, gear_teeth, description) {
     return p;
 }
 
+# AntikytheraCycle field: the cycle name (Str), e.g. "Metonic".
 #must_use
 fn anti_name(p) { return load64(p + ANTI_NAME); }
+# AntikytheraCycle field: approximate period in years, as a Str (e.g. "19", "54.09").
 #must_use
 fn anti_period_years(p) { return load64(p + ANTI_PERIOD); }
+# AntikytheraCycle field: the gear tooth count used in the mechanism.
 #must_use
 fn anti_gear_teeth(p) { return load64(p + ANTI_TEETH); }
+# AntikytheraCycle field: a human-readable description of the cycle (Str).
 #must_use
 fn anti_description(p) { return load64(p + ANTI_DESC); }
 

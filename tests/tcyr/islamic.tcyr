@@ -5,6 +5,7 @@ include "src/f64_util.cyr"
 include "src/logging.cyr"
 include "src/islamic.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 # Does the roots vec contain a value within tol of target?
@@ -24,6 +25,7 @@ var TOL_1E10 = 0;
 var TOL_1E6 = 0;
 var TOL_HALF = 0;
 
+# Run every islamic test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     TOL_1E10 = f64_parse("0.0000000001");
@@ -153,6 +155,50 @@ fn main() {
     # -- logging init does not crash --
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs ----
+    # ADR-007: non-finite coefficients are Err, not Ok(NaN/Inf).
+    var fnan = f64_div(f64_from(0), f64_from(0));
+    var finf = f64_div(f64_from(1), f64_from(0));
+    var cs1_t, cs1_v = complete_the_square(fnan, f64_from(1));
+    assert_eq(sk_result_code(cs1_t, cs1_v), SKE_INVALID_BASE, "complete_the_square(NaN, 1) -> Err");
+    var cs2_t, cs2_v = complete_the_square(f64_from(1), finf);
+    assert_eq(sk_result_code(cs2_t, cs2_v), SKE_INVALID_BASE, "complete_the_square(1, Inf) -> Err");
+    var aj_t, aj_v = solve_al_jabr(f64_from(1), f64_neg(finf), f64_from(1));
+    assert_eq(sk_result_code(aj_t, aj_v), SKE_COMPUTATION, "solve_al_jabr(1, -Inf, 1) -> Err");
+    var kn_t, kn_v = classify_khayyam_cubic(f64_from(1), fnan, f64_from(0), f64_from(1));
+    assert_eq(sk_result_code(kn_t, kn_v), SKE_COMPUTATION, "classify_khayyam_cubic(NaN coeff) -> Err");
+    # ADR-008: x^3 = 15x + 4 (Bombelli's cubic, root 4) is CubeEqualThingAndNumber.
+    var kb_t, kb_v = classify_khayyam_cubic(f64_from(1), f64_from(0), f64_from(0 - 15), f64_from(0 - 4));
+    ok(is_ok(kb_t), "classify x^3 - 15x - 4 ok");
+    if (is_ok(kb_t) == 1) {
+        assert_eq(khres_type(result_unwrap(kb_t, kb_v)), KCT_CUBE_EQUAL_THING_AND_NUMBER, "x^3 = 15x + 4 type");
+    }
+    var kt_t, kt_v = classify_khayyam_cubic(f64_from(1), f64_from(0), f64_from(15), f64_from(0 - 4));
+    if (is_ok(kt_t) == 1) {
+        assert_eq(khres_type(result_unwrap(kt_t, kt_v)), KCT_CUBE_AND_THING_EQUAL_NUMBER, "x^3 + 15x = 4 type");
+    }
+
+    # ---- 3.1.3 repairs: Hijri ----
+    # ADR-008: the closed-form year count makes pre-epoch dates round-trip (none did).
+    var hj_bad = 0;
+    var hjo = 0 - 40000;
+    while (hjo < 40000) {
+        var hjd = f64_add(HIJRI_EPOCH_JDN, f64_from(hjo));
+        var hr_t, hr_v = hijri_to_jdn(jdn_to_hijri(hjd));
+        if (is_ok(hr_t) == 0) { hj_bad = hj_bad + 1; }
+        if (is_ok(hr_t) == 1) { if (f64_eq(result_unwrap(hr_t, hr_v), hjd) == 0) { hj_bad = hj_bad + 1; } }
+        hjo = hjo + 37;
+    }
+    assert_eq(hj_bad, 0, "Hijri round-trips epoch +/- 40000 days");
+    # A year of 1e10 is O(1) now (the year-by-year sum ran past 20 s).
+    var hb_t, hb_v = hijri_to_jdn(hijri_date_new(10000000000, 0, 1));
+    ok(is_ok(hb_t), "hijri_to_jdn(year 1e10) returns");
+    # ADR-007
+    var hm_t, hm_v = hijri_to_jdn(hijri_date_new(1446, 12, 5));
+    assert_eq(sk_result_code(hm_t, hm_v), SKE_INVALID_DATE, "Hijri month 12 -> InvalidDate (was Muharram)");
+    var hd_t, hd_v = hijri_to_jdn(hijri_date_new(1446, 0, 0 - 5));
+    assert_eq(sk_result_code(hd_t, hd_v), SKE_INVALID_DATE, "Hijri day -5 -> InvalidDate");
 
     return assert_summary();
 }

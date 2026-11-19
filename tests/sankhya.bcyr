@@ -1,9 +1,11 @@
-# sankhya.bcyr — sankhya benchmarks (18 benchmarks, ported from Rust criterion).
+# sankhya.bcyr — sankhya benchmarks (24: 16 ported from Rust criterion, 8 added since).
 # Run: cyrius build tests/sankhya.bcyr build/sankhya_bench && ./build/sankhya_bench
 #
 # Ports rust-old/benches/benchmarks.rs (16 criterion bench_function groups) plus
 # two new benches (coptic/jdn_roundtrip, aztec/calendar_round) to close the
-# module-coverage gap. Mirrors itihas/tests/itihas.bcyr's harness pattern:
+# module-coverage gap, and (3.1.3) six for paths no bench reached: the serial
+# layer, the two searches (Calendar Round, heliacal rising) and the varna
+# renderers (cuneiform, isopsephy, Devanagari Katapayadi). Mirrors itihas/tests/itihas.bcyr's harness pattern:
 # `_b_<name>()` wrappers dispatched via fncall0, timed by bench_run_batch, then
 # bench_report_all prints one row per benchmark.
 #
@@ -23,6 +25,12 @@ var BATCH = 10000;
 var ROUNDS = 100;
 var HBATCH = 1000;
 var HROUNDS = 5;
+# 3.1.3 additions: allocating ops (varna lookups, string builds) and the two
+# day-by-day searches, which allocate per scanned day, so heap use stays bounded.
+var MBATCH = 1000;
+var MROUNDS = 20;
+var SBATCH = 20;
+var SROUNDS = 5;
 
 # ----------------------------------------------------------------
 # Representative argument constants (f64 jdn values use builtins only, so they
@@ -37,8 +45,11 @@ var JDN_AZTEC = f64_from(2451545);                     # J2000.0
 var PREC_FROM = f64_from(2451545);                     # J2000.0
 var PREC_TO = f64_sub(f64_from(2451545), f64_from(182625));  # 500 Julian years back
 
-# Alloc-dependent constant: assigned after alloc_init()/astro_init().
+# Alloc-dependent constants: assigned after alloc_init()/astro_init().
 var SIRIUS_COORD = 0;
+var BENCH_MCD = 0;   # correlate(JDN_CORR), reused by the serial round-trip bench
+var GIZA_LAT = 0;    # 29.98 N
+var GIZA_LON = 0;    # 31.13 E
 
 # ----------------------------------------------------------------
 # Wrapper functions (one per benchmark)
@@ -133,6 +144,40 @@ fn _b_coptic_roundtrip() {
 # aztec (new): full Calendar Round (tonalpohualli + xiuhpohualli) from a JDN.
 fn _b_aztec_calendar_round() { return aztec_calendar_round(JDN_AZTEC); }
 
+# serial (3.1.3): a full MultiCalendarDate -> JSON Str -> bayan parse -> from_json.
+fn _b_mcd_json_roundtrip() {
+    var js = multi_calendar_date_to_json(BENCH_MCD);
+    return multi_calendar_date_from_json(sk_json_parse(js));
+}
+
+# mayan (3.1.3): worst-case Calendar Round search. 4 Ahau 8 Kumku falls on day 0,
+# so searching from day 1 scans the whole 18,980-day cycle to day 18,980.
+fn _b_find_calendar_round() {
+    var r_t, r_v = find_calendar_round(4, DS_AHAU, 8, HM_KUMKU, 1);
+    return r_v;
+}
+
+# astro (3.1.3): next heliacal rising of Sirius after J2000 from Giza's latitude.
+fn _b_heliacal_rising() {
+    var r_t, r_v = heliacal_rising(SN_SIRIUS, JDN_AZTEC, GIZA_LAT, GIZA_LON);
+    return r_v;
+}
+
+# babylonian (3.1.3): cuneiform rendering of 216,000 (1,0,0,0) via varna.
+fn _b_to_cuneiform() {
+    var r_t, r_v = to_cuneiform(216000);
+    return r_v;
+}
+
+# greek (3.1.3): isopsephy of a five-letter word via varna's numeral table.
+fn _b_isopsephy() {
+    var r_t, r_v = isopsephy("λογος");
+    return r_v;
+}
+
+# vedic (3.1.3): Katapayadi in Devanagari for a 7-digit number via varna's table.
+fn _b_katapayadi_devanagari() { return katapayadi_encode_devanagari(1234567); }
+
 # ----------------------------------------------------------------
 # Top-level execution
 # ----------------------------------------------------------------
@@ -155,6 +200,10 @@ warm = epoch_init();
 
 # Precompute the Sirius J2000 coordinate reused by the precession bench.
 SIRIUS_COORD = star_j2000(SN_SIRIUS);
+var _bm_t, _bm_v = correlate(JDN_CORR);
+BENCH_MCD = result_unwrap(_bm_t, _bm_v);
+GIZA_LAT = f64_parse("29.98");
+GIZA_LON = f64_parse("31.13");
 
 # Warm the itihas/avatara lazy caches touched by correlate/convert so the
 # first timed call does not pay the one-time build cost.
@@ -254,6 +303,31 @@ vec_push(benches, b);
 # aztec (new)
 b = bench_new("aztec/calendar_round");
 bench_run_batch(b, &_b_aztec_calendar_round, BATCH, ROUNDS);
+vec_push(benches, b);
+
+# 3.1.3 additions
+b = bench_new("serial/mcd_json_roundtrip");
+bench_run_batch(b, &_b_mcd_json_roundtrip, HBATCH, HROUNDS);
+vec_push(benches, b);
+
+b = bench_new("mayan/find_calendar_round_full");
+bench_run_batch(b, &_b_find_calendar_round, SBATCH, SROUNDS);
+vec_push(benches, b);
+
+b = bench_new("astro/heliacal_rising_sirius");
+bench_run_batch(b, &_b_heliacal_rising, SBATCH, SROUNDS);
+vec_push(benches, b);
+
+b = bench_new("babylonian/to_cuneiform");
+bench_run_batch(b, &_b_to_cuneiform, MBATCH, MROUNDS);
+vec_push(benches, b);
+
+b = bench_new("greek/isopsephy");
+bench_run_batch(b, &_b_isopsephy, MBATCH, MROUNDS);
+vec_push(benches, b);
+
+b = bench_new("vedic/katapayadi_devanagari");
+bench_run_batch(b, &_b_katapayadi_devanagari, MBATCH, MROUNDS);
 vec_push(benches, b);
 
 bench_report_all(benches);

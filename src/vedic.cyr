@@ -13,7 +13,8 @@
 #
 # Parity note on integers: the Rust code is u64-heavy (wrapping_mul,
 # saturating_mul, checked_add/mul/sub -> Option). Cyrius ints are signed i64;
-# we reproduce wrapping via `*%`, saturating via `*|`, and the checked-overflow
+# we reproduce wrapping via `*%`, saturating by hand (`*|` is not linked; see
+# next_power_of_10), and the checked-overflow
 # Option paths via manual bound checks against the i64 max (0x7FFF...FFFF). For
 # valid inputs (the domain of every test) this is exact; only values above the
 # i64 range would diverge from the u64 original (see parity_notes).
@@ -45,6 +46,9 @@ fn next_power_of_10(n) {
 # NikhilamSteps record: base(0) da(8) db(16) cross(24) product(32) = 40 bytes.
 enum NkOff { NK_BASE = 0; NK_DA = 8; NK_DB = 16; NK_CROSS = 24; NK_PRODUCT = 32; NK_SIZE = 40; }
 
+# Construct a NikhilamSteps record {base B, da = B - a, db = B - b (the complements),
+# cross = a - db, product = cross * B + da * db}: the Rust 5-tuple, boxed.
+#must_use
 fn nikhilam_new(base, da, db, cross, product) {
     var p = alloc(NK_SIZE);
     store64(p + NK_BASE, base);
@@ -55,14 +59,19 @@ fn nikhilam_new(base, da, db, cross, product) {
     return p;
 }
 
+# NikhilamSteps field: the base B (smallest power of 10 >= max(a, b), minimum 10).
 #must_use
 fn nk_base(p) { return load64(p + NK_BASE); }
+# NikhilamSteps field: the complement of a, da = B - a.
 #must_use
 fn nk_da(p) { return load64(p + NK_DA); }
+# NikhilamSteps field: the complement of b, db = B - b.
 #must_use
 fn nk_db(p) { return load64(p + NK_DB); }
+# NikhilamSteps field: the cross-subtraction a - db (equivalently b - da).
 #must_use
 fn nk_cross(p) { return load64(p + NK_CROSS); }
+# NikhilamSteps field: the product cross * B + da * db (== a * b).
 #must_use
 fn nk_product(p) { return load64(p + NK_PRODUCT); }
 
@@ -218,12 +227,15 @@ fn katapayadi_decode(s) {
         if (result > limit - dp) { return sk_fail(SKE_OVERFLOW, str_from("Katapayadi decode overflow")); }
         result = result + dp;
 
-        # place *= 10   (checked)
-        if (place > limit / 10) { return sk_fail(SKE_OVERFLOW, str_from("Katapayadi decode overflow")); }
-        place = place * 10;
-
         if (j >= slen) { done = 1; }
-        if (j < slen) { tok_start = j + 1; }
+        if (j < slen) {
+            # place *= 10 (checked) only when another syllable follows. Rust checked it after
+            # the last one too, but its u64 place has room for 10^19 and i64 does not, so a
+            # 19-syllable string would fail here and not in Rust.
+            if (place > limit / 10) { return sk_fail(SKE_OVERFLOW, str_from("Katapayadi decode overflow")); }
+            place = place * 10;
+            tok_start = j + 1;
+        }
     }
     return Ok(result);
 }
@@ -238,7 +250,7 @@ fn katapayadi_decode(s) {
 fn meru_prastara(rows) {
     var meru_msg = "generating Meru Prastara (Pingala's triangle)";
     var rows_str = str_from_int(rows);
-    sakshi_log_kv(SK_DEBUG, meru_msg, strlen(meru_msg), "rows", 4, str_data(rows_str), str_len(rows_str));
+    sk_log_kv(SK_DEBUG, meru_msg, strlen(meru_msg), "rows", 4, str_data(rows_str), str_len(rows_str));
 
     if (rows == 0) { return Ok(vec_new()); }
 
@@ -320,12 +332,19 @@ fn _katapayadi_deva_glyph(rev, d) {
     return g;
 }
 
+# varna's Devanagari->IAST reverse map, built on first use and shared after: rebuilding
+# the table and its reverse map was ~19.5 of the ~20 us each call cost. Read-only.
+var _kt_deva_rev = 0;
+fn _katapayadi_deva_rev() {
+    if (_kt_deva_rev == 0) { _kt_deva_rev = translit_reverse_map(translit_devanagari_iast()); }
+    return _kt_deva_rev;
+}
+
 # Katapayadi encoding rendered in Devanagari consonants, space-separated,
 # least-significant digit first. Uses varna's IAST reverse map (IAST -> Deva).
 #must_use
 fn katapayadi_encode_devanagari(n) {
-    var tt = translit_devanagari_iast();
-    var rev = translit_reverse_map(tt);
+    var rev = _katapayadi_deva_rev();
 
     if (n == 0) {
         var g0 = _katapayadi_deva_glyph(rev, 0);

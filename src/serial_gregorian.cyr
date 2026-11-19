@@ -40,7 +40,7 @@ fn gregorian_month_to_json(m) {
 # Returns the discriminant, or (0 - 1) if the name is unknown.
 #must_use
 fn gregorian_month_from_json(v) {
-    return gregorian_month_from_name(bayan_json_v_str(v));
+    return gregorian_month_from_name(sk_json_v_str(v));
 }
 
 # Field-by-field equality for a GregorianMonth (a plain integer discriminant).
@@ -76,7 +76,7 @@ fn gregorian_date_to_json(p) {
 #must_use
 fn gregorian_date_from_json(v) {
     var year = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
-    var mstr = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
+    var mstr = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
     var month = gregorian_month_from_name(mstr);
     var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return gregorian_date_new(year, month, day);

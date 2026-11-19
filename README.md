@@ -20,7 +20,7 @@ Part of the [AGNOS](https://github.com/MacCracken/agnosticos) ecosystem; the pri
 | `islamic` | Islamic Golden Age | 750–1258 CE | Al-Khwarizmi algebra, Khayyam cubics, completion of the square, Hijri calendar |
 | `gregorian` | Global | 1582 CE+ | Proleptic Gregorian calendar, JDN conversion, leap years |
 | `coptic` | Egypt/Ethiopia | 284 CE+ | 13-month Alexandrian calendar, Anno Martyrum |
-| `persian` | Iran | 622 CE+ | Solar Hijri (Jalaali), 2820-year leap cycle, Nowruz |
+| `persian` | Iran | 622 CE+ | Solar Hijri (Jalaali), jalaali-js breaks algorithm (valid −61..3177 AP), Nowruz |
 | `hebrew` | Israel | 3761 BCE+ | Lunisolar, Metonic cycle, molad, dehiyyot, 6 year types |
 | `aztec` | Mesoamerica | 1200–1521 CE | Tonalpohualli (260-day), Xiuhpohualli (365-day), Calendar Round |
 | `epoch` | Cross-civilizational | — | Precession, precessional ages, Seven Sages, cycle alignment, unified `correlate()` / `convert()` API |
@@ -40,10 +40,10 @@ cyrius deps
 # Build + run the CLI smoke test
 cyrius build src/main.cyr build/sankhya && ./build/sankhya
 
-# Run the full test suite (32 suites under tests/tcyr/) → "32 passed, 0 failed"
+# Run the full test suite (35 suites under tests/tcyr/) → "35 passed, 0 failed"
 cyrius test tests/tcyr
 
-# Run the benchmarks (18 benches)
+# Run the benchmarks (24 benches)
 cyrius bench tests/sankhya.bcyr
 ```
 
@@ -59,17 +59,21 @@ include "sankhya/dist/sankhya.cyr"
 fn main() {
     alloc_init();
 
+    # A Result is a register pair (cyrius 6.6+): bind both halves.
     # Mayan Long Count: 1,872,000 days since creation -> 13.0.0.0.0 (Dec 21, 2012)
-    var lc = result_unwrap(long_count_from_days(1872000));
+    var lc_t, lc_v = long_count_from_days(1872000);
+    var lc = result_unwrap(lc_t, lc_v);
     # lc_baktun(lc) == 13
 
     # Proleptic Gregorian date -> midnight Julian Day Number (f64)
     var apr1 = gregorian_date_new(2025, GM_APRIL, 1);
-    var jdn  = result_unwrap(gregorian_to_jdn(apr1));
+    var j_t, j_v = gregorian_to_jdn(apr1);
+    var jdn = result_unwrap(j_t, j_v);
 
     # One JDN, expressed in every calendar sankhya knows
     # (+ itihas historical context & avatara Saptarishi profiles)
-    var mcd = result_unwrap(correlate(jdn));
+    var m_t, m_v = correlate(jdn);
+    var mcd = result_unwrap(m_t, m_v);
 
     return 0;
 }
@@ -102,7 +106,7 @@ Ported from Rust v2.0.0 (9,857 lines, 17 files) to Cyrius v3.0.0 (10,733 lines a
 - **Benchmarks** — 18 benches in `tests/sankhya.bcyr`: all 16 original Rust criterion benches plus new `coptic` and `aztec` benches.
 - **Consumer bundle** — `dist/sankhya.cyr`, regenerated via `cyrius distlib`.
 - **Deps** — `bayan` (JSON, replaces serde / serde_json, full round-trip), `sakshi` (logging, replaces tracing), and `math` + `ganita` (f64 / extended math) are folded stdlib; `varna` 2.6.0, `itihas` 2.6.2, and `avatara` 2.16.1 are git-tagged sibling deps, always-on for full parity; `net` / `http` come in transitively to satisfy itihas's bundled hoosh HTTP client (unused by sankhya).
-- **Version** — `VERSION` holds `3.1.2`; `cyrius.cyml` derives it via `${file:VERSION}`.
+- **Version** — `VERSION` holds `3.1.3`; `cyrius.cyml` derives it via `${file:VERSION}`.
 
 ### Cyrius idioms
 

@@ -62,6 +62,7 @@ fn venusphase_from_name(name) {
 # ---------------------------------------------------------------------------
 # MayanNumeral { dots, bars, shell } — shell is a JSON bool.
 # ---------------------------------------------------------------------------
+# Serialize a MayanNumeral to a JSON Str: {"dots":D,"bars":B,"shell":bool}.
 #must_use
 fn mayan_numeral_to_json(p) {
     var sb = str_builder_new();
@@ -74,6 +75,8 @@ fn mayan_numeral_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
+# Rebuild a MayanNumeral (fresh, unvalidated) from a parsed bayan object node
+# v. Missing members read as 0 / false.
 #must_use
 fn mayan_numeral_from_json(v) {
     var dots = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "dots"));
@@ -81,6 +84,7 @@ fn mayan_numeral_from_json(v) {
     var shell = bayan_json_v_bool(bayan_json_v_obj_get_by_cstr(v, "shell"));
     return mayan_numeral_make(dots, bars, shell);
 }
+# Structural equality of two MayanNumerals (dots, bars, shell): 1 or 0.
 #must_use
 fn mayan_numeral_eq(a, b) {
     if (mayan_numeral_dots(a) != mayan_numeral_dots(b)) { return 0; }
@@ -92,6 +96,8 @@ fn mayan_numeral_eq(a, b) {
 # ---------------------------------------------------------------------------
 # LongCount { baktun, katun, tun, uinal, kin } — all integers.
 # ---------------------------------------------------------------------------
+# Serialize a LongCount to a JSON Str: {"baktun":..,"katun":..,"tun":..,
+# "uinal":..,"kin":..}.
 #must_use
 fn longcount_to_json(p) {
     var sb = str_builder_new();
@@ -108,6 +114,8 @@ fn longcount_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
+# Rebuild a LongCount (fresh, no range checks) from a parsed bayan object
+# node v. Missing members read as 0; JSON floats are truncated via f64_to.
 #must_use
 fn longcount_from_json(v) {
     var baktun = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "baktun"));
@@ -117,6 +125,7 @@ fn longcount_from_json(v) {
     var kin = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "kin"));
     return longcount_make(baktun, katun, tun, uinal, kin);
 }
+# Structural equality of two LongCounts (all five periods): 1 or 0.
 #must_use
 fn longcount_eq(a, b) {
     if (lc_baktun(a) != lc_baktun(b)) { return 0; }
@@ -130,6 +139,7 @@ fn longcount_eq(a, b) {
 # ---------------------------------------------------------------------------
 # Tzolkin { number, day_sign } — day_sign is a DaySign enum (variant string).
 # ---------------------------------------------------------------------------
+# Serialize a Tzolkin to a JSON Str: {"number":N,"day_sign":"<DaySign>"}.
 #must_use
 fn tzolkin_to_json(p) {
     var sb = str_builder_new();
@@ -140,13 +150,17 @@ fn tzolkin_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
+# Rebuild a Tzolkin (fresh record) from a parsed bayan object node v. A
+# missing number reads as 0; an unknown day_sign name maps to -1 (day_sign
+# must be a JSON string: a null Str is not guarded).
 #must_use
 fn tzolkin_from_json(v) {
     var number = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "number"));
-    var signname = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "day_sign"));
+    var signname = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "day_sign"));
     var sign = daysign_from_name(signname);
     return tzolkin_make(number, sign);
 }
+# Structural equality of two Tzolkins (number, day sign): 1 or 0.
 #must_use
 fn tzolkin_eq(a, b) {
     if (tz_number(a) != tz_number(b)) { return 0; }
@@ -157,6 +171,7 @@ fn tzolkin_eq(a, b) {
 # ---------------------------------------------------------------------------
 # Haab { day, month } — month is a HaabMonth enum (variant string).
 # ---------------------------------------------------------------------------
+# Serialize a Haab to a JSON Str: {"day":D,"month":"<HaabMonth>"}.
 #must_use
 fn haab_to_json(p) {
     var sb = str_builder_new();
@@ -167,13 +182,17 @@ fn haab_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
+# Rebuild a Haab (fresh record) from a parsed bayan object node v. A missing
+# day reads as 0; an unknown month name maps to -1 (month must be a JSON
+# string: a null Str is not guarded).
 #must_use
 fn haab_from_json(v) {
     var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    var monthname = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
+    var monthname = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
     var month = haabmonth_from_name(monthname);
     return haab_make(day, month);
 }
+# Structural equality of two Haabs (day, month): 1 or 0.
 #must_use
 fn haab_eq(a, b) {
     if (hb_day(a) != hb_day(b)) { return 0; }
@@ -184,16 +203,20 @@ fn haab_eq(a, b) {
 # ---------------------------------------------------------------------------
 # DaySign enum — serde emits the bare variant-name JSON string, e.g. "Ahau".
 # ---------------------------------------------------------------------------
+# Serialize a DaySign code as a JSON string Str (its variant name, "Ahau").
 #must_use
 fn daysign_to_json(val) {
     var sb = str_builder_new();
     str_builder_add_json_str(sb, daysign_name(val));
     return str_builder_build(sb);
 }
+# DaySign code for a parsed bayan string node v, or -1 if the name is
+# unknown. v must be a string node (a null Str is not guarded).
 #must_use
 fn daysign_from_json(v) {
-    return daysign_from_name(bayan_json_v_str(v));
+    return daysign_from_name(sk_json_v_str(v));
 }
+# Equality of two DaySign codes: 1 or 0.
 #must_use
 fn daysign_eq(a, b) {
     if (a != b) { return 0; }
@@ -203,16 +226,20 @@ fn daysign_eq(a, b) {
 # ---------------------------------------------------------------------------
 # HaabMonth enum — bare variant-name JSON string, e.g. "Kumku".
 # ---------------------------------------------------------------------------
+# Serialize a HaabMonth code as a JSON string Str (its variant name, "Kumku").
 #must_use
 fn haabmonth_to_json(val) {
     var sb = str_builder_new();
     str_builder_add_json_str(sb, haabmonth_name(val));
     return str_builder_build(sb);
 }
+# HaabMonth code for a parsed bayan string node v, or -1 if the name is
+# unknown. v must be a string node (a null Str is not guarded).
 #must_use
 fn haabmonth_from_json(v) {
-    return haabmonth_from_name(bayan_json_v_str(v));
+    return haabmonth_from_name(sk_json_v_str(v));
 }
+# Equality of two HaabMonth codes: 1 or 0.
 #must_use
 fn haabmonth_eq(a, b) {
     if (a != b) { return 0; }
@@ -222,16 +249,20 @@ fn haabmonth_eq(a, b) {
 # ---------------------------------------------------------------------------
 # VenusPhase enum — bare variant-name JSON string, e.g. "MorningStar".
 # ---------------------------------------------------------------------------
+# Serialize a VenusPhase code as a JSON string Str (e.g. "MorningStar").
 #must_use
 fn venusphase_to_json(val) {
     var sb = str_builder_new();
     str_builder_add_json_str(sb, venusphase_name(val));
     return str_builder_build(sb);
 }
+# VenusPhase code for a parsed bayan string node v, or -1 if the name is
+# unknown. v must be a string node (a null Str is not guarded).
 #must_use
 fn venusphase_from_json(v) {
-    return venusphase_from_name(bayan_json_v_str(v));
+    return venusphase_from_name(sk_json_v_str(v));
 }
+# Equality of two VenusPhase codes: 1 or 0.
 #must_use
 fn venusphase_eq(a, b) {
     if (a != b) { return 0; }

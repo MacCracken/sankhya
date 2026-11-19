@@ -7,6 +7,7 @@ include "src/f64_util.cyr"
 include "src/logging.cyr"
 include "src/aztec.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 # Struct equality helpers (Rust derives PartialEq on both).
@@ -15,19 +16,23 @@ fn ton_eq(a, b) {
     if (ton_sign(a) != ton_sign(b)) { return 0; }
     return 1;
 }
+# Return 1 if two Xiuhpohualli dates have the same day and month, else 0.
 fn xiu_eq(a, b) {
     if (xiu_day(a) != xiu_day(b)) { return 0; }
     if (xiu_month(a) != xiu_month(b)) { return 0; }
     return 1;
 }
 
-# The correlation anchor jdn = 2275855.5, plus a helper to add N whole days.
+# The correlation anchor jdn = 2276827.5 (13 Aug 1521 Julian; 2275855.5 before ADR-008),
+# plus a helper to add N whole days.
 var ANCHOR = 0;
+# Return the correlation anchor JDN plus n whole days, as an f64.
 fn anchor_plus(n) { return f64_add(ANCHOR, f64_from(n)); }
 
+# Run every aztec test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
-    ANCHOR = f64_add(f64_from(2275855), F64_HALF);
+    ANCHOR = f64_add(f64_from(2276827), F64_HALF);
     println("=== sankhya aztec test suite ===");
 
     # ---- correlation_date_tonalpohualli: Aug 13 1521 = 1 Coatl ----
@@ -142,6 +147,13 @@ fn main() {
     # ---- logging init does not crash ----
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs (ADR-008) ----
+    # 13 Aug 1521 (Julian) is JD 2276827.5, 1 Coatl under Caso's correlation; the same day's
+    # Maya Tzolkin (GMT) is 1 Chicchan, the serpent sign.
+    var fall = tonalpohualli_from_jdn(f64_add(f64_from(2276827), F64_HALF));
+    assert_eq(ton_number(fall), 1, "13 Aug 1521 -> tonal number 1");
+    assert_eq(ton_sign(fall), TS_COATL, "13 Aug 1521 -> Coatl");
 
     return assert_summary();
 }

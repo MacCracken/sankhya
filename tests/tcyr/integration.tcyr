@@ -14,7 +14,9 @@
 #   ./build/_tt_integration
 include "src/lib.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
+# Assert that v is zero (falsy), labelled name in the failure report.
 fn no(v, name) { return assert_eq(v, 0, name); }
 
 # ---- f64 tolerances + constants (parsed once in consts_init) ----
@@ -26,6 +28,7 @@ var TOL_1E6 = 0;
 var TOL_001 = 0;
 var TOL_JDN = 0;
 var SQRT2 = 0;
+# Parse the f64 tolerances and constants this suite compares against (after alloc_init).
 fn consts_init() {
     TOL_1E15 = f64_parse("0.000000000000001");
     TOL_1E12 = f64_parse("0.000000000001");
@@ -61,6 +64,7 @@ fn int_sum(v) {
 
 # ============================ Mayan ============================
 
+# Ported Mayan Long Count cases (conversion to and from days, 13.0.0.0.0).
 fn test_mayan_longcount() {
     # long_count_dec_21_2012: 13 baktun = 1,872,000 days -> 13.0.0.0.0
     var days = 13 * 144000;
@@ -101,6 +105,7 @@ fn vig_rt(n) {
     return 0;
 }
 
+# Ported Mayan vigesimal conversion and round-trip cases.
 fn test_mayan_vigesimal() {
     # vigesimal_roundtrip_400: 400 -> [1,0,0]
     var d = to_vigesimal(400);
@@ -123,6 +128,7 @@ fn test_mayan_vigesimal() {
     return 0;
 }
 
+# Ported Mayan cycle cases (Calendar Round period, Tzolkin and Haab repetition).
 fn test_mayan_cycles() {
     # calendar_round_cycle: repeats every 18,980 days
     var cr1 = calendar_round(0);
@@ -146,6 +152,7 @@ fn test_mayan_cycles() {
 
 # ============================ Babylonian ============================
 
+# Return 1 if n survives a to_sexagesimal / from_sexagesimal round trip, else 0.
 fn sexa_rt(n) {
     var d = to_sexagesimal(n);
     var r_t, r_v = from_sexagesimal(d);
@@ -154,6 +161,7 @@ fn sexa_rt(n) {
     return 0;
 }
 
+# Return 1 if babylonian_sqrt(n, 20 iterations) is within tol of the exact square root, else 0.
 fn sqrt_check(n, tol) {
     var r_t, r_v = babylonian_sqrt(f64_from(n), 20);
     if (is_ok(r_t) == 0) { return 0; }
@@ -162,6 +170,7 @@ fn sqrt_check(n, tol) {
     return f64_approx_eq(got, exp, tol);
 }
 
+# Ported Babylonian cases from the Rust integration tests.
 fn test_babylonian() {
     # sexagesimal_roundtrip_3600: 3600 -> [1,0,0]
     var d = to_sexagesimal(3600);
@@ -226,6 +235,7 @@ fn test_babylonian() {
 
 # ============================ Egyptian ============================
 
+# Ported Egyptian cases from the Rust integration tests.
 fn test_egyptian() {
     # decompose_2_3: 2/3 -> [2,6], sum ~ 2/3 within 1e-15
     var dr_t, dr_v = decompose(2, 3);
@@ -275,6 +285,7 @@ fn test_egyptian() {
 
 # ============================ Vedic ============================
 
+# Ported Vedic cases from the Rust integration tests.
 fn test_vedic() {
     # sulba_sqrt2_baudhayana: == 577/408 within 1e-15, ~ SQRT_2 within 1e-5
     var approx = sulba_sqrt2();
@@ -338,6 +349,7 @@ fn test_vedic() {
 
 # ============================ Chinese ============================
 
+# Return 1 if the 3x3 magic square holds each of 1..9 exactly once, else 0.
 fn magic_contains_1_to_9(sq) {
     var marks = alloc(10 * 8);
     var z = 0;
@@ -361,6 +373,7 @@ fn magic_contains_1_to_9(sq) {
     return present;
 }
 
+# Ported Chinese cases from the Rust integration tests.
 fn test_chinese() {
     # chinese_remainder_sun_tzu_original: Some(23)
     var p = vec_new();
@@ -403,6 +416,7 @@ fn test_chinese() {
 
 # ============================ Greek ============================
 
+# Ported Greek cases from the Rust integration tests.
 fn test_greek() {
     # archimedes_pi_bounds after 10 iterations
     var lo10, up10 = archimedes_pi(10);
@@ -448,18 +462,21 @@ fn test_greek() {
 
 # ============================ Roman ============================
 
+# Assert that to_roman_str(value) renders as the C string cstr.
 fn check_roman_str(value, cstr, name) {
     var r_t, r_v = to_roman_str(value);
     if (is_ok(r_t) == 0) { return ok(0, name); }
     return ok(str_eq_cstr(result_unwrap(r_t, r_v), cstr), name);
 }
 
+# Assert that from_roman(cstr) parses to the integer expected.
 fn check_from_roman(cstr, expected, name) {
     var r_t, r_v = from_roman(str_from(cstr));
     if (is_ok(r_t) == 0) { return ok(0, name); }
     return assert_eq(result_unwrap(r_t, r_v), expected, name);
 }
 
+# Count failures of the to_roman / from_roman round trip over 1..3999 (0 means all pass).
 fn roman_rt_fail() {
     var fail = 0;
     var n = 1;
@@ -476,6 +493,7 @@ fn roman_rt_fail() {
     return fail;
 }
 
+# Ported Roman cases from the Rust integration tests.
 fn test_roman() {
     # to_str_notable_years
     check_roman_str(1776, "MDCCLXXVI", "1776 -> MDCCLXXVI");
@@ -543,17 +561,20 @@ fn skerr_to_json(e) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
+# Rebuild an SkErr from its JSON object (code and message fields).
 fn skerr_from_json(v) {
     var code = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "code"));
     var msg = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "message"));
     return sk_err(code, msg);
 }
+# Return 1 if two SkErr records have equal codes and messages, else 0.
 fn skerr_eq(a, b) {
     if (sk_err_code(a) != sk_err_code(b)) { return 0; }
     if (str_eq(sk_err_msg(a), sk_err_msg(b)) == 0) { return 0; }
     return 1;
 }
 
+# Ported JSON round-trip cases for the serial_* types (to_json then from_json).
 fn test_serde() {
     # long_count
     var lcr_t, lcr_v = long_count_from_days(1872000);
@@ -612,6 +633,7 @@ fn test_serde() {
 
 # ============================ Gregorian ============================
 
+# Count failed Gregorian JDN round trips over 36525 days from J2000 (0 means all pass).
 fn greg_rt_fail() {
     var fail = 0;
     var d = 0;
@@ -627,6 +649,7 @@ fn greg_rt_fail() {
     return fail;
 }
 
+# Ported Gregorian cases from the Rust integration tests.
 fn test_gregorian() {
     # jdn_roundtrip_modern
     assert_eq(greg_rt_fail(), 0, "gregorian JDN roundtrip around J2000");
@@ -641,6 +664,7 @@ fn test_gregorian() {
 
 # ============================ Coptic ============================
 
+# Count failed Coptic JDN round trips over 1500 days from epoch (0 means all pass).
 fn coptic_rt_fail(epoch) {
     var fail = 0;
     var d = 0;
@@ -655,6 +679,7 @@ fn coptic_rt_fail(epoch) {
     return fail;
 }
 
+# Ported Coptic cases from the Rust integration tests.
 fn test_coptic() {
     assert_eq(coptic_rt_fail(coptic_epoch_jdn()), 0, "coptic JDN roundtrip 1500 days");
     return 0;
@@ -662,6 +687,7 @@ fn test_coptic() {
 
 # ============================ Persian ============================
 
+# Count failed Persian JDN round trips over 1500 days from start (0 means all pass).
 fn persian_rt_fail(start) {
     var fail = 0;
     var d = 0;
@@ -676,6 +702,7 @@ fn persian_rt_fail(start) {
     return fail;
 }
 
+# Ported Persian cases from the Rust integration tests.
 fn test_persian() {
     var start = f64_add(f64_from(2459294), F64_HALF);
     assert_eq(persian_rt_fail(start), 0, "persian JDN roundtrip 1500 days");
@@ -684,6 +711,7 @@ fn test_persian() {
 
 # ============================ Hebrew ============================
 
+# Count failed Hebrew JDN round trips over 1500 days from start (0 means all pass).
 fn hebrew_rt_fail(start) {
     var fail = 0;
     var d = 0;
@@ -698,6 +726,7 @@ fn hebrew_rt_fail(start) {
     return fail;
 }
 
+# Ported Hebrew cases from the Rust integration tests.
 fn test_hebrew() {
     var start = f64_add(f64_from(2460000), F64_HALF);
     assert_eq(hebrew_rt_fail(start), 0, "hebrew JDN roundtrip 1500 days");
@@ -715,6 +744,7 @@ fn test_hebrew() {
 
 # ============================ Cross-calendar ============================
 
+# Ported cross-calendar cases: Gregorian to Hebrew/Coptic/Persian and back to the same JDN.
 fn test_crosscal() {
     # Convert Jan 1 2025 through hebrew/coptic/persian and back to JDN.
     var greg = gregorian_date_new(2025, GM_JANUARY, 1);
@@ -740,6 +770,7 @@ fn test_crosscal() {
     return 0;
 }
 
+# Ported cases for the unified convert() API over the calendar systems.
 fn test_convert_api() {
     # convert(CalendarDate::Gregorian(April 1 2025))
     var greg = gregorian_date_new(2025, GM_APRIL, 1);
@@ -763,17 +794,20 @@ fn test_convert_api() {
 
 # ============================ Aztec ============================
 
+# Return 1 if two Tonalpohualli dates have the same number and day sign, else 0.
 fn ton_eq(a, b) {
     if (ton_number(a) != ton_number(b)) { return 0; }
     if (ton_sign(a) != ton_sign(b)) { return 0; }
     return 1;
 }
+# Return 1 if two Xiuhpohualli dates have the same day and month, else 0.
 fn xiu_eq(a, b) {
     if (xiu_day(a) != xiu_day(b)) { return 0; }
     if (xiu_month(a) != xiu_month(b)) { return 0; }
     return 1;
 }
 
+# Ported Aztec cases from the Rust integration tests.
 fn test_aztec() {
     var base = f64_add(f64_from(2451545), F64_HALF);
     var t1, x1 = aztec_calendar_round(base);
@@ -785,6 +819,7 @@ fn test_aztec() {
 
 # ============================ Chinese Sexagenary ============================
 
+# Ported Chinese Sexagenary cycle cases (stem and branch of known years).
 fn test_sexagenary() {
     var s2024 = sexagenary_from_year(2024);
     assert_eq(sex_stem(s2024), HS_JIA, "2024 stem Jia");
@@ -798,6 +833,7 @@ fn test_sexagenary() {
 
 # ============================ Astro ============================
 
+# Ported Astro cases from the Rust integration tests.
 fn test_astro() {
     # precession_thuban_pole: dec > 85 at ~2800 BCE
     var jdn = f64_sub(J2000_JDN, f64_mul(f64_from(4800), JULIAN_YEAR_DAYS));
@@ -821,6 +857,7 @@ fn test_astro() {
 
 # ============================ main ============================
 
+# Run every ported integration case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     gregorian_init();

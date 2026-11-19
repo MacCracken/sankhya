@@ -9,14 +9,17 @@ include "src/f64_util.cyr"
 include "src/logging.cyr"
 include "src/gregorian.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 # 0.5 and (n + 0.5) as f64 bit patterns.
 fn half() { return f64_div(f64_from(1), f64_from(2)); }
+# Return n + 0.5 as an f64 (a half-integer JDN).
 fn jdnp5(n) { return f64_add(f64_from(n), half()); }
 
 var TOL = 0;
 
+# Run every gregorian test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     gregorian_init();
@@ -159,6 +162,14 @@ fn main() {
     # ---- logging init doesn't crash ----
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs (ADR-007) ----
+    var gm_t, gm_v = gregorian_to_jdn(gregorian_date_new(2000, 12, 40));
+    assert_eq(sk_result_code(gm_t, gm_v), SKE_INVALID_DATE, "Gregorian month 12, day 40 -> InvalidDate (no abort)");
+    var gn_t, gn_v = gregorian_to_jdn(gregorian_date_new(2000, 0 - 1, 1));
+    assert_eq(sk_result_code(gn_t, gn_v), SKE_INVALID_DATE, "Gregorian month -1 -> InvalidDate");
+    var gd_t, gd_v = gregorian_to_jdn(gregorian_date_new(2000, GM_JANUARY, 0 - 5));
+    assert_eq(sk_result_code(gd_t, gd_v), SKE_INVALID_DATE, "Gregorian day -5 -> InvalidDate");
 
     return assert_summary();
 }

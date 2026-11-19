@@ -55,7 +55,7 @@ fn babmonth_to_json(i) {
 # node `v` (a JTAG_STR). Returns (0 - 1) if the string is not a known variant.
 #must_use
 fn babmonth_from_json(v) {
-    var name = bayan_json_v_str(v);
+    var name = sk_json_v_str(v);
     return babmonth_from_name(name);
 }
 
@@ -125,7 +125,7 @@ fn babdate_to_json(p) {
 #must_use
 fn babdate_from_json(v) {
     var year = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
-    var mname = bayan_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
+    var mname = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
     var month = babmonth_from_name(mname);
     var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
     return babdate_new(year, month, day);

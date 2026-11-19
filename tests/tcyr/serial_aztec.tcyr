@@ -11,14 +11,16 @@ include "src/serial_util.cyr"
 include "src/aztec.cyr"
 include "src/serial_aztec.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
-# The correlation anchor jdn = 2275855.5 → 1 Coatl / day 1 Xocotl Huetzi.
+# The correlation anchor jdn = 2276827.5 (13 Aug 1521 Julian; 2275855.5 before ADR-008) → 1 Coatl / day 1 Xocotl Huetzi.
 var ANCHOR = 0;
 
+# Run every serial_aztec test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
-    ANCHOR = f64_add(f64_from(2275855), F64_HALF);
+    ANCHOR = f64_add(f64_from(2276827), F64_HALF);
     println("=== sankhya serial_aztec test suite ===");
 
     # ---- serde_roundtrip_tonalpohualli ----

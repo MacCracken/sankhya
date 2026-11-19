@@ -14,8 +14,9 @@
 #
 # f64 note: every non-integer constant is parsed ONCE (f64_parse) into a global
 # by astro_init(), which every public entry point calls (guarded, idempotent).
-# Whole-number constants use f64_from directly. Angle wrapping uses f64_fmod
-# (floor-based), which reproduces Rust's `((x % turn) + turn) % turn` result.
+# Whole-number constants use f64_from directly. Angle wrapping is Rust's
+# `((x % turn) + turn) % turn` with f64_rem, its exact truncating `%` (3.1.3). The
+# floor-based f64_fmod used before rounded, and differed for many negative inputs.
 
 # ---------------------------------------------------------------------------
 # Enums
@@ -69,6 +70,8 @@ enum AlignmentTarget {
 
 # CelestialCoord { ra_hours: f64, dec_degrees: f64 }
 enum CcOff { CC_RA = 0; CC_DEC = 8; CC_SIZE = 16; }
+# Allocate a CelestialCoord (equatorial): ra_hours = right ascension in
+# decimal hours (0-24), dec_degrees = declination in degrees (-90..+90); f64.
 #must_use
 fn celestial_new(ra_hours, dec_degrees) {
     var p = alloc(CC_SIZE);
@@ -76,13 +79,17 @@ fn celestial_new(ra_hours, dec_degrees) {
     store64(p + CC_DEC, dec_degrees);
     return p;
 }
+# CelestialCoord field: right ascension in decimal hours (f64).
 #must_use
 fn cc_ra_hours(p) { return load64(p + CC_RA); }
+# CelestialCoord field: declination in degrees (f64).
 #must_use
 fn cc_dec_degrees(p) { return load64(p + CC_DEC); }
 
 # EclipticCoord { longitude: f64, latitude: f64 }
 enum EcOff { EC_LON = 0; EC_LAT = 8; EC_SIZE = 16; }
+# Allocate an EclipticCoord: longitude (0-360) and latitude (-90..+90), both
+# f64 degrees, referenced to the ecliptic plane and the vernal equinox.
 #must_use
 fn ecliptic_new(longitude, latitude) {
     var p = alloc(EC_SIZE);
@@ -90,13 +97,17 @@ fn ecliptic_new(longitude, latitude) {
     store64(p + EC_LAT, latitude);
     return p;
 }
+# EclipticCoord field: ecliptic longitude in degrees (f64).
 #must_use
 fn ec_longitude(p) { return load64(p + EC_LON); }
+# EclipticCoord field: ecliptic latitude in degrees (f64).
 #must_use
 fn ec_latitude(p) { return load64(p + EC_LAT); }
 
 # HorizontalCoord { azimuth: f64, altitude: f64 }
 enum HcOff { HC_AZ = 0; HC_ALT = 8; HC_SIZE = 16; }
+# Allocate a HorizontalCoord: azimuth in degrees from north through east
+# (0-360) and altitude in degrees above the horizon (-90..+90); both f64.
 #must_use
 fn horizontal_new(azimuth, altitude) {
     var p = alloc(HC_SIZE);
@@ -104,14 +115,19 @@ fn horizontal_new(azimuth, altitude) {
     store64(p + HC_ALT, altitude);
     return p;
 }
+# HorizontalCoord field: azimuth in degrees from north, eastward (f64).
 #must_use
 fn hc_azimuth(p) { return load64(p + HC_AZ); }
+# HorizontalCoord field: altitude above the horizon in degrees (f64).
 #must_use
 fn hc_altitude(p) { return load64(p + HC_ALT); }
 
 # Star { name: Str, bayer: Str, constellation: Str, ra_j2000: f64,
 #        dec_j2000: f64, visual_magnitude: f64 }
 enum StOff { ST_NAME = 0; ST_BAYER = 8; ST_CONST = 16; ST_RA = 24; ST_DEC = 32; ST_MAG = 40; ST_SIZE = 48; }
+# Allocate a Star catalog record: name, Bayer designation and constellation
+# (Str), then J2000.0 right ascension (hours), declination (degrees) and
+# apparent visual magnitude (all f64).
 #must_use
 fn star_rec_new(name, bayer, constellation, ra_j2000, dec_j2000, visual_magnitude) {
     var p = alloc(ST_SIZE);
@@ -123,21 +139,29 @@ fn star_rec_new(name, bayer, constellation, ra_j2000, dec_j2000, visual_magnitud
     store64(p + ST_MAG, visual_magnitude);
     return p;
 }
+# Star field: common name (Str, e.g. "Sirius").
 #must_use
 fn star_name(p) { return load64(p + ST_NAME); }
+# Star field: Bayer designation (Str; "M45" for the Pleiades cluster).
 #must_use
 fn star_bayer(p) { return load64(p + ST_BAYER); }
+# Star field: constellation name (Str).
 #must_use
 fn star_constellation(p) { return load64(p + ST_CONST); }
+# Star field: right ascension at J2000.0 in decimal hours (f64).
 #must_use
 fn star_ra_j2000(p) { return load64(p + ST_RA); }
+# Star field: declination at J2000.0 in degrees (f64).
 #must_use
 fn star_dec_j2000(p) { return load64(p + ST_DEC); }
+# Star field: apparent visual magnitude (f64; lower is brighter).
 #must_use
 fn star_visual_magnitude(p) { return load64(p + ST_MAG); }
 
 # HeliacalEvent { jdn: f64, star: StarName, event_type: HeliacalEventType }
 enum HeOff { HE_JDN = 0; HE_STAR = 8; HE_TYPE = 16; HE_SIZE = 24; }
+# Allocate a HeliacalEvent: jdn (f64 Julian Day), star (StarName code) and
+# event_type (HET_RISING / HET_SETTING).
 #must_use
 fn heliacal_event_new(jdn, star, event_type) {
     var p = alloc(HE_SIZE);
@@ -146,16 +170,22 @@ fn heliacal_event_new(jdn, star, event_type) {
     store64(p + HE_TYPE, event_type);
     return p;
 }
+# HeliacalEvent field: Julian Day of the event (f64).
 #must_use
 fn he_jdn(p) { return load64(p + HE_JDN); }
+# HeliacalEvent field: the star involved (StarName code).
 #must_use
 fn he_star(p) { return load64(p + HE_STAR); }
+# HeliacalEvent field: HET_RISING or HET_SETTING.
 #must_use
 fn he_event_type(p) { return load64(p + HE_TYPE); }
 
 # AlignmentResult { target: AlignmentTarget, star: StarName (or -1), azimuth: f64,
 #                   deviation: f64 }
 enum ArOff { AR_TARGET = 0; AR_STAR = 8; AR_AZ = 16; AR_DEV = 24; AR_SIZE = 32; }
+# Allocate an AlignmentResult: target (AT_* code), star (StarName code for
+# AT_STAR_RISING, else -1), the target's azimuth (f64 degrees from north) and
+# its deviation from the monument bearing (f64 degrees).
 #must_use
 fn alignment_result_new(target, star, azimuth, deviation) {
     var p = alloc(AR_SIZE);
@@ -165,12 +195,16 @@ fn alignment_result_new(target, star, azimuth, deviation) {
     store64(p + AR_DEV, deviation);
     return p;
 }
+# AlignmentResult field: the AlignmentTarget code (AT_*).
 #must_use
 fn ar_target(p) { return load64(p + AR_TARGET); }
+# AlignmentResult field: StarName code for AT_STAR_RISING, -1 otherwise.
 #must_use
 fn ar_star(p) { return load64(p + AR_STAR); }
+# AlignmentResult field: target azimuth in degrees from north (f64).
 #must_use
 fn ar_azimuth(p) { return load64(p + AR_AZ); }
+# AlignmentResult field: deviation from the monument bearing, degrees (f64).
 #must_use
 fn ar_deviation(p) { return load64(p + AR_DEV); }
 
@@ -194,7 +228,7 @@ var OBL_D = 0;   # 5.04e-7
 # Solar position (Meeus ch.25)
 var SL_L0A = 0;  # 280.46646
 var SL_L0B = 0;  # 36000.76983
-var SL_MA = 0;   # 357.52811
+var SL_MA = 0;   # 357.52911 (Meeus 25.3; Rust had 357.52811, ADR-008)
 var SL_MB = 0;   # 35999.05029
 var SL_C1 = 0;   # 1.914602
 var SL_C2 = 0;   # 0.019993
@@ -205,21 +239,29 @@ var GMST_B = 0;  # 360.98564736629
 var GMST_C = 0;  # 0.000387933
 
 # Precession Lieske 1977 (degrees/century coefficients)
-var PR_A = 0;    # 0.6406161
-var PR_B = 0;    # 0.0000839
-var PR_C = 0;    # 0.0000050
-var PR_D = 0;    # 0.0000830
-var PR_E = 0;    # 0.0003041
-var PR_F = 0;    # 0.0000051
-var PR_G = 0;    # 0.0000073
-var PR_H = 0;    # 0.5567530
-var PR_I = 0;    # 0.0001185
-var PR_J = 0;    # 0.0000116
-var PR_K = 0;    # 0.0001162
+# IAU 1976 precession angles (Lieske 1977), in arcseconds as Meeus prints them (eq. 21.2,
+# Astronomical Algorithms 2nd ed., p. 134). The Rust oracle's degree constants had the
+# T-coefficients, the t^2 terms and z's t^3 term mixed up (z t^3 0.0000073 deg for
+# 0.018203" = 0.0000051 deg, ...), an error of ~0.27 deg by 3000 BCE (ADR-008).
+var PR_ZZ_A = 0;    # 2306.2181   (zeta and z share this t bracket)
+var PR_ZZ_B = 0;    # 1.39656     * T
+var PR_ZZ_C = 0;    # 0.000139    * T^2 (subtracted)
+var PR_ZETA_2 = 0;  # 0.30188     t^2
+var PR_ZETA_2T = 0; # 0.000344    * T, t^2 (subtracted)
+var PR_ZETA_3 = 0;  # 0.017998    t^3
+var PR_Z_2 = 0;     # 1.09468     t^2
+var PR_Z_2T = 0;    # 0.000066    * T, t^2
+var PR_Z_3 = 0;     # 0.018203    t^3
+var PR_TH_A = 0;    # 2004.3109   theta t bracket
+var PR_TH_B = 0;    # 0.85330     * T (subtracted)
+var PR_TH_C = 0;    # 0.000217    * T^2 (subtracted)
+var PR_TH_2 = 0;    # 0.42665     t^2 (subtracted)
+var PR_TH_2T = 0;   # 0.000217    * T, t^2
+var PR_TH_3 = 0;    # 0.041833    t^3 (subtracted)
+var PR_ARCSEC = 0;  # 3600
 
 var AV_K = 0;       # arcus visionis slope 1.7
 var SOL_DEC = 0;    # solstice declination 23.44
-var HORIZ_TOL = 0;  # 1e-10 azimuth-branch guard
 
 # One catalog row from C-string fields: name, Bayer designation, constellation,
 # J2000 right ascension (hours), declination (degrees), visual magnitude.
@@ -230,6 +272,8 @@ fn _star_add(v, name, bayer, constellation, ra, dec, mag) {
     return 0;
 }
 
+# Build the 20-star catalog (J2000.0, Hipparcos 1997) as a fresh vec of Star
+# records in StarName order. Called once by astro_init; use star_catalog().
 fn build_star_catalog() {
     var v = vec_new();
     _star_add(v, "Sirius",     "α CMa", "Canis Major",      "6.752",  "-16.716", "-1.46");
@@ -255,6 +299,9 @@ fn build_star_catalog() {
     return v;
 }
 
+# Build the vec of StarName codes that monument_alignment tests for star
+# rising: Sirius, Vega, Aldebaran, Antares, Regulus, Spica, Pleiades, Thuban,
+# Polaris. Called once by astro_init.
 fn build_align_stars() {
     var v = vec_new();
     vec_push(v, SN_SIRIUS);
@@ -269,6 +316,8 @@ fn build_align_stars() {
     return v;
 }
 
+# Build the StarName serde-identifier table (vec of 20 Str, discriminant
+# order). Called once by astro_init; use starname_name(i).
 fn build_starname_names() {
     var v = vec_new();
     vec_push(v, str_from("Sirius"));    vec_push(v, str_from("Canopus"));
@@ -284,6 +333,8 @@ fn build_starname_names() {
     return v;
 }
 
+# Build the HeliacalEventType serde-identifier table ("Rising", "Setting").
+# Called once by astro_init; use heltype_name(i).
 fn build_heltype_names() {
     var v = vec_new();
     vec_push(v, str_from("Rising"));
@@ -291,6 +342,8 @@ fn build_heltype_names() {
     return v;
 }
 
+# Build the AlignmentTarget serde-identifier table (7 Str, AT_* order).
+# Called once by astro_init; use alignmenttarget_name(i).
 fn build_target_names() {
     var v = vec_new();
     vec_push(v, str_from("SummerSolsticeSunrise"));
@@ -314,7 +367,7 @@ fn astro_init() {
 
     SL_L0A = f64_parse("280.46646");
     SL_L0B = f64_parse("36000.76983");
-    SL_MA = f64_parse("357.52811");
+    SL_MA = f64_parse("357.52911");
     SL_MB = f64_parse("35999.05029");
     SL_C1 = f64_parse("1.914602");
     SL_C2 = f64_parse("0.019993");
@@ -323,21 +376,25 @@ fn astro_init() {
     GMST_B = f64_parse("360.98564736629");
     GMST_C = f64_parse("0.000387933");
 
-    PR_A = f64_parse("0.6406161");
-    PR_B = f64_parse("0.0000839");
-    PR_C = f64_parse("0.0000050");
-    PR_D = f64_parse("0.0000830");
-    PR_E = f64_parse("0.0003041");
-    PR_F = f64_parse("0.0000051");
-    PR_G = f64_parse("0.0000073");
-    PR_H = f64_parse("0.5567530");
-    PR_I = f64_parse("0.0001185");
-    PR_J = f64_parse("0.0000116");
-    PR_K = f64_parse("0.0001162");
+    PR_ZZ_A = f64_parse("2306.2181");
+    PR_ZZ_B = f64_parse("1.39656");
+    PR_ZZ_C = f64_parse("0.000139");
+    PR_ZETA_2 = f64_parse("0.30188");
+    PR_ZETA_2T = f64_parse("0.000344");
+    PR_ZETA_3 = f64_parse("0.017998");
+    PR_Z_2 = f64_parse("1.09468");
+    PR_Z_2T = f64_parse("0.000066");
+    PR_Z_3 = f64_parse("0.018203");
+    PR_TH_A = f64_parse("2004.3109");
+    PR_TH_B = f64_parse("0.85330");
+    PR_TH_C = f64_parse("0.000217");
+    PR_TH_2 = f64_parse("0.42665");
+    PR_TH_2T = f64_parse("0.000217");
+    PR_TH_3 = f64_parse("0.041833");
+    PR_ARCSEC = f64_from(3600);
 
     AV_K = f64_parse("1.7");
     SOL_DEC = f64_parse("23.44");
-    HORIZ_TOL = f64_parse("0.0000000001");
 
     astro_star_vec = build_star_catalog();
     astro_align_stars = build_align_stars();
@@ -352,18 +409,22 @@ fn astro_init() {
 # Angle conversion helpers
 # ---------------------------------------------------------------------------
 
+# Convert degrees to radians (f64).
 #must_use
 fn degrees_to_radians(deg) {
     return f64_div(f64_mul(deg, F64_PI), f64_from(180));
 }
+# Convert radians to degrees (f64).
 #must_use
 fn radians_to_degrees(rad) {
     return f64_div(f64_mul(rad, f64_from(180)), F64_PI);
 }
+# Convert hours of right ascension to degrees (x 15; f64).
 #must_use
 fn hours_to_degrees(hours) {
     return f64_mul(hours, f64_from(15));
 }
+# Convert degrees to hours of right ascension (/ 15; f64).
 #must_use
 fn degrees_to_hours(deg) {
     return f64_div(deg, f64_from(15));
@@ -373,15 +434,18 @@ fn degrees_to_hours(deg) {
 # Obliquity of the ecliptic
 # ---------------------------------------------------------------------------
 
+# Mean obliquity of the ecliptic in degrees (f64) at Julian Day jdn (f64):
+# IAU cubic in Julian centuries from J2000.0 (Lieske 1977). About 23.44 deg
+# at J2000.0, decreasing ~0.013 deg per century.
 #must_use
 fn obliquity_of_ecliptic(jdn) {
     astro_init();
     var t = f64_div(f64_sub(jdn, J2000_JDN), f64_from(36525));
-    var tt = f64_mul(t, t);
-    var ttt = f64_mul(tt, t);
+    # Rust's association: `1.64e-7 * t * t` is (c*t)*t and the cube ((d*t)*t)*t. Computing
+    # c*(t*t) here instead differed by 1 ulp for some dates before ~1000 BCE.
     var r = f64_sub(OBL_A, f64_mul(OBL_B, t));
-    r = f64_sub(r, f64_mul(OBL_C, tt));
-    r = f64_add(r, f64_mul(OBL_D, ttt));
+    r = f64_sub(r, f64_mul(f64_mul(OBL_C, t), t));
+    r = f64_add(r, f64_mul(f64_mul(f64_mul(OBL_D, t), t), t));
     return r;
 }
 
@@ -389,6 +453,8 @@ fn obliquity_of_ecliptic(jdn) {
 # Coordinate conversions
 # ---------------------------------------------------------------------------
 
+# Convert a CelestialCoord to a fresh EclipticCoord (degrees, longitude in
+# [0, 360)) using the obliquity at jdn (f64). Meeus ch.13.
 #must_use
 fn equatorial_to_ecliptic(coord, jdn) {
     astro_init();
@@ -407,6 +473,9 @@ fn equatorial_to_ecliptic(coord, jdn) {
     return ecliptic_new(lon, lat);
 }
 
+# Convert an EclipticCoord to a fresh CelestialCoord (RA in hours 0-24, Dec
+# in degrees) using the obliquity at jdn (f64). Inverse of
+# equatorial_to_ecliptic; Meeus ch.13.
 #must_use
 fn ecliptic_to_equatorial(coord, jdn) {
     astro_init();
@@ -425,6 +494,10 @@ fn ecliptic_to_equatorial(coord, jdn) {
     return celestial_new(degrees_to_hours(ra_deg), dec);
 }
 
+# Convert a CelestialCoord to a fresh HorizontalCoord for an observer at
+# observer_lat / observer_lon (f64 degrees, longitude east-positive) at jdn
+# (f64). Azimuth from north through east in [0, 360), altitude in degrees.
+# Simplified (Meeus ch.13): no refraction, aberration or nutation.
 #must_use
 fn equatorial_to_horizontal(coord, jdn, observer_lat, observer_lon) {
     astro_init();
@@ -438,14 +511,15 @@ fn equatorial_to_horizontal(coord, jdn, observer_lat, observer_lon) {
     var sin_alt = f64_add(f64_mul(f64_sin(dec), f64_sin(lat)), alt_cos_term);
     var alt = radians_to_degrees(ganita_f64_asin(sin_alt));
 
-    var cos_az_num = f64_sub(f64_sin(dec), f64_mul(sin_alt, f64_sin(lat)));
-    var cos_az_den = f64_mul(f64_sin(ganita_f64_acos(sin_alt)), f64_cos(lat));
+    # Azimuth from north, eastward: A = atan2(-cos(dec) sin(H), sin(dec) cos(lat) - cos(dec)
+    # sin(lat) cos(H)) (Meeus 13.5, rotated to a north origin). The Rust divided only the
+    # cosine term by cos(alt) cos(lat), so its azimuth was exact only on the horizon (23 deg
+    # off at altitude 83 deg) (ADR-008). This form needs no division, so it also holds at
+    # the poles, where the Rust fell back to an undivided atan2.
     var neg_num = f64_neg(f64_mul(f64_cos(dec), f64_sin(ha)));
-    var az = radians_to_degrees(ganita_f64_atan2(neg_num, cos_az_num));
-    var den_abs = f64_abs(cos_az_den);
-    if (f64_gt(den_abs, HORIZ_TOL) == 1) {
-        az = radians_to_degrees(ganita_f64_atan2(neg_num, f64_div(cos_az_num, den_abs)));
-    }
+    var cos_term = f64_mul(f64_mul(f64_cos(dec), f64_sin(lat)), f64_cos(ha));
+    var az_den = f64_sub(f64_mul(f64_sin(dec), f64_cos(lat)), cos_term);
+    var az = radians_to_degrees(ganita_f64_atan2(neg_num, az_den));
     if (f64_lt(az, f64_from(0)) == 1) { az = f64_add(az, f64_from(360)); }
     return horizontal_new(az, alt);
 }
@@ -461,8 +535,8 @@ fn greenwich_sidereal_time(jdn) {
     var gmst = f64_add(GMST_A, f64_mul(GMST_B, d));
     gmst = f64_add(gmst, f64_mul(GMST_C, tt));
     gmst = f64_sub(gmst, f64_div(ttt, f64_from(38710000)));
-    var m1 = f64_fmod(gmst, f64_from(360));
-    var m2 = f64_fmod(f64_add(m1, f64_from(360)), f64_from(360));
+    var m1 = f64_rem(gmst, f64_from(360));
+    var m2 = f64_rem(f64_add(m1, f64_from(360)), f64_from(360));
     return f64_div(m2, f64_from(15));
 }
 
@@ -471,14 +545,17 @@ fn greenwich_sidereal_time(jdn) {
 fn local_sidereal_time(jdn, observer_lon) {
     var gmst = greenwich_sidereal_time(jdn);
     var lst = f64_add(gmst, f64_div(observer_lon, f64_from(15)));
-    var m1 = f64_fmod(lst, f64_from(24));
-    return f64_fmod(f64_add(m1, f64_from(24)), f64_from(24));
+    var m1 = f64_rem(lst, f64_from(24));
+    return f64_rem(f64_add(m1, f64_from(24)), f64_from(24));
 }
 
 # ---------------------------------------------------------------------------
 # Approximate solar position
 # ---------------------------------------------------------------------------
 
+# Approximate ecliptic longitude of the Sun in degrees, [0, 360), at Julian
+# Day jdn (f64): mean longitude plus a two-term equation of centre (Meeus
+# ch.25). About 1 deg accuracy within a few thousand years of J2000.0.
 #must_use
 fn solar_longitude(jdn) {
     astro_init();
@@ -487,10 +564,12 @@ fn solar_longitude(jdn) {
     var m = degrees_to_radians(f64_add(SL_MA, f64_mul(SL_MB, t)));
     var c = f64_add(f64_mul(SL_C1, f64_sin(m)), f64_mul(SL_C2, f64_sin(f64_mul(f64_from(2), m))));
     var lon = f64_add(l0, c);
-    var m1 = f64_fmod(lon, f64_from(360));
-    return f64_fmod(f64_add(m1, f64_from(360)), f64_from(360));
+    var m1 = f64_rem(lon, f64_from(360));
+    return f64_rem(f64_add(m1, f64_from(360)), f64_from(360));
 }
 
+# Approximate solar declination in degrees (f64) at Julian Day jdn (f64):
+# asin(sin(obliquity) * sin(solar_longitude)), solar latitude taken as 0.
 #must_use
 fn solar_declination(jdn) {
     astro_init();
@@ -503,20 +582,26 @@ fn solar_declination(jdn) {
 # Star catalog
 # ---------------------------------------------------------------------------
 
+# The shared 20-star catalog: a vec of Star records in StarName order, built
+# once by astro_init and returned by reference (not a copy) on every call.
 #must_use
 fn star_catalog() {
     astro_init();
     return astro_star_vec;
 }
+# Number of stars in the catalog (20).
 #must_use
 fn star_catalog_len() {
     return vec_len(star_catalog());
 }
+# Catalog Star record for StarName code `name` (shared, not a copy). The code
+# is a vec index: a value outside 0..19 aborts in vec_get.
 #must_use
 fn star(name) {
     astro_init();
     return vec_get(astro_star_vec, name);
 }
+# Fresh CelestialCoord with a star's J2000.0 RA (hours) and Dec (degrees).
 #must_use
 fn star_j2000(name) {
     var s = star(name);
@@ -527,26 +612,35 @@ fn star_j2000(name) {
 # Precession
 # ---------------------------------------------------------------------------
 
+# Precess a CelestialCoord from epoch from_jdn to epoch to_jdn (f64 Julian
+# Days); returns a fresh CelestialCoord with RA wrapped to [0, 24) hours.
+# Simplified IAU angles zeta/z/theta after Lieske et al. (1977), Meeus ch.21.
 #must_use
 fn precess_coordinates(coord, from_jdn, to_jdn) {
     astro_init();
-    sakshi_debug("precessing coordinates", strlen("precessing coordinates"));
+    sk_debug("precessing coordinates", strlen("precessing coordinates"));
     var t = f64_div(f64_sub(from_jdn, J2000_JDN), f64_from(36525));
     var dt = f64_div(f64_sub(to_jdn, from_jdn), f64_from(36525));
     var tt = f64_mul(t, t);
     var dtdt = f64_mul(dt, dt);
     var dtdtdt = f64_mul(dtdt, dt);
 
-    # zeta_a and z_a share the first bracket b1.
-    var b1 = f64_add(f64_add(PR_A, f64_mul(PR_B, t)), f64_mul(PR_C, tt));
-    # Each angle is (bracket*dt + dt^2 term) + dt^3 term, in that association.
-    var zeta_dt2 = f64_mul(f64_add(PR_D, f64_mul(PR_C, t)), dtdt);
-    var zeta_a = f64_add(f64_add(f64_mul(b1, dt), zeta_dt2), f64_mul(PR_C, dtdtdt));
-    var z_dt2 = f64_mul(f64_add(PR_E, f64_mul(PR_F, t)), dtdt);
-    var z_a = f64_add(f64_add(f64_mul(b1, dt), z_dt2), f64_mul(PR_G, dtdtdt));
-    var tb1 = f64_sub(f64_sub(PR_H, f64_mul(PR_I, t)), f64_mul(PR_J, tt));
-    var theta_dt2 = f64_mul(f64_add(PR_K, f64_mul(PR_J, t)), dtdt);
-    var theta_a = f64_sub(f64_sub(f64_mul(tb1, dt), theta_dt2), f64_mul(PR_J, dtdtdt));
+    # Meeus eq. 21.2 (T = centuries from J2000 to the start epoch, t = centuries to precess):
+    #   zeta  = (2306.2181 + 1.39656 T - 0.000139 T^2) t + (0.30188 - 0.000344 T) t^2 + 0.017998 t^3
+    #   z     = (2306.2181 + 1.39656 T - 0.000139 T^2) t + (1.09468 + 0.000066 T) t^2 + 0.018203 t^3
+    #   theta = (2004.3109 - 0.85330 T - 0.000217 T^2) t - (0.42665 + 0.000217 T) t^2 - 0.041833 t^3
+    # in arcseconds; each is converted to degrees once (ADR-008).
+    var b1 = f64_sub(f64_add(PR_ZZ_A, f64_mul(PR_ZZ_B, t)), f64_mul(PR_ZZ_C, tt));
+    var zeta_dt2 = f64_mul(f64_sub(PR_ZETA_2, f64_mul(PR_ZETA_2T, t)), dtdt);
+    var zeta_s = f64_add(f64_add(f64_mul(b1, dt), zeta_dt2), f64_mul(PR_ZETA_3, dtdtdt));
+    var z_dt2 = f64_mul(f64_add(PR_Z_2, f64_mul(PR_Z_2T, t)), dtdt);
+    var z_s = f64_add(f64_add(f64_mul(b1, dt), z_dt2), f64_mul(PR_Z_3, dtdtdt));
+    var tb1 = f64_sub(f64_sub(PR_TH_A, f64_mul(PR_TH_B, t)), f64_mul(PR_TH_C, tt));
+    var theta_dt2 = f64_mul(f64_add(PR_TH_2, f64_mul(PR_TH_2T, t)), dtdt);
+    var theta_s = f64_sub(f64_sub(f64_mul(tb1, dt), theta_dt2), f64_mul(PR_TH_3, dtdtdt));
+    var zeta_a = f64_div(zeta_s, PR_ARCSEC);
+    var z_a = f64_div(z_s, PR_ARCSEC);
+    var theta_a = f64_div(theta_s, PR_ARCSEC);
 
     var zeta = degrees_to_radians(zeta_a);
     var z = degrees_to_radians(z_a);
@@ -568,11 +662,13 @@ fn precess_coordinates(coord, from_jdn, to_jdn) {
 
     ra_new = radians_to_degrees(ra_new);
     if (f64_lt(ra_new, f64_from(0)) == 1) { ra_new = f64_add(ra_new, f64_from(360)); }
-    ra_new = f64_fmod(ra_new, f64_from(360));
+    ra_new = f64_rem(ra_new, f64_from(360));
 
     return celestial_new(degrees_to_hours(ra_new), radians_to_degrees(dec_new));
 }
 
+# A star's position at Julian Day jdn (f64): its J2000.0 catalog coordinates
+# precessed to that date. Returns a fresh CelestialCoord.
 #must_use
 fn star_position_at(name, jdn) {
     var j2000 = star_j2000(name);
@@ -592,43 +688,30 @@ fn arcus_visionis(visual_magnitude) {
 
 # Find the next heliacal rising after jdn_start. Returns Result:
 #   Ok(HeliacalEvent) or Err(SkErr{SKE_COMPUTATION, msg}).
+#must_use
 fn heliacal_rising(name, jdn_start, observer_lat, _observer_lon) {
     astro_init();
     var s = star(name);
-    sakshi_debug("computing heliacal rising", strlen("computing heliacal rising"));
+    sk_debug("computing heliacal rising", strlen("computing heliacal rising"));
     var min_depression = arcus_visionis(load64(s + ST_MAG));
 
+    # The first morning of visibility: the first day the star is in the window west of
+    # the Sun after a day it was not. Two repairs to the Rust search (ADR-008):
+    #  - side: rising needs the star WEST of the Sun (star longitude < Sun's, so
+    #    star - sun normalized to (180, 360)); the Rust accepted < 180, the evening side,
+    #    near heliacal setting (Sirius from 30 N after J2000 came out on 6 June);
+    #  - transition: a start date already inside the window returned day 0, a rising
+    #    that had already happened; the previous day must be outside the window.
+    var prev = _heliacal_morning_visible(name, f64_sub(jdn_start, f64_from(1)), observer_lat, min_depression);
     var day_offset = 0;
     while (day_offset < 400) {
         var jdn = f64_add(jdn_start, f64_from(day_offset));
-        var star_coord = star_position_at(name, jdn);
-
-        var max_dec = f64_neg(f64_sub(f64_from(90), f64_abs(observer_lat)));
-        var lat_ge0 = f64_ge(observer_lat, f64_from(0));
-        var dec_lt = f64_lt(load64(star_coord + CC_DEC), max_dec);
-        if (lat_ge0 == 1 && dec_lt == 1) {
-            # Star never rises at this latitude on this date — skip.
-            day_offset = day_offset + 1;
-        } else {
-            var sun_lon = solar_longitude(jdn);
-            var star_ecl = equatorial_to_ecliptic(star_coord, jdn);
-
-            var sep = f64_sub(load64(star_ecl + EC_LON), sun_lon);
-            if (f64_lt(sep, f64_from(0)) == 1) { sep = f64_add(sep, f64_from(360)); }
-            if (f64_gt(sep, f64_from(180)) == 1) { sep = f64_sub(f64_from(360), sep); }
-
-            var cond1 = f64_gt(sep, min_depression);
-            var cond2 = f64_lt(sep, f64_add(min_depression, f64_from(20)));
-            if (cond1 == 1 && cond2 == 1) {
-                var star_minus_sun = f64_sub(load64(star_ecl + EC_LON), sun_lon);
-                var nm1 = f64_fmod(star_minus_sun, f64_from(360));
-                var normalized = f64_fmod(f64_add(nm1, f64_from(360)), f64_from(360));
-                if (f64_lt(normalized, f64_from(180)) == 1) {
-                    return Ok(heliacal_event_new(jdn, name, HET_RISING));
-                }
-            }
-            day_offset = day_offset + 1;
+        var vis = _heliacal_morning_visible(name, jdn, observer_lat, min_depression);
+        if (vis == 1 && prev == 0) {
+            return Ok(heliacal_event_new(jdn, name, HET_RISING));
         }
+        prev = vis;
+        day_offset = day_offset + 1;
     }
 
     var sb = str_builder_new();
@@ -637,6 +720,29 @@ fn heliacal_rising(name, jdn_start, observer_lat, _observer_lon) {
     str_builder_add_cstr(sb, " within 400 days of JDN ");
     str_builder_add_int(sb, f64_to(jdn_start));
     return sk_fail(SKE_COMPUTATION, str_builder_build(sb));
+}
+
+# 1 when star `name` is in heliacal_rising's morning window on `jdn`: it rises at
+# observer_lat, its ecliptic elongation from the Sun is between min_depression and
+# min_depression + 20 degrees, and it lies west of the Sun (star - sun in (180, 360)).
+fn _heliacal_morning_visible(name, jdn, observer_lat, min_depression) {
+    var star_coord = star_position_at(name, jdn);
+    var max_dec = f64_neg(f64_sub(f64_from(90), f64_abs(observer_lat)));
+    var lat_ge0 = f64_ge(observer_lat, f64_from(0));
+    var dec_lt = f64_lt(load64(star_coord + CC_DEC), max_dec);
+    if (lat_ge0 == 1 && dec_lt == 1) { return 0; }   # never rises at this latitude
+    var sun_lon = solar_longitude(jdn);
+    var star_ecl = equatorial_to_ecliptic(star_coord, jdn);
+    var sep = f64_sub(load64(star_ecl + EC_LON), sun_lon);
+    if (f64_lt(sep, f64_from(0)) == 1) { sep = f64_add(sep, f64_from(360)); }
+    if (f64_gt(sep, f64_from(180)) == 1) { sep = f64_sub(f64_from(360), sep); }
+    if (f64_gt(sep, min_depression) == 0) { return 0; }
+    if (f64_lt(sep, f64_add(min_depression, f64_from(20))) == 0) { return 0; }
+    var star_minus_sun = f64_sub(load64(star_ecl + EC_LON), sun_lon);
+    var nm1 = f64_rem(star_minus_sun, f64_from(360));
+    var normalized = f64_rem(f64_add(nm1, f64_from(360)), f64_from(360));
+    if (f64_gt(normalized, f64_from(180)) == 1) { return 1; }
+    return 0;
 }
 
 # ---------------------------------------------------------------------------
@@ -651,10 +757,16 @@ fn solstice_sunrise_azimuth(observer_lat, summer) {
     var decv = degrees_to_radians(SOL_DEC);
     if (summer == 0) { decv = degrees_to_radians(f64_neg(SOL_DEC)); }
     var cos_az = f64_div(f64_sin(decv), f64_cos(lat));
+    # Beyond the polar circles (|lat| > ~66.56) the solstice Sun does not rise or set and
+    # |cos_az| > 1, where acos gave NaN. Clamp to the horizon limit (0 or 180 degrees) so
+    # the result is finite; monument_alignment skips these latitudes (ADR-007).
+    if (f64_gt(cos_az, f64_from(1)) == 1) { cos_az = f64_from(1); }
+    if (f64_lt(cos_az, f64_from(0 - 1)) == 1) { cos_az = f64_from(0 - 1); }
     return radians_to_degrees(ganita_f64_acos(cos_az));
 }
 
 # Azimuth where a star rises. Returns Result: Ok(f64 azimuth) or Err.
+#must_use
 fn star_rise_azimuth(name, observer_lat, jdn) {
     astro_init();
     var coord = star_position_at(name, jdn);
@@ -663,7 +775,8 @@ fn star_rise_azimuth(name, observer_lat, jdn) {
 
     var cos_az = f64_div(f64_sin(dec), f64_cos(lat));
     var cos_abs = f64_abs(cos_az);
-    if (f64_gt(cos_abs, f64_from(1)) == 1) {
+    # !(|cos_az| <= 1), so a NaN latitude or JDN is the Err too (it was Ok(NaN)).
+    if (f64_le(cos_abs, f64_from(1)) == 0) {
         var sb = str_builder_new();
         str_builder_add(sb, star_name(star(name)));
         str_builder_add_cstr(sb, " does not rise at latitude ");
@@ -687,7 +800,7 @@ fn _ma_check(results, azimuth, target, star, target_az, tolerance) {
 #must_use
 fn monument_alignment(observer_lat, azimuth, jdn, tolerance_degrees) {
     astro_init();
-    sakshi_info("analyzing monument alignment", strlen("analyzing monument alignment"));
+    sk_info("analyzing monument alignment", strlen("analyzing monument alignment"));
     var results = vec_new();
     var no_star = 0 - 1;
 
@@ -697,10 +810,17 @@ fn monument_alignment(observer_lat, azimuth, jdn, tolerance_degrees) {
     var summer_set_az = f64_sub(f64_from(360), summer_az);
     var winter_set_az = f64_sub(f64_from(360), winter_az);
 
-    _ma_check(results, azimuth, AT_SUMMER_SOLSTICE_SUNRISE, no_star, summer_az, tolerance_degrees);
-    _ma_check(results, azimuth, AT_SUMMER_SOLSTICE_SUNSET, no_star, summer_set_az, tolerance_degrees);
-    _ma_check(results, azimuth, AT_WINTER_SOLSTICE_SUNRISE, no_star, winter_az, tolerance_degrees);
-    _ma_check(results, azimuth, AT_WINTER_SOLSTICE_SUNSET, no_star, winter_set_az, tolerance_degrees);
+    # The solstice targets exist only where the solstice Sun rises and sets. Beyond the
+    # polar circles solstice_sunrise_azimuth used to be NaN, which matched nothing; it is
+    # clamped now, so they are skipped explicitly and the result is unchanged.
+    var solst_lat = f64_cos(degrees_to_radians(observer_lat));
+    var solst_cos = f64_div(f64_sin(degrees_to_radians(SOL_DEC)), solst_lat);
+    if (f64_le(f64_abs(solst_cos), f64_from(1)) == 1) {
+        _ma_check(results, azimuth, AT_SUMMER_SOLSTICE_SUNRISE, no_star, summer_az, tolerance_degrees);
+        _ma_check(results, azimuth, AT_SUMMER_SOLSTICE_SUNSET, no_star, summer_set_az, tolerance_degrees);
+        _ma_check(results, azimuth, AT_WINTER_SOLSTICE_SUNRISE, no_star, winter_az, tolerance_degrees);
+        _ma_check(results, azimuth, AT_WINTER_SOLSTICE_SUNSET, no_star, winter_set_az, tolerance_degrees);
+    }
     _ma_check(results, azimuth, AT_EQUINOX_SUNRISE, no_star, f64_from(90), tolerance_degrees);
     _ma_check(results, azimuth, AT_EQUINOX_SUNSET, no_star, f64_from(270), tolerance_degrees);
 
@@ -724,7 +844,7 @@ fn monument_alignment(observer_lat, azimuth, jdn, tolerance_degrees) {
 # Angular deviation between two azimuths, accounting for wrap-around.
 #must_use
 fn angle_deviation(a, b) {
-    var diff = f64_fmod(f64_abs(f64_sub(a, b)), f64_from(360));
+    var diff = f64_rem(f64_abs(f64_sub(a, b)), f64_from(360));
     if (f64_gt(diff, f64_from(180)) == 1) { return f64_sub(f64_from(360), diff); }
     return diff;
 }
@@ -753,6 +873,8 @@ fn sb_add_02(sb, n) {
     return 0;
 }
 
+# Display a CelestialCoord as a fresh Str in the Rust format
+# "RA {:02}h {:02}m {:.1}s, Dec {+|-}{:02}d {:02}'".
 #must_use
 fn celestial_coord_to_str(p) {
     var ra = load64(p + CC_RA);
@@ -784,6 +906,7 @@ fn celestial_coord_to_str(p) {
     return str_builder_build(sb);
 }
 
+# Display an EclipticCoord as a fresh Str: "lon {:.4}°, lat {:.4}°".
 #must_use
 fn ecliptic_coord_to_str(p) {
     var sb = str_builder_new();
@@ -795,6 +918,7 @@ fn ecliptic_coord_to_str(p) {
     return str_builder_build(sb);
 }
 
+# Display a HorizontalCoord as a fresh Str: "az {:.2}°, alt {:.2}°".
 #must_use
 fn horizontal_coord_to_str(p) {
     var sb = str_builder_new();
@@ -806,6 +930,8 @@ fn horizontal_coord_to_str(p) {
     return str_builder_build(sb);
 }
 
+# Display a HeliacalEventType as a fresh Str: "heliacal setting" for
+# HET_SETTING, otherwise "heliacal rising" (unlike the serde name).
 #must_use
 fn heliacal_event_type_to_str(t) {
     if (t == HET_SETTING) { return str_from("heliacal setting"); }
@@ -817,18 +943,23 @@ fn heliacal_event_type_to_str(t) {
 # HeliacalEventType (see heliacal_event_type_to_str).
 # ---------------------------------------------------------------------------
 
+# serde identifier Str (e.g. "Sirius") for StarName code i; i outside 0..19
+# aborts in vec_get.
 #must_use
 fn starname_name(i) {
     astro_init();
-    return vec_get(astro_starname_names, i);
+    return sk_name_at(astro_starname_names, i);
 }
+# serde identifier Str ("Rising" / "Setting") for HeliacalEventType code i.
 #must_use
 fn heltype_name(i) {
     astro_init();
-    return vec_get(astro_heltype_names, i);
+    return sk_name_at(astro_heltype_names, i);
 }
+# serde identifier Str for AlignmentTarget code i (e.g. "EquinoxSunrise",
+# "StarRising"); i outside 0..6 aborts in vec_get.
 #must_use
 fn alignmenttarget_name(i) {
     astro_init();
-    return vec_get(astro_target_names, i);
+    return sk_name_at(astro_target_names, i);
 }

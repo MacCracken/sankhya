@@ -18,6 +18,8 @@ enum SankhyaError {
 # SkErr record: { code: i64, msg: Str } — 16 bytes. msg may be 0 (no message).
 enum SkErrOff { SKERR_CODE = 0; SKERR_MSG = 8; SKERR_SIZE = 16; }
 
+# Allocate a fresh SkErr record storing `code` (a SankhyaError SKE_* value) and `msg` (a Str,
+# or 0 for no message). The payload of every sankhya Err; usually reached via sk_fail().
 #must_use
 fn sk_err(code, msg) {
     var p = alloc(SKERR_SIZE);
@@ -26,14 +28,17 @@ fn sk_err(code, msg) {
     return p;
 }
 
+# SkErr field: the SankhyaError code (SKE_*).
 #must_use
 fn sk_err_code(e) { return load64(e + SKERR_CODE); }
 
+# SkErr field: the message Str, or 0 when the error carries no message.
 #must_use
 fn sk_err_msg(e) { return load64(e + SKERR_MSG); }
 
 # Build an Err(Result) carrying a SkErr{code, msg}.
 # Use as: return sk_fail(SKE_INVALID_DATE, str_from("day out of range"));
+#must_use
 fn sk_fail(code, msg) {
     return Err(sk_err(code, msg));
 }

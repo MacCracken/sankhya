@@ -69,6 +69,8 @@ fn _build_greg_mdays() {
     store64(a + 11 * 8, 31);
     return a;
 }
+# Common-year days in Gregorian month idx (0 = January .. 11 = December); February is 28 (leap
+# handling is the caller's, via gregorian_is_leap). Lazily built raw table; no bounds check.
 #must_use
 fn greg_month_length(idx) {
     if (_greg_mdays_done == 0) {
@@ -97,6 +99,8 @@ fn _build_greg_names() {
     vec_push(v, str_from("December"));
     return v;
 }
+# Shared, lazily built vec of the 12 month-name Strs (January .. December), indexed by
+# GregorianMonth (0-11). Do not mutate.
 #must_use
 fn gregorian_month_names() {
     if (_greg_names_done == 0) {
@@ -109,14 +113,14 @@ fn gregorian_month_names() {
 # serde identifier for month index i (0..11). Used by the later serial wave.
 #must_use
 fn gregorian_month_name(i) {
-    return vec_get(gregorian_month_names(), i);
+    return sk_name_at(gregorian_month_names(), i);
 }
 
 # Display string for a GregorianMonth discriminant (impl Display for month).
 # Identical to gregorian_month_name here (no spaces in month names).
 #must_use
 fn gregorian_month_to_str(m) {
-    return vec_get(gregorian_month_names(), m);
+    return sk_name_at(gregorian_month_names(), m);
 }
 
 # ---------------------------------------------------------------------------
@@ -125,6 +129,8 @@ fn gregorian_month_to_str(m) {
 
 enum GregDateOff { GD_YEAR = 0; GD_MONTH = 8; GD_DAY = 16; GD_SIZE = 24; }
 
+# Construct a GregorianDate record {year (astronomical: 0 = 1 BCE, -1 = 2 BCE), month
+# (GregorianMonth 0-11), day (1-31)}. Stored unvalidated; gregorian_to_jdn checks the day.
 #must_use
 fn gregorian_date_new(year, month, day) {
     var p = alloc(GD_SIZE);
@@ -133,10 +139,13 @@ fn gregorian_date_new(year, month, day) {
     store64(p + GD_DAY, day);
     return p;
 }
+# GregorianDate field: the year (astronomical numbering: 0 = 1 BCE, negative = BCE).
 #must_use
 fn gd_year(p) { return load64(p + GD_YEAR); }
+# GregorianDate field: the month (GregorianMonth index, 0 = January).
 #must_use
 fn gd_month(p) { return load64(p + GD_MONTH); }
+# GregorianDate field: the day of month (1-31).
 #must_use
 fn gd_day(p) { return load64(p + GD_DAY); }
 
@@ -191,9 +200,9 @@ fn gregorian_year_days(year) {
 # March-based computational calendar; correct for deep proleptic (BCE) dates.
 #must_use
 fn jdn_to_gregorian(jdn) {
-    if (SK_TRACE <= sakshi_get_level()) {
+    if (SK_TRACE <= sk_log_level()) {
         var _js = str_from_int(f64_to(jdn));
-        sakshi_log_kv(SK_TRACE, "JDN to Gregorian", 16, "jdn", 3, str_data(_js), str_len(_js));
+        sk_log_kv(SK_TRACE, "JDN to Gregorian", 16, "jdn", 3, str_data(_js), str_len(_js));
     }
 
     # Shift to midnight-based integer day count: (jdn + 0.5).floor() as i64.
@@ -240,9 +249,9 @@ fn jdn_to_gregorian(jdn) {
 # range for the month/year. (Pattern C: real tagged Result, message preserved.)
 #must_use
 fn gregorian_to_jdn(date) {
-    if (SK_TRACE <= sakshi_get_level()) {
+    if (SK_TRACE <= sk_log_level()) {
         var _ys = str_from_int(gd_year(date));
-        sakshi_log_kv(SK_TRACE, "Gregorian to JDN", 16, "year", 4, str_data(_ys), str_len(_ys));
+        sk_log_kv(SK_TRACE, "Gregorian to JDN", 16, "year", 4, str_data(_ys), str_len(_ys));
     }
 
     # month enum discriminant IS the 0-based index (position() over the ordered
@@ -251,13 +260,22 @@ fn gregorian_to_jdn(date) {
     var year = gd_year(date);
     var day = gd_day(date);
 
+    # ADR-007: Rust's month enum and u8 day ruled these out. A month index outside 0..11
+    # (an unknown JSON month name decodes to -1) or a day < 1 is an Err, not a table overrun.
+    if (month_idx < 0 || month_idx > 11) {
+        var sbm = str_builder_new();
+        str_builder_add_cstr(sbm, "month index ");
+        str_builder_add_int(sbm, month_idx);
+        str_builder_add_cstr(sbm, " out of range 0..11");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbm));
+    }
     var max_day = greg_month_length(month_idx);
     if (month_idx == 1) {
         if (gregorian_is_leap(year) == 1) { max_day = 29; }
     }
 
     var bad = 0;
-    if (day == 0) { bad = 1; }
+    if (day <= 0) { bad = 1; }
     if (day > max_day) { bad = 1; }
     if (bad == 1) {
         var sb = str_builder_new();

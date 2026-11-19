@@ -2,16 +2,61 @@
 # tracing-subscriber). sakshi is a folded stdlib module, so the distlib bundle
 # resolves SK_INFO / sakshi_set_level from the consumer's [deps] stdlib.
 #
-# Per-call trace/debug sites in the calendar/astro modules use sakshi_trace /
-# sakshi_debug / sakshi_log_kv directly (see the module ports). This file only
-# provides the subscriber-init analog.
+# Logging is OPT-IN, as it was in Rust. The crate's tracing::info!/debug!/trace! calls
+# print nothing until the application installs a subscriber; sakshi, by contrast, emits
+# INFO to stderr from the start, so before 3.1.3 every convert() and monument_alignment()
+# printed a line, and the debug/trace sites formatted their fields on every call. Every
+# module now logs through the sk_* wrappers below, which do nothing until
+# sankhya_log_init / sankhya_log_init_level has run.
 
+# 1 once sankhya_log_init* has run; the wrappers below are silent until then.
+var _sk_log_on = 0;
+
+# Initialize sankhya logging (the subscriber-init analog): enable sankhya's log sites and
+# set the process-wide sakshi level to SK_INFO. Returns 0.
 fn sankhya_log_init() {
+    _sk_log_on = 1;
     sakshi_set_level(SK_INFO);
     return 0;
 }
 
+# Enable sankhya logging and set the process-wide sakshi level to `level` (SK_FATAL=0 ..
+# SK_TRACE=5); messages above it are suppressed. Returns 0.
 fn sankhya_log_init_level(level) {
+    _sk_log_on = 1;
     sakshi_set_level(level);
+    return 0;
+}
+
+# The level sankhya's log sites compare against: sakshi's level once sankhya logging is
+# enabled, else -1, which every level (SK_FATAL = 0 and up) exceeds, so nothing logs and
+# the `if (SK_TRACE <= sk_log_level())` guards skip their message formatting.
+#must_use
+fn sk_log_level() {
+    if (_sk_log_on == 0) { return 0 - 1; }
+    return sakshi_get_level();
+}
+
+# sakshi_trace(msg, len) when sankhya logging is enabled at TRACE. Returns 0.
+fn sk_trace(msg, len) {
+    if (SK_TRACE <= sk_log_level()) { sakshi_trace(msg, len); }
+    return 0;
+}
+
+# sakshi_debug(msg, len) when sankhya logging is enabled at DEBUG or above. Returns 0.
+fn sk_debug(msg, len) {
+    if (SK_DEBUG <= sk_log_level()) { sakshi_debug(msg, len); }
+    return 0;
+}
+
+# sakshi_info(msg, len) when sankhya logging is enabled at INFO or above. Returns 0.
+fn sk_info(msg, len) {
+    if (SK_INFO <= sk_log_level()) { sakshi_info(msg, len); }
+    return 0;
+}
+
+# sakshi_log_kv (one key/value field) when sankhya logging is enabled at `level`. Returns 0.
+fn sk_log_kv(level, msg, mlen, key, klen, val, vlen) {
+    if (level <= sk_log_level()) { sakshi_log_kv(level, msg, mlen, key, klen, val, vlen); }
     return 0;
 }

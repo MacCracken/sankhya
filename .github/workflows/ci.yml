@@ -83,11 +83,18 @@ jobs:
           grep -qxF "$WANT" /tmp/smoke || { echo "smoke printed '$(cat /tmp/smoke)', expected '$WANT'"; exit 1; }
 
       - name: Unit tests
-        # 32 .tcyr suites under tests/tcyr (~1,346 assertions: per-module, serial
-        # round-trip, integration, adversarial/never-panic). Summary: "N failed".
+        # 35 .tcyr suites under tests/tcyr (per-module, serial round-trip, malformed
+        # JSON, lazy init, integration, adversarial/never-panic). Summary: "N failed".
         run: |
           cyrius test tests/tcyr 2>&1 | tee /tmp/test_output
           grep -v '^[[:space:]]*$' /tmp/test_output | tail -1 | grep -q "0 failed"
+
+      - name: Fuzz
+        # tests/sankhya.fcyr: 20,000 xorshift-driven rounds of malformed JSON, raw f64 JDNs,
+        # Roman and Katapayadi strings (3.1.3; it was a no-op). Exits 1 on any violation.
+        run: |
+          cyrius build tests/sankhya.fcyr build/sankhya_fuzz
+          ./build/sankhya_fuzz
 
       - name: Benchmarks
         # Build + run the suite to catch performance regressions / build breakage.

@@ -8,11 +8,13 @@ include "src/logging.cyr"
 include "src/gregorian.cyr"
 include "src/persian.cyr"
 
+# Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 # f64::EPSILON = 2.220446049250313e-16 (Rust round-trip tolerance). The JDN
 # arithmetic here is exact (integer/half-integer), so differences are 0.0.
 var TOL_EPS = 0;
+# Parse the f64 round-trip tolerance (f64::EPSILON) this suite uses (after alloc_init).
 fn persian_test_init() {
     TOL_EPS = f64_parse("0.0000000000000002220446049250313");
     return 0;
@@ -23,6 +25,7 @@ fn jdn_half(whole) {
     return f64_add(f64_from(whole), f64_div(f64_from(1), f64_from(2)));
 }
 
+# Run every persian test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
     gregorian_init();
@@ -135,6 +138,34 @@ fn main() {
     # ---- logging init doesn't crash ----
     sankhya_log_init();
     ok(1, "log init ok");
+
+    # ---- 3.1.3 repairs ----
+    # ADR-008: with jalaali-js's last break (3178, not 2526) years join up over the whole
+    # valid range -61..3177: 1 Farvardin of y+1 is the day after the last day of Esfand of y.
+    var pc_bad = 0;
+    var py = 0 - 61;
+    while (py < 3177) {
+        var last = 29;
+        if (persian_is_leap(py) == 1) { last = 30; }
+        var pe_t, pe_v = persian_to_jdn(persian_date_new(py, PM_ESFAND, last));
+        var pf_t, pf_v = persian_to_jdn(persian_date_new(py + 1, PM_FARVARDIN, 1));
+        if (is_ok(pe_t) == 1 && is_ok(pf_t) == 1) {
+            var gap = f64_sub(result_unwrap(pf_t, pf_v), result_unwrap(pe_t, pe_v));
+            if (f64_eq(gap, f64_from(1)) == 0) { pc_bad = pc_bad + 1; }
+        } else { pc_bad = pc_bad + 1; }
+        py = py + 1;
+    }
+    assert_eq(pc_bad, 0, "Persian years -61..3177 are contiguous");
+    # Nowruz 1403 was 20 Mar 2024 (JD 2460389.5).
+    var nw_t, nw_v = persian_to_jdn(persian_date_new(1403, PM_FARVARDIN, 1));
+    if (is_ok(nw_t) == 1) {
+        ok(f64_eq(result_unwrap(nw_t, nw_v), f64_add(f64_from(2460389), F64_HALF)), "Nowruz 1403 = 20 Mar 2024");
+    }
+    # ADR-007
+    var pm_t, pm_v = persian_to_jdn(persian_date_new(1403, 12, 1));
+    assert_eq(sk_result_code(pm_t, pm_v), SKE_INVALID_DATE, "Persian month 12 -> InvalidDate");
+    var pd_t, pd_v = persian_to_jdn(persian_date_new(1403, PM_FARVARDIN, 0 - 5));
+    assert_eq(sk_result_code(pd_t, pd_v), SKE_INVALID_DATE, "Persian day -5 -> InvalidDate");
 
     return assert_summary();
 }

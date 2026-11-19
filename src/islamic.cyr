@@ -72,14 +72,16 @@ enum HijriMonth {
 # ---------------------------------------------------------------------------
 
 fn _islamic_trace(s) {
+    if (SK_TRACE > sk_log_level()) { return 0; }   # skip the Str build when disabled
     var m = str_from(s);
-    sakshi_trace(str_data(m), str_len(m));
+    sk_trace(str_data(m), str_len(m));
     return 0;
 }
 
 fn _islamic_debug(s) {
+    if (SK_DEBUG > sk_log_level()) { return 0; }
     var m = str_from(s);
-    sakshi_debug(str_data(m), str_len(m));
+    sk_debug(str_data(m), str_len(m));
     return 0;
 }
 
@@ -109,10 +111,12 @@ fn _build_hm_names() {
     return v;
 }
 
+# Serde/Debug identifier Str for HijriMonth i (0-11), no spaces, e.g. "RabiAlAwwal". Shared
+# cached Str from a lazily built vec: do not mutate. Aborts if i is not 0-11.
 #must_use
 fn hijri_month_name(i) {
     if (_hm_name_done == 0) { _hm_name_vec = _build_hm_names(); _hm_name_done = 1; }
-    return vec_get(_hm_name_vec, i);
+    return sk_name_at(_hm_name_vec, i);
 }
 
 var _hm_disp_vec = 0;
@@ -135,10 +139,12 @@ fn _build_hm_disp() {
     return v;
 }
 
+# Display Str for HijriMonth i (0-11), spelled out, e.g. "Rabi al-Awwal", "Sha'ban". Shared
+# cached Str: do not mutate.
 #must_use
 fn hijri_month_display(i) {
     if (_hm_disp_done == 0) { _hm_disp_vec = _build_hm_disp(); _hm_disp_done = 1; }
-    return vec_get(_hm_disp_vec, i);
+    return sk_name_at(_hm_disp_vec, i);
 }
 
 # HijriMonth Display impl.
@@ -171,6 +177,8 @@ fn _build_hmd() {
     return a;
 }
 
+# Common-year days in Hijri month idx (0-11): 30 for even idx (Muharram, Rabi al-Awwal, ..),
+# 29 for odd; Dhul Hijjah (11) has 30 in leap years, which callers apply. Raw table, unchecked.
 #must_use
 fn hijri_month_days(idx) {
     if (_hmd_done == 0) { _hmd_arr = _build_hmd(); _hmd_done = 1; }
@@ -183,6 +191,8 @@ fn hijri_month_days(idx) {
 
 enum AljSolOff { AJS_FORM = 0; AJS_ROOTS = 8; AJS_A = 16; AJS_B = 24; AJS_C = 32; AJS_SIZE = 40; }
 
+# Construct an AlJabrSolution record {form (AlJabrForm ALJ_*), roots (vec of positive f64
+# roots, stored by reference), a, b, c (the original f64 coefficients of ax^2 + bx + c = 0)}.
 #must_use
 fn aljabr_sol_new(form, roots, a, b, c) {
     var p = alloc(AJS_SIZE);
@@ -194,14 +204,20 @@ fn aljabr_sol_new(form, roots, a, b, c) {
     return p;
 }
 
+# AlJabrSolution field: the canonical form (AlJabrForm ALJ_*).
 #must_use
 fn aljabr_sol_form(p) { return load64(p + AJS_FORM); }
+# AlJabrSolution field: vec of positive f64 roots (al-Khwarizmi accepted only positive
+# solutions); may be empty.
 #must_use
 fn aljabr_sol_roots(p) { return load64(p + AJS_ROOTS); }
+# AlJabrSolution field: original coefficient a of x^2 (f64).
 #must_use
 fn aljabr_sol_a(p) { return load64(p + AJS_A); }
+# AlJabrSolution field: original coefficient b of x (f64).
 #must_use
 fn aljabr_sol_b(p) { return load64(p + AJS_B); }
+# AlJabrSolution field: original constant term c (f64).
 #must_use
 fn aljabr_sol_c(p) { return load64(p + AJS_C); }
 
@@ -211,6 +227,8 @@ fn aljabr_sol_c(p) { return load64(p + AJS_C); }
 
 enum KhResOff { KHR_TYPE = 0; KHR_ROOTS = 8; KHR_SIZE = 16; }
 
+# Construct a KhayyamResult record {type (KhayyamCubicType KCT_*), roots (vec of f64 roots,
+# stored by reference)}: the Rust (KhayyamCubicType, Vec<f64>) tuple.
 #must_use
 fn khres_new(ctype, roots) {
     var p = alloc(KHR_SIZE);
@@ -219,8 +237,10 @@ fn khres_new(ctype, roots) {
     return p;
 }
 
+# KhayyamResult field: the cubic type (KhayyamCubicType KCT_*).
 #must_use
 fn khres_type(p) { return load64(p + KHR_TYPE); }
+# KhayyamResult field: vec of distinct real f64 roots, ascending (non-empty on success).
 #must_use
 fn khres_roots(p) { return load64(p + KHR_ROOTS); }
 
@@ -230,6 +250,8 @@ fn khres_roots(p) { return load64(p + KHR_ROOTS); }
 
 enum CsqOff { CSQ_X = 0; CSQ_AREA = 8; CSQ_SIZE = 16; }
 
+# Construct a CompleteSquare record {x (f64 root), area (f64 area c + (b/2)^2 of the completed
+# square)}: the Rust (x, area) tuple of complete_the_square.
 #must_use
 fn csq_new(x, area) {
     var p = alloc(CSQ_SIZE);
@@ -238,8 +260,10 @@ fn csq_new(x, area) {
     return p;
 }
 
+# CompleteSquare field: the positive root x (f64).
 #must_use
 fn csq_x(p) { return load64(p + CSQ_X); }
+# CompleteSquare field: area of the completed square, c + (b/2)^2 (f64).
 #must_use
 fn csq_area(p) { return load64(p + CSQ_AREA); }
 
@@ -249,6 +273,8 @@ fn csq_area(p) { return load64(p + CSQ_AREA); }
 
 enum HijriDateOff { HD_YEAR = 0; HD_MONTH = 8; HD_DAY = 16; HD_SIZE = 24; }
 
+# Construct a HijriDate record {year (Anno Hegirae), month (HijriMonth 0-11), day (1-30)}.
+# Stored unvalidated; hijri_to_jdn checks the day.
 #must_use
 fn hijri_date_new(year, month, day) {
     var p = alloc(HD_SIZE);
@@ -258,10 +284,13 @@ fn hijri_date_new(year, month, day) {
     return p;
 }
 
+# HijriDate field: the year (Anno Hegirae).
 #must_use
 fn hijri_date_year(p) { return load64(p + HD_YEAR); }
+# HijriDate field: the month (HijriMonth index, 0 = Muharram .. 11 = Dhul Hijjah).
 #must_use
 fn hijri_date_month(p) { return load64(p + HD_MONTH); }
+# HijriDate field: the day of month (1-30).
 #must_use
 fn hijri_date_day(p) { return load64(p + HD_DAY); }
 
@@ -282,9 +311,20 @@ fn hijri_date_to_str(p) {
 # Al-Khwarizmi's al-Jabr: classify + solve a quadratic
 # ---------------------------------------------------------------------------
 
+# Classify and solve ax^2 + bx + c = 0 (f64 coefficients) in al-Khwarizmi's framework (Al-Jabr
+# wal-Muqabala): pick one of his six canonical forms from the signs of p = b/a and q = c/a,
+# then solve by the quadratic formula, keeping only positive roots (> f64 EPSILON, deduped);
+# |a| < EPSILON is the linear form bx = c. Returns Ok(AlJabrSolution; roots may be empty) or
+# Err(SKE_COMPUTATION) when all three coefficients, or both a and b, are below EPSILON.
 #must_use
 fn solve_al_jabr(a, b, c) {
     _islamic_debug("solving al-Jabr equation ax^2 + bx + c = 0");
+
+    # A NaN or ±Inf coefficient yields NaN/Inf roots (Rust returned them); the adversarial
+    # rule is Err or finite (ADR-007).
+    if (f64_is_finite(a) == 0 || f64_is_finite(b) == 0 || f64_is_finite(c) == 0) {
+        return sk_fail(SKE_COMPUTATION, str_from("coefficients must be finite"));
+    }
 
     var aeps = f64_lt(f64_abs(a), ISLAMIC_F64_EPSILON);
     var beps = f64_lt(f64_abs(b), ISLAMIC_F64_EPSILON);
@@ -368,8 +408,14 @@ fn solve_al_jabr(a, b, c) {
 # Al-Khwarizmi's completion of the square: x^2 + bx = c  (b, c > 0)
 # ---------------------------------------------------------------------------
 
+# Al-Khwarizmi's geometric completion of the square for x^2 + bx = c (f64, b, c > 0): the
+# completed square has area c + (b/2)^2, so x = sqrt(c + (b/2)^2) - b/2. Returns
+# Ok(CompleteSquare {x, area}) or Err(SKE_INVALID_BASE) when b <= 0 or c <= 0.
 #must_use
 fn complete_the_square(b, c) {
+    if (f64_is_finite(b) == 0 || f64_is_finite(c) == 0) {   # ADR-007: Err, not Ok(NaN/Inf)
+        return sk_fail(SKE_INVALID_BASE, str_from("al-Khwarizmi's completion requires finite b and c"));
+    }
     var bbad = f64_le(b, f64_from(0));
     var cbad = f64_le(c, f64_from(0));
     if (bbad == 1 || cbad == 1) {
@@ -409,8 +455,18 @@ fn _f64_cmp_asc(u, w) {
     return 0;
 }
 
+# Classify a3*x^3 + a2*x^2 + a1*x + a0 = 0 (f64) as one of Omar Khayyam's cubic types (5 of
+# his 19, which he solved geometrically with conics) from the monic c = a2/a3, b = a1/a3,
+# d = a0/a3; then find real roots numerically by Newton's method from seeds 0, +-1, +-10,
+# +-100 (200 steps, 1e-12 step and 1e-8 residual/dedup tolerances). Returns Ok(KhayyamResult
+# {type, ascending distinct roots}) or Err(SKE_COMPUTATION) when |a3| < f64 EPSILON or no
+# seed converges.
 #must_use
 fn classify_khayyam_cubic(a3, a2, a1, a0) {
+    var finite = f64_is_finite(a3) + f64_is_finite(a2) + f64_is_finite(a1) + f64_is_finite(a0);
+    if (finite != 4) {   # ADR-007
+        return sk_fail(SKE_COMPUTATION, str_from("coefficients must be finite"));
+    }
     var a3eps = f64_lt(f64_abs(a3), ISLAMIC_F64_EPSILON);
     if (a3eps == 1) {
         return sk_fail(SKE_COMPUTATION, str_from("leading coefficient is zero — not a cubic"));
@@ -425,12 +481,15 @@ fn classify_khayyam_cubic(a3, a2, a1, a0) {
     var beps = f64_lt(f64_abs(b), ISLAMIC_F64_EPSILON);
     var dneg = f64_lt(d, f64_from(0));
     var bneg = f64_lt(b, f64_from(0));
+    var bpos = f64_gt(b, f64_from(0));
 
     var cubic_type = KCT_CUBE_THING_NUMBER_EQUAL_SQUARE;
     if (ceps == 1 && beps == 1) {
         cubic_type = KCT_CUBE_EQUAL_NUMBER;
     } else {
-        if (ceps == 1 && dneg == 1) {
+        # CubeAndThingEqualNumber is x^3 + bx = d, so b > 0. The Rust branch ignored b's
+        # sign and so filed x^3 = bx + d (b < 0) here too, against its own enum docs (ADR-008).
+        if (ceps == 1 && bpos == 1 && dneg == 1) {
             cubic_type = KCT_CUBE_AND_THING_EQUAL_NUMBER;
         } else {
             if (beps == 1 && dneg == 1) {
@@ -578,12 +637,21 @@ fn hijri_to_jdn(date) {
     var year = hijri_date_year(date);
     var day = hijri_date_day(date);
 
+    # ADR-007: a month outside the 12 HijriMonth variants was silently read as Muharram
+    # (hijri_month_index maps it to 0); it is an Err now, as is a day < 1.
+    if (month < 0 || month > 11) {
+        var sbm = str_builder_new();
+        str_builder_add_cstr(sbm, "month index ");
+        str_builder_add_int(sbm, month);
+        str_builder_add_cstr(sbm, " out of range 0..11");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbm));
+    }
     var month_idx = hijri_month_index(month);
 
     var max_day = hijri_month_days(month_idx);
     if (month_idx == 11 && hijri_is_leap(year) == 1) { max_day = 30; }
 
-    if (day == 0 || day > max_day) {
+    if (day <= 0 || day > max_day) {
         var sb = str_builder_new();
         str_builder_add_cstr(sb, "day ");
         str_builder_add_int(sb, day);
@@ -595,13 +663,11 @@ fn hijri_to_jdn(date) {
         return sk_fail(SKE_INVALID_DATE, str_builder_build(sb));
     }
 
-    # Days from complete years.
-    var days = 0;
-    var y = 1;
-    while (y < year) {
-        days = days + hijri_year_days(y);
-        y = y + 1;
-    }
+    # Days from complete years: 354 per year plus floor((3 + 11*year) / 30) leap days
+    # (Dershowitz & Reingold). It equals the Rust's year-by-year sum for every year >= 1,
+    # and is also right for year <= 0, where that sum added nothing, so pre-epoch dates
+    # failed to round-trip; it is O(1) where the sum was O(year) (ADR-008).
+    var days = 354 * (year - 1) + div_euclid(3 + 11 * year, 30);
 
     # Days from complete months in this year.
     var m = 0;

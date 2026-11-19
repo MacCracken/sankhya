@@ -2,11 +2,12 @@
 # (was src/persian.rs).
 #
 # Solar Hijri calendar with Julian Day Number conversions, using the arithmetic
-# Jalaali algorithm (jalaali-js breaks-array, 2820-year grand cycle). Delegates
+# Jalaali algorithm (jalaali-js breaks array: Borkowski's 33-year sub-cycles between
+# 20 break years, valid -61..3177 AP; not Birashk's 2820-year cycle). Delegates
 # Gregorian JDN math to the ported gregorian module. Sources: Dershowitz &
 # Reingold, Calendrical Calculations (4th ed., 2018) ch.15; Birashk; jalaali-js.
 #
-# MODULO NOTE: the 2820-year leap cycle uses TRUNCATED modulo/division
+# MODULO NOTE: the breaks-array leap rule uses TRUNCATED modulo/division
 # INTENTIONALLY (Rust/JS `%` and `/`). Cyrius `%` and `/` are likewise truncated
 # toward zero, so bare `%`/`/` match Rust exactly. Do NOT substitute
 # rem_euclid/div_euclid here — that would shift Nowruz.
@@ -18,8 +19,8 @@
 # Constants
 # ---------------------------------------------------------------------------
 
-# JDN of the Persian (Solar Hijri) epoch: 1 Farvardin, Year 1 AP = 22 Mar 622 CE
-# Julian (vernal equinox). = 1_948_320.5 (half-integer, load-bearing). Set by
+# JDN of the Persian (Solar Hijri) epoch: 1 Farvardin, Year 1 AP = 19 Mar 622 CE
+# Julian (22 Mar proleptic Gregorian; vernal equinox). = 1_948_320.5 (half-integer, load-bearing). Set by
 # persian_init() (an f64 bit pattern; not a literal).
 var PERSIAN_EPOCH_JDN = 0;
 
@@ -60,6 +61,8 @@ fn _build_pers_mdays() {
     store64(a + 11 * 8, 29);
     return a;
 }
+# Common-year days in Persian month idx (0 = Farvardin .. 11 = Esfand): 31 for 0-5, 30 for
+# 6-10, 29 for Esfand (30 in leap years; callers apply that). Raw table, idx not checked.
 #must_use
 fn persian_month_days(idx) {
     if (_pers_mdays_done == 0) {
@@ -107,6 +110,8 @@ fn _build_pers_names() {
     vec_push(v, str_from("Esfand"));
     return v;
 }
+# Shared, lazily built vec of the 12 Persian month-name Strs (Farvardin .. Esfand), indexed by
+# PersianMonth (0-11). Do not mutate.
 #must_use
 fn persian_month_names() {
     if (_pers_names_done == 0) {
@@ -119,13 +124,13 @@ fn persian_month_names() {
 # serde identifier for month index i (0..11).
 #must_use
 fn persian_month_name(i) {
-    return vec_get(persian_month_names(), i);
+    return sk_name_at(persian_month_names(), i);
 }
 
 # Display string for a PersianMonth discriminant (impl Display for month).
 #must_use
 fn persian_month_to_str(m) {
-    return vec_get(persian_month_names(), m);
+    return sk_name_at(persian_month_names(), m);
 }
 
 # ---------------------------------------------------------------------------
@@ -134,6 +139,8 @@ fn persian_month_to_str(m) {
 
 enum PersDateOff { PD_YEAR = 0; PD_MONTH = 8; PD_DAY = 16; PD_SIZE = 24; }
 
+# Construct a PersianDate record {year (Anno Persico; 1 AP = 622 CE), month (PersianMonth
+# 0-11), day (1-31)}. Stored unvalidated; persian_to_jdn checks the day.
 #must_use
 fn persian_date_new(year, month, day) {
     var p = alloc(PD_SIZE);
@@ -142,10 +149,13 @@ fn persian_date_new(year, month, day) {
     store64(p + PD_DAY, day);
     return p;
 }
+# PersianDate field: the year (Anno Persico; year 1 = 622 CE).
 #must_use
 fn pd_year(p) { return load64(p + PD_YEAR); }
+# PersianDate field: the month (PersianMonth index, 0 = Farvardin .. 11 = Esfand).
 #must_use
 fn pd_month(p) { return load64(p + PD_MONTH); }
+# PersianDate field: the day of month (1-31).
 #must_use
 fn pd_day(p) { return load64(p + PD_DAY); }
 
@@ -191,9 +201,14 @@ fn _build_pers_breaks() {
     store64(a + 16 * 8, 2324);
     store64(a + 17 * 8, 2394);
     store64(a + 18 * 8, 2456);
-    store64(a + 19 * 8, 2526);
+    store64(a + 19 * 8, 3178);   # jalaali-js; the Rust oracle had 2526 (ADR-008)
     return a;
 }
+# Shared, lazily built raw 20-slot i64 array (read with load64, not a vec) of the jalaali-js
+# sub-cycle break years, -61 .. 3178, as jalaali-js has them. The Rust BREAKS const ended
+# at 2526, which broke leap years from 2521 AP and year continuity from 2624 AP (ADR-008).
+# The algorithm is valid for -61..3177 AP (jalaali-js rejects years outside it; sankhya
+# extrapolates past both ends, as the Rust did). Do not mutate.
 #must_use
 fn persian_breaks() {
     if (_pers_breaks_done == 0) {
@@ -213,6 +228,10 @@ fn persian_breaks() {
 # truncated remainders producing negatives — do NOT Euclidize.
 # ---------------------------------------------------------------------------
 
+# Core Jalaali calculation for Persian year jy (jalaali-js jalCal, via the Rust port). Writes
+# leap (0 = leap year, 1-3 = years since the last leap), leap_j (Jalaali leap-year count to
+# the start of jy) and march (Gregorian March day of 1 Farvardin in year jy + 621) through
+# the three out-pointers. Uses truncated %// on purpose (see above). Returns 0.
 fn jalaali_cal(jy, out_leap, out_leapj, out_march) {
     var breaks = persian_breaks();
     var gy = jy + 621;
@@ -338,9 +357,9 @@ fn month_day_from_doy(doy, is_leap) {
 # Convert a Julian Day Number to a Persian (Solar Hijri) date pointer.
 #must_use
 fn jdn_to_persian(jdn) {
-    if (SK_TRACE <= sakshi_get_level()) {
+    if (SK_TRACE <= sk_log_level()) {
         var _js = str_from_int(f64_to(jdn));
-        sakshi_log_kv(SK_TRACE, "JDN to Persian", 14, "jdn", 3, str_data(_js), str_len(_js));
+        sk_log_kv(SK_TRACE, "JDN to Persian", 14, "jdn", 3, str_data(_js), str_len(_js));
     }
 
     var gy = jdn_to_gregorian(jdn);
@@ -389,9 +408,9 @@ fn jdn_to_persian(jdn) {
 # month/year. (Pattern C: real tagged Result, message preserved.)
 #must_use
 fn persian_to_jdn(date) {
-    if (SK_TRACE <= sakshi_get_level()) {
+    if (SK_TRACE <= sk_log_level()) {
         var _ys = str_from_int(pd_year(date));
-        sakshi_log_kv(SK_TRACE, "Persian to JDN", 14, "year", 4, str_data(_ys), str_len(_ys));
+        sk_log_kv(SK_TRACE, "Persian to JDN", 14, "year", 4, str_data(_ys), str_len(_ys));
     }
 
     # month enum discriminant IS the 0-based index (position() over the ordered
@@ -400,6 +419,15 @@ fn persian_to_jdn(date) {
     var year = pd_year(date);
     var day = pd_day(date);
 
+    # ADR-007: Rust's month enum and u8 day ruled these out. A month index outside 0..11
+    # (an unknown JSON month name decodes to -1) or a day < 1 is an Err, not a table overrun.
+    if (month_idx < 0 || month_idx > 11) {
+        var sbm = str_builder_new();
+        str_builder_add_cstr(sbm, "month index ");
+        str_builder_add_int(sbm, month_idx);
+        str_builder_add_cstr(sbm, " out of range 0..11");
+        return sk_fail(SKE_INVALID_DATE, str_builder_build(sbm));
+    }
     var max_day = persian_month_days(month_idx);
     if (month_idx == 11) {
         if (persian_is_leap(year) == 1) {
@@ -408,7 +436,7 @@ fn persian_to_jdn(date) {
     }
 
     var bad = 0;
-    if (day == 0) { bad = 1; }
+    if (day <= 0) { bad = 1; }
     if (day > max_day) { bad = 1; }
     if (bad == 1) {
         var sb = str_builder_new();

@@ -1,18 +1,19 @@
-# serial_malformed.tcyr — every <type>_from_json on malformed input (3.1.3).
+# serial_malformed.tcyr — every <type>_from_json on malformed input (3.1.3; 3.2.0 contract).
 #
-# serde returns an Err for a missing field, a wrong type or an unknown variant. The
-# hand-written decoders return a record instead, and before 3.1.3 about 44 of them
-# crashed on such input: bayan_json_v_str gave 0 for a missing or non-string field, and
-# str_eq / str_cstr read through it. Decoders now see "" there (sk_json_v_str), an
-# unknown name decodes to -1, and the name lookups render -1 as "?". This suite feeds each
-# decoder the inputs below and re-serializes what comes back: reaching the summary means
-# nothing crashed. Domain functions reject the -1 codes and bad days (calendar checks).
+# From 3.2.0 every decoder returns a Result, as serde_json::from_str did (ADR-009). This suite
+# feeds each decoder the inputs below and checks the contract on every pair: an Ok value
+# re-serializes through <type>_to_json, and an Err carries SKE_DESERIALIZE and a non-empty
+# message. Reaching the summary also means nothing crashed (44 decoders did before 3.1.3).
+# Regenerate with the decoder list when a serial module gains a type.
 include "src/lib.cyr"
 
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
 var MAL_INPUTS = 0;
+var MAL_BAD = 0;
+var MAL_OK = 0;
+var MAL_ERR = 0;
 
 # Build the malformed-input list: each entry is a parsed bayan node (0 where parsing fails).
 fn mal_init() {
@@ -20,226 +21,363 @@ fn mal_init() {
     vec_push(MAL_INPUTS, sk_json_parse(str_from("{}")));
     vec_push(MAL_INPUTS, sk_json_parse(str_from("null")));
     vec_push(MAL_INPUTS, sk_json_parse(str_from("123")));
+    vec_push(MAL_INPUTS, sk_json_parse(str_from("-7")));
+    vec_push(MAL_INPUTS, sk_json_parse(str_from("1.5")));
     vec_push(MAL_INPUTS, sk_json_parse(str_from("[]")));
     vec_push(MAL_INPUTS, sk_json_parse(str_from("\"x\"")));
+    vec_push(MAL_INPUTS, sk_json_parse(str_from("true")));
     vec_push(MAL_INPUTS, sk_json_parse(str_from("{\"name\":5,\"month\":\"Foo\",\"day\":-5,\"year\":\"y\"}")));
     vec_push(MAL_INPUTS, sk_json_parse(str_from("{\"Gregorian\":{\"year\":2024,\"day\":1}}")));
     vec_push(MAL_INPUTS, sk_json_parse(str_from("{\"Julian\":5}")));
+    vec_push(MAL_INPUTS, sk_json_parse(str_from("{\"A\":1,\"B\":2}")));
     vec_push(MAL_INPUTS, sk_json_parse(str_from("[1,[2,{\"a\":null}]]")));
     vec_push(MAL_INPUTS, sk_json_parse(str_from("{\"jdn\":1.0}")));
+    vec_push(MAL_INPUTS, sk_json_parse(str_from("{\"jdn\":null}")));
     vec_push(MAL_INPUTS, sk_json_parse(str_from("{")));
     vec_push(MAL_INPUTS, 0);
     return 0;
 }
 
-# Run every decoder over every malformed input, re-serializing each result.
+# Check one decoder result against the contract: count Ok, or count an Err and verify its
+# code and message.
+fn mal_check(t, v) {
+    if (is_ok(t) == 1) {
+        MAL_OK = MAL_OK + 1;
+        return 0;
+    }
+    MAL_ERR = MAL_ERR + 1;
+    if (sk_err_code(v) != SKE_DESERIALIZE) { MAL_BAD = MAL_BAD + 1; }
+    if (str_len(sk_err_msg(v)) == 0) { MAL_BAD = MAL_BAD + 1; }
+    return 0;
+}
+
+# Run every decoder over every malformed input and check each result.
 fn main() {
     alloc_init();
     mal_init();
     var n = vec_len(MAL_INPUTS);
     var i = 0;
-    var decoded = 0;
     while (i < n) {
         var v = vec_get(MAL_INPUTS, i);
-        var r_age_position = age_position_from_json(v);
-        if (r_age_position != 0) { var s_age_position = age_position_to_json(r_age_position); }
-        decoded = decoded + 1;
-        var r_alignment_result = alignment_result_from_json(v);
-        if (r_alignment_result != 0) { var s_alignment_result = alignment_result_to_json(r_alignment_result); }
-        decoded = decoded + 1;
-        var r_alignmenttarget = alignmenttarget_from_json(v);
-        decoded = decoded + 1;
-        var r_aljabr_sol = aljabr_sol_from_json(v);
-        if (r_aljabr_sol != 0) { var s_aljabr_sol = aljabr_sol_to_json(r_aljabr_sol); }
-        decoded = decoded + 1;
-        var r_anti = anti_from_json(v);
-        if (r_anti != 0) { var s_anti = anti_to_json(r_anti); }
-        decoded = decoded + 1;
-        var r_babdate = babdate_from_json(v);
-        if (r_babdate != 0) { var s_babdate = babdate_to_json(r_babdate); }
-        decoded = decoded + 1;
-        var r_babmonth = babmonth_from_json(v);
-        if (r_babmonth != 0) { var s_babmonth = babmonth_to_json(r_babmonth); }
-        decoded = decoded + 1;
-        var r_babnum = babnum_from_json(v);
-        if (r_babnum != 0) { var s_babnum = babnum_to_json(r_babnum); }
-        decoded = decoded + 1;
-        var r_calendar_date = calendar_date_from_json(v);
-        if (r_calendar_date != 0) { var s_calendar_date = calendar_date_to_json(r_calendar_date); }
-        decoded = decoded + 1;
-        var r_celestial_coord = celestial_coord_from_json(v);
-        if (r_celestial_coord != 0) { var s_celestial_coord = celestial_coord_to_json(r_celestial_coord); }
-        decoded = decoded + 1;
-        var r_civilization = civilization_from_json(v);
-        if (r_civilization != 0) { var s_civilization = civilization_to_json(r_civilization); }
-        decoded = decoded + 1;
-        var r_coptic_date = coptic_date_from_json(v);
-        if (r_coptic_date != 0) { var s_coptic_date = coptic_date_to_json(r_coptic_date); }
-        decoded = decoded + 1;
-        var r_coptic_month = coptic_month_from_json(v);
-        if (r_coptic_month != 0) { var s_coptic_month = coptic_month_to_json(r_coptic_month); }
-        decoded = decoded + 1;
-        var r_cycle_alignment = cycle_alignment_from_json(v);
-        if (r_cycle_alignment != 0) { var s_cycle_alignment = cycle_alignment_to_json(r_cycle_alignment); }
-        decoded = decoded + 1;
-        var r_cyclename = cyclename_from_json(v);
-        if (r_cyclename != 0) { var s_cyclename = cyclename_to_json(r_cyclename); }
-        decoded = decoded + 1;
-        var r_daysign = daysign_from_json(v);
-        if (r_daysign != 0) { var s_daysign = daysign_to_json(r_daysign); }
-        decoded = decoded + 1;
-        var r_decan = decan_from_json(v);
-        if (r_decan != 0) { var s_decan = decan_to_json(r_decan); }
-        decoded = decoded + 1;
-        var r_earthly_branch = earthly_branch_from_json(v);
-        if (r_earthly_branch != 0) { var s_earthly_branch = earthly_branch_to_json(r_earthly_branch); }
-        decoded = decoded + 1;
-        var r_ecliptic_coord = ecliptic_coord_from_json(v);
-        if (r_ecliptic_coord != 0) { var s_ecliptic_coord = ecliptic_coord_to_json(r_ecliptic_coord); }
-        decoded = decoded + 1;
-        var r_ep_coptic = ep_coptic_from_json(v);
-        if (r_ep_coptic != 0) { var s_ep_coptic = ep_coptic_to_json(r_ep_coptic); }
-        decoded = decoded + 1;
-        var r_ep_greg = ep_greg_from_json(v);
-        if (r_ep_greg != 0) { var s_ep_greg = ep_greg_to_json(r_ep_greg); }
-        decoded = decoded + 1;
-        var r_ep_haab = ep_haab_from_json(v);
-        if (r_ep_haab != 0) { var s_ep_haab = ep_haab_to_json(r_ep_haab); }
-        decoded = decoded + 1;
-        var r_ep_hebrew = ep_hebrew_from_json(v);
-        if (r_ep_hebrew != 0) { var s_ep_hebrew = ep_hebrew_to_json(r_ep_hebrew); }
-        decoded = decoded + 1;
-        var r_ep_hijri = ep_hijri_from_json(v);
-        if (r_ep_hijri != 0) { var s_ep_hijri = ep_hijri_to_json(r_ep_hijri); }
-        decoded = decoded + 1;
-        var r_ep_lc = ep_lc_from_json(v);
-        if (r_ep_lc != 0) { var s_ep_lc = ep_lc_to_json(r_ep_lc); }
-        decoded = decoded + 1;
-        var r_ep_persian = ep_persian_from_json(v);
-        if (r_ep_persian != 0) { var s_ep_persian = ep_persian_to_json(r_ep_persian); }
-        decoded = decoded + 1;
-        var r_ep_sex = ep_sex_from_json(v);
-        if (r_ep_sex != 0) { var s_ep_sex = ep_sex_to_json(r_ep_sex); }
-        decoded = decoded + 1;
-        var r_ep_tonal = ep_tonal_from_json(v);
-        if (r_ep_tonal != 0) { var s_ep_tonal = ep_tonal_to_json(r_ep_tonal); }
-        decoded = decoded + 1;
-        var r_ep_tzolkin = ep_tzolkin_from_json(v);
-        if (r_ep_tzolkin != 0) { var s_ep_tzolkin = ep_tzolkin_to_json(r_ep_tzolkin); }
-        decoded = decoded + 1;
-        var r_ep_xiuh = ep_xiuh_from_json(v);
-        if (r_ep_xiuh != 0) { var s_ep_xiuh = ep_xiuh_to_json(r_ep_xiuh); }
-        decoded = decoded + 1;
-        var r_gregorian_date = gregorian_date_from_json(v);
-        if (r_gregorian_date != 0) { var s_gregorian_date = gregorian_date_to_json(r_gregorian_date); }
-        decoded = decoded + 1;
-        var r_gregorian_month = gregorian_month_from_json(v);
-        if (r_gregorian_month != 0) { var s_gregorian_month = gregorian_month_to_json(r_gregorian_month); }
-        decoded = decoded + 1;
-        var r_haab = haab_from_json(v);
-        if (r_haab != 0) { var s_haab = haab_to_json(r_haab); }
-        decoded = decoded + 1;
-        var r_haabmonth = haabmonth_from_json(v);
-        if (r_haabmonth != 0) { var s_haabmonth = haabmonth_to_json(r_haabmonth); }
-        decoded = decoded + 1;
-        var r_heavenly_stem = heavenly_stem_from_json(v);
-        if (r_heavenly_stem != 0) { var s_heavenly_stem = heavenly_stem_to_json(r_heavenly_stem); }
-        decoded = decoded + 1;
-        var r_hebrewdate = hebrewdate_from_json(v);
-        if (r_hebrewdate != 0) { var s_hebrewdate = hebrewdate_to_json(r_hebrewdate); }
-        decoded = decoded + 1;
-        var r_hebrewmonth = hebrewmonth_from_json(v);
-        if (r_hebrewmonth != 0) { var s_hebrewmonth = hebrewmonth_to_json(r_hebrewmonth); }
-        decoded = decoded + 1;
-        var r_heliacal_event = heliacal_event_from_json(v);
-        if (r_heliacal_event != 0) { var s_heliacal_event = heliacal_event_to_json(r_heliacal_event); }
-        decoded = decoded + 1;
-        var r_heltype = heltype_from_json(v);
-        if (r_heltype != 0) { var s_heltype = heltype_to_json(r_heltype); }
-        decoded = decoded + 1;
-        var r_hijri_date = hijri_date_from_json(v);
-        if (r_hijri_date != 0) { var s_hijri_date = hijri_date_to_json(r_hijri_date); }
-        decoded = decoded + 1;
-        var r_horizontal_coord = horizontal_coord_from_json(v);
-        if (r_horizontal_coord != 0) { var s_horizontal_coord = horizontal_coord_to_json(r_horizontal_coord); }
-        decoded = decoded + 1;
-        var r_longcount = longcount_from_json(v);
-        if (r_longcount != 0) { var s_longcount = longcount_to_json(r_longcount); }
-        decoded = decoded + 1;
-        var r_mayan_numeral = mayan_numeral_from_json(v);
-        if (r_mayan_numeral != 0) { var s_mayan_numeral = mayan_numeral_to_json(r_mayan_numeral); }
-        decoded = decoded + 1;
-        var r_meru = meru_from_json(v);
-        if (r_meru != 0) { var s_meru = meru_to_json(r_meru); }
-        decoded = decoded + 1;
-        var r_multi_calendar_date = multi_calendar_date_from_json(v);
-        if (r_multi_calendar_date != 0) {
+        var t_age_position, r_age_position = age_position_from_json(v);
+        mal_check(t_age_position, r_age_position);
+        if (is_ok(t_age_position) == 1) {
+            var s_age_position = age_position_to_json(r_age_position);
+        }
+        var t_alignment_result, r_alignment_result = alignment_result_from_json(v);
+        mal_check(t_alignment_result, r_alignment_result);
+        if (is_ok(t_alignment_result) == 1) {
+            var s_alignment_result = alignment_result_to_json(r_alignment_result);
+        }
+        var t_alignmenttarget, r_alignmenttarget = alignmenttarget_from_json(v);
+        mal_check(t_alignmenttarget, r_alignmenttarget);
+        var t_aljabr_sol, r_aljabr_sol = aljabr_sol_from_json(v);
+        mal_check(t_aljabr_sol, r_aljabr_sol);
+        if (is_ok(t_aljabr_sol) == 1) {
+            var s_aljabr_sol = aljabr_sol_to_json(r_aljabr_sol);
+        }
+        var t_anti, r_anti = anti_from_json(v);
+        mal_check(t_anti, r_anti);
+        if (is_ok(t_anti) == 1) {
+            var s_anti = anti_to_json(r_anti);
+        }
+        var t_babdate, r_babdate = babdate_from_json(v);
+        mal_check(t_babdate, r_babdate);
+        if (is_ok(t_babdate) == 1) {
+            var s_babdate = babdate_to_json(r_babdate);
+        }
+        var t_babmonth, r_babmonth = babmonth_from_json(v);
+        mal_check(t_babmonth, r_babmonth);
+        if (is_ok(t_babmonth) == 1) {
+            var s_babmonth = babmonth_to_json(r_babmonth);
+        }
+        var t_babnum, r_babnum = babnum_from_json(v);
+        mal_check(t_babnum, r_babnum);
+        if (is_ok(t_babnum) == 1) {
+            var s_babnum = babnum_to_json(r_babnum);
+        }
+        var t_calendar_date, r_calendar_date = calendar_date_from_json(v);
+        mal_check(t_calendar_date, r_calendar_date);
+        if (is_ok(t_calendar_date) == 1) {
+            var s_calendar_date = calendar_date_to_json(r_calendar_date);
+        }
+        var t_celestial_coord, r_celestial_coord = celestial_coord_from_json(v);
+        mal_check(t_celestial_coord, r_celestial_coord);
+        if (is_ok(t_celestial_coord) == 1) {
+            var s_celestial_coord = celestial_coord_to_json(r_celestial_coord);
+        }
+        var t_civilization, r_civilization = civilization_from_json(v);
+        mal_check(t_civilization, r_civilization);
+        if (is_ok(t_civilization) == 1) {
+            var s_civilization = civilization_to_json(r_civilization);
+        }
+        var t_coptic_date, r_coptic_date = coptic_date_from_json(v);
+        mal_check(t_coptic_date, r_coptic_date);
+        if (is_ok(t_coptic_date) == 1) {
+            var s_coptic_date = coptic_date_to_json(r_coptic_date);
+        }
+        var t_coptic_month, r_coptic_month = coptic_month_from_json(v);
+        mal_check(t_coptic_month, r_coptic_month);
+        if (is_ok(t_coptic_month) == 1) {
+            var s_coptic_month = coptic_month_to_json(r_coptic_month);
+        }
+        var t_cycle_alignment, r_cycle_alignment = cycle_alignment_from_json(v);
+        mal_check(t_cycle_alignment, r_cycle_alignment);
+        if (is_ok(t_cycle_alignment) == 1) {
+            var s_cycle_alignment = cycle_alignment_to_json(r_cycle_alignment);
+        }
+        var t_cyclename, r_cyclename = cyclename_from_json(v);
+        mal_check(t_cyclename, r_cyclename);
+        if (is_ok(t_cyclename) == 1) {
+            var s_cyclename = cyclename_to_json(r_cyclename);
+        }
+        var t_daysign, r_daysign = daysign_from_json(v);
+        mal_check(t_daysign, r_daysign);
+        if (is_ok(t_daysign) == 1) {
+            var s_daysign = daysign_to_json(r_daysign);
+        }
+        var t_decan, r_decan = decan_from_json(v);
+        mal_check(t_decan, r_decan);
+        if (is_ok(t_decan) == 1) {
+            var s_decan = decan_to_json(r_decan);
+        }
+        var t_earthly_branch, r_earthly_branch = earthly_branch_from_json(v);
+        mal_check(t_earthly_branch, r_earthly_branch);
+        if (is_ok(t_earthly_branch) == 1) {
+            var s_earthly_branch = earthly_branch_to_json(r_earthly_branch);
+        }
+        var t_ecliptic_coord, r_ecliptic_coord = ecliptic_coord_from_json(v);
+        mal_check(t_ecliptic_coord, r_ecliptic_coord);
+        if (is_ok(t_ecliptic_coord) == 1) {
+            var s_ecliptic_coord = ecliptic_coord_to_json(r_ecliptic_coord);
+        }
+        var t_ep_coptic, r_ep_coptic = ep_coptic_from_json(v);
+        mal_check(t_ep_coptic, r_ep_coptic);
+        if (is_ok(t_ep_coptic) == 1) {
+            var s_ep_coptic = ep_coptic_to_json(r_ep_coptic);
+        }
+        var t_ep_greg, r_ep_greg = ep_greg_from_json(v);
+        mal_check(t_ep_greg, r_ep_greg);
+        if (is_ok(t_ep_greg) == 1) {
+            var s_ep_greg = ep_greg_to_json(r_ep_greg);
+        }
+        var t_ep_haab, r_ep_haab = ep_haab_from_json(v);
+        mal_check(t_ep_haab, r_ep_haab);
+        if (is_ok(t_ep_haab) == 1) {
+            var s_ep_haab = ep_haab_to_json(r_ep_haab);
+        }
+        var t_ep_hebrew, r_ep_hebrew = ep_hebrew_from_json(v);
+        mal_check(t_ep_hebrew, r_ep_hebrew);
+        if (is_ok(t_ep_hebrew) == 1) {
+            var s_ep_hebrew = ep_hebrew_to_json(r_ep_hebrew);
+        }
+        var t_ep_hijri, r_ep_hijri = ep_hijri_from_json(v);
+        mal_check(t_ep_hijri, r_ep_hijri);
+        if (is_ok(t_ep_hijri) == 1) {
+            var s_ep_hijri = ep_hijri_to_json(r_ep_hijri);
+        }
+        var t_ep_lc, r_ep_lc = ep_lc_from_json(v);
+        mal_check(t_ep_lc, r_ep_lc);
+        if (is_ok(t_ep_lc) == 1) {
+            var s_ep_lc = ep_lc_to_json(r_ep_lc);
+        }
+        var t_ep_persian, r_ep_persian = ep_persian_from_json(v);
+        mal_check(t_ep_persian, r_ep_persian);
+        if (is_ok(t_ep_persian) == 1) {
+            var s_ep_persian = ep_persian_to_json(r_ep_persian);
+        }
+        var t_ep_sex, r_ep_sex = ep_sex_from_json(v);
+        mal_check(t_ep_sex, r_ep_sex);
+        if (is_ok(t_ep_sex) == 1) {
+            var s_ep_sex = ep_sex_to_json(r_ep_sex);
+        }
+        var t_ep_tonal, r_ep_tonal = ep_tonal_from_json(v);
+        mal_check(t_ep_tonal, r_ep_tonal);
+        if (is_ok(t_ep_tonal) == 1) {
+            var s_ep_tonal = ep_tonal_to_json(r_ep_tonal);
+        }
+        var t_ep_tzolkin, r_ep_tzolkin = ep_tzolkin_from_json(v);
+        mal_check(t_ep_tzolkin, r_ep_tzolkin);
+        if (is_ok(t_ep_tzolkin) == 1) {
+            var s_ep_tzolkin = ep_tzolkin_to_json(r_ep_tzolkin);
+        }
+        var t_ep_xiuh, r_ep_xiuh = ep_xiuh_from_json(v);
+        mal_check(t_ep_xiuh, r_ep_xiuh);
+        if (is_ok(t_ep_xiuh) == 1) {
+            var s_ep_xiuh = ep_xiuh_to_json(r_ep_xiuh);
+        }
+        var t_gregorian_date, r_gregorian_date = gregorian_date_from_json(v);
+        mal_check(t_gregorian_date, r_gregorian_date);
+        if (is_ok(t_gregorian_date) == 1) {
+            var s_gregorian_date = gregorian_date_to_json(r_gregorian_date);
+        }
+        var t_gregorian_month, r_gregorian_month = gregorian_month_from_json(v);
+        mal_check(t_gregorian_month, r_gregorian_month);
+        if (is_ok(t_gregorian_month) == 1) {
+            var s_gregorian_month = gregorian_month_to_json(r_gregorian_month);
+        }
+        var t_haab, r_haab = haab_from_json(v);
+        mal_check(t_haab, r_haab);
+        if (is_ok(t_haab) == 1) {
+            var s_haab = haab_to_json(r_haab);
+        }
+        var t_haabmonth, r_haabmonth = haabmonth_from_json(v);
+        mal_check(t_haabmonth, r_haabmonth);
+        if (is_ok(t_haabmonth) == 1) {
+            var s_haabmonth = haabmonth_to_json(r_haabmonth);
+        }
+        var t_heavenly_stem, r_heavenly_stem = heavenly_stem_from_json(v);
+        mal_check(t_heavenly_stem, r_heavenly_stem);
+        if (is_ok(t_heavenly_stem) == 1) {
+            var s_heavenly_stem = heavenly_stem_to_json(r_heavenly_stem);
+        }
+        var t_hebrewdate, r_hebrewdate = hebrewdate_from_json(v);
+        mal_check(t_hebrewdate, r_hebrewdate);
+        if (is_ok(t_hebrewdate) == 1) {
+            var s_hebrewdate = hebrewdate_to_json(r_hebrewdate);
+        }
+        var t_hebrewmonth, r_hebrewmonth = hebrewmonth_from_json(v);
+        mal_check(t_hebrewmonth, r_hebrewmonth);
+        if (is_ok(t_hebrewmonth) == 1) {
+            var s_hebrewmonth = hebrewmonth_to_json(r_hebrewmonth);
+        }
+        var t_heliacal_event, r_heliacal_event = heliacal_event_from_json(v);
+        mal_check(t_heliacal_event, r_heliacal_event);
+        if (is_ok(t_heliacal_event) == 1) {
+            var s_heliacal_event = heliacal_event_to_json(r_heliacal_event);
+        }
+        var t_heltype, r_heltype = heltype_from_json(v);
+        mal_check(t_heltype, r_heltype);
+        if (is_ok(t_heltype) == 1) {
+            var s_heltype = heltype_to_json(r_heltype);
+        }
+        var t_hijri_date, r_hijri_date = hijri_date_from_json(v);
+        mal_check(t_hijri_date, r_hijri_date);
+        if (is_ok(t_hijri_date) == 1) {
+            var s_hijri_date = hijri_date_to_json(r_hijri_date);
+        }
+        var t_horizontal_coord, r_horizontal_coord = horizontal_coord_from_json(v);
+        mal_check(t_horizontal_coord, r_horizontal_coord);
+        if (is_ok(t_horizontal_coord) == 1) {
+            var s_horizontal_coord = horizontal_coord_to_json(r_horizontal_coord);
+        }
+        var t_longcount, r_longcount = longcount_from_json(v);
+        mal_check(t_longcount, r_longcount);
+        if (is_ok(t_longcount) == 1) {
+            var s_longcount = longcount_to_json(r_longcount);
+        }
+        var t_mayan_numeral, r_mayan_numeral = mayan_numeral_from_json(v);
+        mal_check(t_mayan_numeral, r_mayan_numeral);
+        if (is_ok(t_mayan_numeral) == 1) {
+            var s_mayan_numeral = mayan_numeral_to_json(r_mayan_numeral);
+        }
+        var t_meru, r_meru = meru_from_json(v);
+        mal_check(t_meru, r_meru);
+        if (is_ok(t_meru) == 1) {
+            var s_meru = meru_to_json(r_meru);
+        }
+        var t_multi_calendar_date, r_multi_calendar_date = multi_calendar_date_from_json(v);
+        mal_check(t_multi_calendar_date, r_multi_calendar_date);
+        if (is_ok(t_multi_calendar_date) == 1) {
             var s_multi_calendar_date = multi_calendar_date_to_json(r_multi_calendar_date);
         }
-        decoded = decoded + 1;
-        var r_nikhilam = nikhilam_from_json(v);
-        if (r_nikhilam != 0) { var s_nikhilam = nikhilam_to_json(r_nikhilam); }
-        decoded = decoded + 1;
-        var r_persian_date = persian_date_from_json(v);
-        if (r_persian_date != 0) { var s_persian_date = persian_date_to_json(r_persian_date); }
-        decoded = decoded + 1;
-        var r_persian_month = persian_month_from_json(v);
-        if (r_persian_month != 0) { var s_persian_month = persian_month_to_json(r_persian_month); }
-        decoded = decoded + 1;
-        var r_precessionalage = precessionalage_from_json(v);
-        if (r_precessionalage != 0) { var s_precessionalage = precessionalage_to_json(r_precessionalage); }
-        decoded = decoded + 1;
-        var r_rod_numeral = rod_numeral_from_json(v);
-        if (r_rod_numeral != 0) { var s_rod_numeral = rod_numeral_to_json(r_rod_numeral); }
-        decoded = decoded + 1;
-        var r_romannum = romannum_from_json(v);
-        if (r_romannum != 0) { var s_romannum = romannum_to_json(r_romannum); }
-        decoded = decoded + 1;
-        var r_sages_tradition = sages_tradition_from_json(v);
-        if (r_sages_tradition != 0) { var s_sages_tradition = sages_tradition_to_json(r_sages_tradition); }
-        decoded = decoded + 1;
-        var r_sexagenary_year = sexagenary_year_from_json(v);
-        if (r_sexagenary_year != 0) { var s_sexagenary_year = sexagenary_year_to_json(r_sexagenary_year); }
-        decoded = decoded + 1;
-        var r_star = star_from_json(v);
-        if (r_star != 0) { var s_star = star_to_json(r_star); }
-        decoded = decoded + 1;
-        var r_starname = starname_from_json(v);
-        if (r_starname != 0) { var s_starname = starname_to_json(r_starname); }
-        decoded = decoded + 1;
-        var r_tonalpohualli = tonalpohualli_from_json(v);
-        if (r_tonalpohualli != 0) { var s_tonalpohualli = tonalpohualli_to_json(r_tonalpohualli); }
-        decoded = decoded + 1;
-        var r_tzolkin = tzolkin_from_json(v);
-        if (r_tzolkin != 0) { var s_tzolkin = tzolkin_to_json(r_tzolkin); }
-        decoded = decoded + 1;
-        var r_venusphase = venusphase_from_json(v);
-        if (r_venusphase != 0) { var s_venusphase = venusphase_to_json(r_venusphase); }
-        decoded = decoded + 1;
-        var r_xiuhpohualli = xiuhpohualli_from_json(v);
-        if (r_xiuhpohualli != 0) { var s_xiuhpohualli = xiuhpohualli_to_json(r_xiuhpohualli); }
-        decoded = decoded + 1;
+        var t_nikhilam, r_nikhilam = nikhilam_from_json(v);
+        mal_check(t_nikhilam, r_nikhilam);
+        if (is_ok(t_nikhilam) == 1) {
+            var s_nikhilam = nikhilam_to_json(r_nikhilam);
+        }
+        var t_persian_date, r_persian_date = persian_date_from_json(v);
+        mal_check(t_persian_date, r_persian_date);
+        if (is_ok(t_persian_date) == 1) {
+            var s_persian_date = persian_date_to_json(r_persian_date);
+        }
+        var t_persian_month, r_persian_month = persian_month_from_json(v);
+        mal_check(t_persian_month, r_persian_month);
+        if (is_ok(t_persian_month) == 1) {
+            var s_persian_month = persian_month_to_json(r_persian_month);
+        }
+        var t_precessionalage, r_precessionalage = precessionalage_from_json(v);
+        mal_check(t_precessionalage, r_precessionalage);
+        if (is_ok(t_precessionalage) == 1) {
+            var s_precessionalage = precessionalage_to_json(r_precessionalage);
+        }
+        var t_rod_numeral, r_rod_numeral = rod_numeral_from_json(v);
+        mal_check(t_rod_numeral, r_rod_numeral);
+        if (is_ok(t_rod_numeral) == 1) {
+            var s_rod_numeral = rod_numeral_to_json(r_rod_numeral);
+        }
+        var t_romannum, r_romannum = romannum_from_json(v);
+        mal_check(t_romannum, r_romannum);
+        if (is_ok(t_romannum) == 1) {
+            var s_romannum = romannum_to_json(r_romannum);
+        }
+        var t_sages_tradition, r_sages_tradition = sages_tradition_from_json(v);
+        mal_check(t_sages_tradition, r_sages_tradition);
+        if (is_ok(t_sages_tradition) == 1) {
+            var s_sages_tradition = sages_tradition_to_json(r_sages_tradition);
+        }
+        var t_sexagenary_year, r_sexagenary_year = sexagenary_year_from_json(v);
+        mal_check(t_sexagenary_year, r_sexagenary_year);
+        if (is_ok(t_sexagenary_year) == 1) {
+            var s_sexagenary_year = sexagenary_year_to_json(r_sexagenary_year);
+        }
+        var t_star, r_star = star_from_json(v);
+        mal_check(t_star, r_star);
+        if (is_ok(t_star) == 1) {
+            var s_star = star_to_json(r_star);
+        }
+        var t_starname, r_starname = starname_from_json(v);
+        mal_check(t_starname, r_starname);
+        if (is_ok(t_starname) == 1) {
+            var s_starname = starname_to_json(r_starname);
+        }
+        var t_tonalpohualli, r_tonalpohualli = tonalpohualli_from_json(v);
+        mal_check(t_tonalpohualli, r_tonalpohualli);
+        if (is_ok(t_tonalpohualli) == 1) {
+            var s_tonalpohualli = tonalpohualli_to_json(r_tonalpohualli);
+        }
+        var t_tzolkin, r_tzolkin = tzolkin_from_json(v);
+        mal_check(t_tzolkin, r_tzolkin);
+        if (is_ok(t_tzolkin) == 1) {
+            var s_tzolkin = tzolkin_to_json(r_tzolkin);
+        }
+        var t_venusphase, r_venusphase = venusphase_from_json(v);
+        mal_check(t_venusphase, r_venusphase);
+        if (is_ok(t_venusphase) == 1) {
+            var s_venusphase = venusphase_to_json(r_venusphase);
+        }
+        var t_xiuhpohualli, r_xiuhpohualli = xiuhpohualli_from_json(v);
+        mal_check(t_xiuhpohualli, r_xiuhpohualli);
+        if (is_ok(t_xiuhpohualli) == 1) {
+            var s_xiuhpohualli = xiuhpohualli_to_json(r_xiuhpohualli);
+        }
         i = i + 1;
     }
-    ok(decoded > 0, "every decoder ran on every malformed input without crashing");
+    assert_eq(MAL_BAD, 0, "every Err carries SKE_DESERIALIZE and a message");
+    ok(MAL_ERR > 0, "malformed input is rejected");
+    ok(MAL_OK > 0, "the scalar inputs some decoders accept still decode");
 
-    # A CalendarDate decoded from malformed JSON reaches convert() as an Err, not a crash
-    # or a garbage Ok (month "Foo" -> -1, day -5, an unknown variant -> 0).
+    # A malformed CalendarDate is an Err at the decoder, before convert() sees it.
     var js1 = str_from("{\"Gregorian\":{\"year\":2024,\"month\":\"Foo\",\"day\":40}}");
-    var bad1 = calendar_date_from_json(sk_json_parse(js1));
-    var c1_t, c1_v = convert(bad1);
-    assert_eq(is_ok(c1_t), 0, "convert(Gregorian month Foo) -> Err");
-    var bad2 = calendar_date_from_json(sk_json_parse(str_from("{\"Julian\":5}")));
-    var c2_t, c2_v = convert(bad2);
-    assert_eq(is_ok(c2_t), 0, "convert(unknown variant) -> Err");
+    var c1_t, c1_v = calendar_date_from_json(sk_json_parse(js1));
+    assert_eq(sk_result_code(c1_t, c1_v), SKE_DESERIALIZE, "Gregorian month Foo -> decode Err");
+    var c2_t, c2_v = calendar_date_from_json(sk_json_parse(str_from("{\"Julian\":5}")));
+    assert_eq(sk_result_code(c2_t, c2_v), SKE_DESERIALIZE, "unknown CalendarDate variant -> decode Err");
+    # serde does no calendar validation: day -5 is a u8 error, day 40 decodes and convert rejects it.
     var js3 = str_from("{\"Gregorian\":{\"year\":2024,\"month\":\"January\",\"day\":-5}}");
-    var bad3 = calendar_date_from_json(sk_json_parse(js3));
-    var c3_t, c3_v = convert(bad3);
-    assert_eq(is_ok(c3_t), 0, "convert(Gregorian day -5) -> Err");
-    # An unknown enum name decodes to -1 and re-serializes as "?" (no abort).
-    var sn = starname_from_json(sk_json_parse(str_from("\"Vulcan\"")));
-    assert_eq(sn, 0 - 1, "unknown star name -> -1");
-    ok(str_contains_cstr(starname_to_json(sn), "?"), "starname -1 serializes as ?");
+    var c3_t, c3_v = calendar_date_from_json(sk_json_parse(js3));
+    assert_eq(sk_result_code(c3_t, c3_v), SKE_DESERIALIZE, "Gregorian day -5 -> decode Err (u8)");
+    var js4 = str_from("{\"Gregorian\":{\"year\":2024,\"month\":\"January\",\"day\":40}}");
+    var c4_t, c4_v = calendar_date_from_json(sk_json_parse(js4));
+    ok(is_ok(c4_t), "Gregorian day 40 decodes (serde does not validate)");
+    if (is_ok(c4_t) == 1) {
+        var cv_t, cv_v = convert(c4_v);
+        assert_eq(sk_result_code(cv_t, cv_v), SKE_INVALID_DATE, "convert(day 40) -> InvalidDate");
+    }
+    # An unknown star name is an Err; a hand-built -1 code still renders as "?" (3.1.3 net).
+    var sn_t, sn_v = starname_from_json(sk_json_parse(str_from("\"Vulcan\"")));
+    assert_eq(sk_result_code(sn_t, sn_v), SKE_DESERIALIZE, "unknown star name -> decode Err");
+    ok(str_contains_cstr(starname_to_json(0 - 1), "?"), "starname -1 serializes as ?");
     return assert_summary();
 }
 

@@ -15,6 +15,37 @@ include "src/serial_chinese.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Decode js (a C-string) with decoder k (1 RodNumeral, 2 HeavenlyStem, 3 EarthlyBranch, else
+# SexagenaryYear); returns that decoder's Result pair.
+fn de_run(k, js) {
+    var n = sk_json_parse(str_from(js));
+    if (k == 1) { return rod_numeral_from_json(n); }
+    if (k == 2) { return heavenly_stem_from_json(n); }
+    if (k == 3) { return earthly_branch_from_json(n); }
+    return sexagenary_year_from_json(n);
+}
+
+# The C-string a followed by the C-string b, for expected messages too long for one line.
+fn cat2(a, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    return str_cstr(str_builder_build(sb));
+}
+
+# Decode js with decoder k and check it fails with SKE_DESERIALIZE and exactly the message
+# want (a C-string); a mismatch prints the message it got.
+fn de_err(k, js, want, label) {
+    var t, v = de_run(k, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) {
+        var same = str_eq_cstr(sk_err_msg(v), want);
+        if (same == 0) { str_println(sk_err_msg(v)); }
+        ok(same, label);
+    }
+    return 0;
+}
+
 # Run every serial_chinese test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -24,20 +55,23 @@ fn main() {
     var rod = rod_numeral_new(42);
     var rod_js = rod_numeral_to_json(rod);
     ok(str_contains_cstr(rod_js, "\"value\":42"), "rod json has value:42");
-    var rod2 = rod_numeral_from_json(sk_json_parse(rod_js));
-    ok(rod_numeral_eq(rod, rod2), "rod numeral roundtrip");
+    var rod2_t, rod2_v = rod_numeral_from_json(sk_json_parse(rod_js));
+    ok(is_ok(rod2_t), "rod numeral decodes");
+    ok(rod_numeral_eq(rod, result_unwrap(rod2_t, rod2_v)), "rod numeral roundtrip");
 
     # ---- HeavenlyStem standalone enum: "Jia" ----
     var stem_js = heavenly_stem_to_json(HS_JIA);
     ok(str_contains_cstr(stem_js, "\"Jia\""), "stem json is \"Jia\"");
-    var stem2 = heavenly_stem_from_json(sk_json_parse(stem_js));
-    ok(heavenly_stem_eq(HS_JIA, stem2), "heavenly stem roundtrip");
+    var stem2_t, stem2_v = heavenly_stem_from_json(sk_json_parse(stem_js));
+    ok(is_ok(stem2_t), "heavenly stem decodes");
+    ok(heavenly_stem_eq(HS_JIA, result_unwrap(stem2_t, stem2_v)), "heavenly stem roundtrip");
 
     # ---- EarthlyBranch standalone enum: "Chen" ----
     var branch_js = earthly_branch_to_json(EB_CHEN);
     ok(str_contains_cstr(branch_js, "\"Chen\""), "branch json is \"Chen\"");
-    var branch2 = earthly_branch_from_json(sk_json_parse(branch_js));
-    ok(earthly_branch_eq(EB_CHEN, branch2), "earthly branch roundtrip");
+    var branch2_t, branch2_v = earthly_branch_from_json(sk_json_parse(branch_js));
+    ok(is_ok(branch2_t), "earthly branch decodes");
+    ok(earthly_branch_eq(EB_CHEN, result_unwrap(branch2_t, branch2_v)), "earthly branch roundtrip");
 
     # ---- sexagenary_serde_roundtrip: sexagenary_from_year(2024) ----
     # serde: {"stem":"Jia","branch":"Chen","cycle_position":41}
@@ -46,16 +80,42 @@ fn main() {
     ok(str_contains_cstr(js, "\"stem\":\"Jia\""), "sex json stem=Jia");
     ok(str_contains_cstr(js, "\"branch\":\"Chen\""), "sex json branch=Chen");
     ok(str_contains_cstr(js, "\"cycle_position\":41"), "sex json cycle_position=41");
-    var back = sexagenary_year_from_json(sk_json_parse(js));
-    ok(sexagenary_year_eq(s, back), "sexagenary year serde roundtrip");
+    var back_t, back_v = sexagenary_year_from_json(sk_json_parse(js));
+    ok(is_ok(back_t), "sexagenary year decodes");
+    ok(sexagenary_year_eq(s, result_unwrap(back_t, back_v)), "sexagenary year serde roundtrip");
 
     # ---- second sexagenary case: 2025 = Yi / Si ----
     var s25 = sexagenary_from_year(2025);
     var js25 = sexagenary_year_to_json(s25);
     ok(str_contains_cstr(js25, "\"stem\":\"Yi\""), "2025 stem=Yi");
     ok(str_contains_cstr(js25, "\"branch\":\"Si\""), "2025 branch=Si");
-    var back25 = sexagenary_year_from_json(sk_json_parse(js25));
-    ok(sexagenary_year_eq(s25, back25), "2025 sexagenary roundtrip");
+    var back25_t, back25_v = sexagenary_year_from_json(sk_json_parse(js25));
+    ok(sexagenary_year_eq(s25, result_unwrap(back25_t, back25_v)), "2025 sexagenary roundtrip");
+
+    # ---- 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    de_err(1, "{}", "missing field `value`", "rod missing value");
+    de_err(1, "{\"value\":1.5}", "invalid type: floating point `1.5`, expected i64", "rod float value");
+    de_err(1, "{\"value\":\"42\"}", "invalid type: string \"42\", expected i64", "rod string value");
+    de_err(1, "42", "invalid type: integer `42`, expected struct RodNumeral", "bare integer for rod");
+    var stems = "`Jia`, `Yi`, `Bing`, `Ding`, `Wu`, `Ji`, `Geng`, `Xin`, `Ren`, `Gui`";
+    var branches = "`Zi`, `Chou`, `Yin`, `Mao`, `Chen`, `Si`, `Wu`, `Wei`, `Shen`, `You`, `Xu`, `Hai`";
+    de_err(2, "\"Zi\"", cat2("unknown variant `Zi`, expected one of ", stems), "unknown stem");
+    de_err(2, "\"jia\"", cat2("unknown variant `jia`, expected one of ", stems), "stem is case-sensitive");
+    de_err(2, "null", "invalid type: null, expected variant identifier", "null stem");
+    de_err(3, "\"Jia\"", cat2("unknown variant `Jia`, expected one of ", branches), "unknown branch");
+    de_err(3, "true", "invalid type: boolean `true`, expected variant identifier", "boolean branch");
+    de_err(4, "{\"stem\":\"Jia\",\"branch\":\"Chen\"}", "missing field `cycle_position`", "sex missing position");
+    de_err(4, "{\"branch\":\"Chen\",\"cycle_position\":41}", "missing field `stem`", "sex missing stem");
+    de_err(4, "{\"stem\":\"Jia\",\"branch\":\"Chen\",\"cycle_position\":300}",
+        "invalid value: integer `300`, expected u8", "sex position 300");
+    de_err(4, "{\"stem\":\"Jia\",\"branch\":\"Dragon\",\"cycle_position\":41}",
+        cat2("unknown variant `Dragon`, expected one of ", branches), "sex unknown branch");
+    de_err(4, "{\"stem\":0,\"branch\":\"Chen\",\"cycle_position\":41}",
+        "invalid type: integer `0`, expected variant identifier", "sex integer stem");
+    # serde ignores unknown keys and does no consistency check (Jia/Zi at position 41 decodes).
+    var ex_t, ex_v = de_run(4, "{\"stem\":\"Jia\",\"branch\":\"Zi\",\"cycle_position\":41,\"x\":[]}");
+    ok(is_ok(ex_t), "unknown key ignored, inconsistent year decodes");
+    if (is_ok(ex_t) == 1) { assert_eq(sex_branch(ex_v), EB_ZI, "branch kept as decoded"); }
 
     return assert_summary();
 }

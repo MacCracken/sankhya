@@ -19,6 +19,36 @@ include "src/serial_babylonian.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Decode js (a C-string) with decoder k (1 BabylonianNumeral, 2 BabylonianDate, else
+# BabylonianMonth); returns that decoder's Result pair.
+fn de_run(k, js) {
+    var n = sk_json_parse(str_from(js));
+    if (k == 1) { return babnum_from_json(n); }
+    if (k == 2) { return babdate_from_json(n); }
+    return babmonth_from_json(n);
+}
+
+# The C-string a followed by the C-string b, for expected messages too long for one line.
+fn cat2(a, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    return str_cstr(str_builder_build(sb));
+}
+
+# Decode js with decoder k and check it fails with SKE_DESERIALIZE and exactly the message
+# want (a C-string); a mismatch prints the message it got.
+fn de_err(k, js, want, label) {
+    var t, v = de_run(k, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) {
+        var same = str_eq_cstr(sk_err_msg(v), want);
+        if (same == 0) { str_println(sk_err_msg(v)); }
+        ok(same, label);
+    }
+    return 0;
+}
+
 # Run every serial_babylonian test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -35,16 +65,18 @@ fn main() {
     ok(str_eq_cstr(njs, "{\"tens\":4,\"units\":2}"), "numeral exact serde shape");
     var nv = sk_json_parse(njs);
     ok(nv, "numeral parse ok");
-    var nparsed = babnum_from_json(nv);
-    ok(babnum_eq(num, nparsed), "BabylonianNumeral serde round-trip");
+    var np_t, np_v = babnum_from_json(nv);
+    ok(is_ok(np_t), "BabylonianNumeral decodes");
+    ok(babnum_eq(num, result_unwrap(np_t, np_v)), "BabylonianNumeral serde round-trip");
 
     # ---- BabylonianMonth::Abu = "Abu" (unit enum → bare variant-name string) ----
     var mjs = babmonth_to_json(BM_ABU);
     ok(str_eq_cstr(mjs, "\"Abu\""), "month exact serde shape (\"Abu\")");
     var mv = sk_json_parse(mjs);
     ok(mv, "month parse ok");
-    var mparsed = babmonth_from_json(mv);
-    ok(babmonth_eq(BM_ABU, mparsed), "BabylonianMonth serde round-trip");
+    var mp_t, mp_v = babmonth_from_json(mv);
+    ok(is_ok(mp_t), "BabylonianMonth decodes");
+    ok(babmonth_eq(BM_ABU, result_unwrap(mp_t, mp_v)), "BabylonianMonth serde round-trip");
 
     # ---- serde_roundtrip_babylonian_date: jdn_to_babylonian(EPOCH + 500) ----
     # Rust: jdn_to_babylonian(BABYLONIAN_EPOCH_JDN + 500.0) → year 2, Abu, day 29.
@@ -57,8 +89,32 @@ fn main() {
     ok(str_eq_cstr(djs, "{\"year\":2,\"month\":\"Abu\",\"day\":29}"), "date exact serde shape");
     var dv = sk_json_parse(djs);
     ok(dv, "date parse ok");
-    var dparsed = babdate_from_json(dv);
-    ok(babdate_eq(date, dparsed), "BabylonianDate serde round-trip");
+    var dp_t, dp_v = babdate_from_json(dv);
+    ok(is_ok(dp_t), "BabylonianDate decodes");
+    ok(babdate_eq(date, result_unwrap(dp_t, dp_v)), "BabylonianDate serde round-trip");
+
+    # ---- 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    de_err(1, "{\"tens\":4}", "missing field `units`", "numeral missing units");
+    de_err(1, "{\"tens\":256,\"units\":2}", "invalid value: integer `256`, expected u8", "numeral tens 256");
+    de_err(1, "{\"tens\":4,\"units\":\"2\"}", "invalid type: string \"2\", expected u8", "numeral string units");
+    de_err(1, "\"x\"", "invalid type: string \"x\", expected struct BabylonianNumeral", "string for numeral");
+    de_err(2, "{\"year\":2,\"month\":\"Abu\"}", "missing field `day`", "date missing day");
+    de_err(2, "{\"year\":1.5,\"month\":\"Abu\",\"day\":1}",
+        "invalid type: floating point `1.5`, expected i64", "date float year");
+    de_err(2, "{\"year\":2,\"month\":\"Abu\",\"day\":-1}", "invalid value: integer `-1`, expected u8",
+        "date negative day");
+    var bm = cat2("`Nisannu`, `Ayaru`, `Simanu`, `Dumuzu`, `Abu`, `Ululu`, ",
+        "`Tashritu`, `Arahsamna`, `Kislimu`, `Tebetu`, `Shabatu`, `Addaru`");
+    de_err(2, "{\"year\":2,\"month\":\"Nisan\",\"day\":1}", cat2("unknown variant `Nisan`, expected one of ", bm),
+        "date unknown month");
+    de_err(2, "[2,4,29]", "invalid type: sequence, expected struct BabylonianDate", "array for date");
+    de_err(3, "\"Adar\"", cat2("unknown variant `Adar`, expected one of ", bm), "unknown month");
+    de_err(3, "4", "invalid type: integer `4`, expected variant identifier", "integer month");
+    de_err(3, "null", "invalid type: null, expected variant identifier", "null month");
+    # serde ignores unknown keys and does no range validation (tens 9 is not a valid digit).
+    var ex_t, ex_v = de_run(1, "{\"tens\":9,\"units\":2,\"extra\":true}");
+    ok(is_ok(ex_t), "unknown key ignored, tens 9 decodes");
+    if (is_ok(ex_t) == 1) { assert_eq(babnum_tens(ex_v), 9, "tens 9 kept as decoded"); }
 
     return assert_summary();
 }

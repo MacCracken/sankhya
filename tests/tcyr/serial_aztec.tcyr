@@ -1,6 +1,8 @@
 # serial_aztec.tcyr — ports rust-old/src/aztec.rs serde round-trip tests
 # (serde_roundtrip_tonalpohualli / serde_roundtrip_xiuhpohualli) plus enum
-# variant-name-string parity checks. JSON emit must match serde_json exactly.
+# variant-name-string parity checks. JSON emit must match serde_json exactly. Then the
+# 3.2.0 decode errors: each <type>_from_json returns Err(SKE_DESERIALIZE) with serde's
+# message for a missing field, a wrong JSON type or range and an unknown variant.
 # Run:
 #   cyrius build tests/tcyr/serial_aztec.tcyr build/_s_aztec && ./build/_s_aztec
 include "src/error.cyr"
@@ -13,6 +15,52 @@ include "src/serial_aztec.cyr"
 
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# Decoder selectors for de_any / de_err.
+var K_TON = 0;
+var K_XIU = 1;
+
+# Parse js (a C-string) and run the decoder selected by kind; returns its Result pair.
+fn de_any(kind, js) {
+    var n = sk_json_parse(str_from(js));
+    if (kind == K_TON) { return tonalpohualli_from_json(n); }
+    return xiuhpohualli_from_json(n);
+}
+
+# Check that decoding js with decoder kind fails with SKE_DESERIALIZE and exactly the
+# message want (a Str).
+fn de_err_s(kind, js, want, label) {
+    var t, v = de_any(kind, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) { ok(str_eq(sk_err_msg(v), want), label); }
+    return 0;
+}
+
+# de_err_s with the expected message as a C-string.
+fn de_err(kind, js, want, label) { return de_err_s(kind, js, str_from(want), label); }
+
+# The serde "expected one of" lists of the TonalpohualliSign (20) and XiuhpohuallMonth (19)
+# variants, split over several lines.
+var TS_LIST_A = "`Cipactli`, `Ehecatl`, `Calli`, `Cuetzpalin`, `Coatl`, `Miquiztli`, `Mazatl`, ";
+var TS_LIST_B = "`Tochtli`, `Atl`, `Itzcuintli`, `Ozomatli`, `Malinalli`, `Acatl`, `Ocelotl`, ";
+var TS_LIST_C = "`Cuauhtli`, `Cozcacuauhtli`, `Ollin`, `Tecpatl`, `Quiahuitl`, `Xochitl`";
+var XM_LIST_A = "`Atlcahualo`, `Tlacaxipehualiztli`, `Tozoztontli`, `HueyTozoztli`, `Toxcatl`, ";
+var XM_LIST_B = "`Etzalcualiztli`, `Tecuilhuitontli`, `HueyTecuilhuitl`, `Tlaxochimaco`, `XocotlHuetzi`, ";
+var XM_LIST_C = "`Ochpaniztli`, `Teotleco`, `Tepeilhuitl`, `Quecholli`, `Panquetzaliztli`, ";
+var XM_LIST_D = "`Atemoztli`, `Tititl`, `Izcalli`, `Nemontemi`";
+
+# "unknown variant `<name>`, expected one of <a><b><c><d>" as a Str (d may be "").
+fn unknown4(name, a, b, c, d) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "unknown variant `");
+    str_builder_add_cstr(sb, name);
+    str_builder_add_cstr(sb, "`, expected one of ");
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    str_builder_add_cstr(sb, c);
+    str_builder_add_cstr(sb, d);
+    return str_builder_build(sb);
+}
 
 # The correlation anchor jdn = 2276827.5 (13 Aug 1521 Julian; 2275855.5 before ADR-008) → 1 Coatl / day 1 Xocotl Huetzi.
 var ANCHOR = 0;
@@ -30,8 +78,9 @@ fn main() {
     # variant-name string, integer number, compact (no spaces).
     ok(str_contains_cstr(tjs, "\"number\":1"), "tonal json number field");
     ok(str_contains_cstr(tjs, "\"sign\":\"Coatl\""), "tonal json sign as variant name");
-    var t2 = tonalpohualli_from_json(sk_json_parse(tjs));
-    ok(tonalpohualli_eq(t, t2), "tonalpohualli serde round-trip");
+    var t2_t, t2_v = tonalpohualli_from_json(sk_json_parse(tjs));
+    ok(is_ok(t2_t), "tonalpohualli decodes");
+    ok(tonalpohualli_eq(t, result_unwrap(t2_t, t2_v)), "tonalpohualli serde round-trip");
 
     # ---- serde_roundtrip_xiuhpohualli ----
     var x = xiuhpohualli_from_jdn(ANCHOR);
@@ -40,34 +89,61 @@ fn main() {
     # space (Display would be "Xocotl Huetzi").
     ok(str_contains_cstr(xjs, "\"day\":1"), "xiuh json day field");
     ok(str_contains_cstr(xjs, "\"month\":\"XocotlHuetzi\""), "xiuh json month as variant name");
-    var x2 = xiuhpohualli_from_json(sk_json_parse(xjs));
-    ok(xiuhpohualli_eq(x, x2), "xiuhpohualli serde round-trip");
+    var x2_t, x2_v = xiuhpohualli_from_json(sk_json_parse(xjs));
+    ok(is_ok(x2_t), "xiuhpohualli decodes");
+    ok(xiuhpohualli_eq(x, result_unwrap(x2_t, x2_v)), "xiuhpohualli serde round-trip");
 
     # ---- enum variant-name parity: spaces must NOT leak into serde ids ----
     var hz = xiuhpohualli_new(4, XM_HUEYTOZOZTLI);
     var hzjs = xiuhpohualli_to_json(hz);
     ok(str_contains_cstr(hzjs, "\"month\":\"HueyTozoztli\""), "serde id 'HueyTozoztli' (no space)");
-    var hz2 = xiuhpohualli_from_json(sk_json_parse(hzjs));
-    ok(xiuhpohualli_eq(hz, hz2), "xiuh HueyTozoztli round-trip");
+    var hz2_t, hz2_v = xiuhpohualli_from_json(sk_json_parse(hzjs));
+    ok(xiuhpohualli_eq(hz, result_unwrap(hz2_t, hz2_v)), "xiuh HueyTozoztli round-trip");
 
     # ---- another sign round-trip: 13 Xochitl ----
     var xo = tonalpohualli_new(13, TS_XOCHITL);
     var xojs = tonalpohualli_to_json(xo);
     ok(str_contains_cstr(xojs, "\"number\":13"), "tonal number=13");
     ok(str_contains_cstr(xojs, "\"sign\":\"Xochitl\""), "tonal sign Xochitl");
-    var xo2 = tonalpohualli_from_json(sk_json_parse(xojs));
-    ok(tonalpohualli_eq(xo, xo2), "tonalpohualli Xochitl round-trip");
+    var xo2_t, xo2_v = tonalpohualli_from_json(sk_json_parse(xojs));
+    ok(tonalpohualli_eq(xo, result_unwrap(xo2_t, xo2_v)), "tonalpohualli Xochitl round-trip");
 
     # ---- Nemontemi month (last discriminant) round-trip ----
     var nm = xiuhpohualli_new(5, XM_NEMONTEMI);
     var nmjs = xiuhpohualli_to_json(nm);
     ok(str_contains_cstr(nmjs, "\"month\":\"Nemontemi\""), "serde id 'Nemontemi'");
-    var nm2 = xiuhpohualli_from_json(sk_json_parse(nmjs));
-    ok(xiuhpohualli_eq(nm, nm2), "xiuh Nemontemi round-trip");
+    var nm2_t, nm2_v = xiuhpohualli_from_json(sk_json_parse(nmjs));
+    ok(xiuhpohualli_eq(nm, result_unwrap(nm2_t, nm2_v)), "xiuh Nemontemi round-trip");
 
     # ---- from_name miss returns (0 - 1) ----
     var miss = tonalpohualli_sign_from_name(str_from("NotASign"));
     assert_eq(miss, 0 - 1, "unknown sign name -> -1");
+
+    # ---- 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    # Tonalpohualli { number: u8, sign: TonalpohualliSign }
+    de_err(K_TON, "{\"number\":1}", "missing field `sign`", "tonal missing sign");
+    de_err(K_TON, "{\"sign\":\"Coatl\"}", "missing field `number`", "tonal missing number");
+    de_err(K_TON, "{\"number\":300,\"sign\":\"Coatl\"}", "invalid value: integer `300`, expected u8",
+        "tonal number over u8");
+    de_err(K_TON, "{\"number\":1.0,\"sign\":\"Coatl\"}", "invalid type: floating point `1.0`, expected u8",
+        "tonal float number");
+    var ts_want = unknown4("Serpent", TS_LIST_A, TS_LIST_B, TS_LIST_C, "");
+    de_err_s(K_TON, "{\"number\":1,\"sign\":\"Serpent\"}", ts_want, "tonal unknown sign");
+    de_err(K_TON, "{\"number\":1,\"sign\":4}", "invalid type: integer `4`, expected variant identifier",
+        "tonal integer sign");
+    de_err(K_TON, "[1,\"Coatl\"]", "invalid type: sequence, expected struct Tonalpohualli", "tonal array");
+    # Xiuhpohualli { day: u8, month: XiuhpohuallMonth } (the serde ids have no spaces)
+    de_err(K_XIU, "{\"day\":1}", "missing field `month`", "xiuh missing month");
+    de_err(K_XIU, "{\"day\":-2,\"month\":\"Izcalli\"}", "invalid value: integer `-2`, expected u8",
+        "xiuh negative day");
+    var xm_want = unknown4("Xocotl Huetzi", XM_LIST_A, XM_LIST_B, XM_LIST_C, XM_LIST_D);
+    de_err_s(K_XIU, "{\"day\":1,\"month\":\"Xocotl Huetzi\"}", xm_want, "xiuh Display name is not a serde id");
+    de_err(K_XIU, "{\"day\":true,\"month\":\"Izcalli\"}", "invalid type: boolean `true`, expected u8",
+        "xiuh bool day");
+    de_err(K_XIU, "null", "invalid type: null, expected struct Xiuhpohualli", "xiuh null");
+    var xd_t, xd_v = de_any(K_XIU, "{\"day\":25,\"month\":\"Nemontemi\",\"note\":\"x\"}");
+    ok(is_ok(xd_t), "xiuh: no day validation, unknown key ignored");
+    assert_eq(xiu_day(result_unwrap(xd_t, xd_v)), 25, "xiuh day 25 kept as decoded");
 
     return assert_summary();
 }

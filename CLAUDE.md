@@ -8,7 +8,7 @@ historical calendars, and archaeoastronomy for AGNOS.
 - **Type**: Cyrius library (ported from Rust v2.0.0 — original preserved at `rust-old/`)
 - **License**: GPL-3.0-only
 - **Compiler**: Cyrius 6.7.18 — pinned in `cyrius.cyml` `[package].cyrius`
-- **Version**: SemVer 3.1.3 — `VERSION` at the project root is the source of truth
+- **Version**: SemVer 3.2.0 — `VERSION` at the project root is the source of truth
   (`cyrius.cyml` derives it via `${file:VERSION}`); do not inline the number elsewhere
 - **Consumers**: hisab (higher mathematics, as an optional companion), and the wider AGNOS
   ecosystem needing historical/ancient computations, calendar systems, or archaeoastronomy
@@ -36,7 +36,7 @@ historical calendars, and archaeoastronomy for AGNOS.
 | `astro` | Coordinate systems, star catalog, precession, heliacal rising, monument alignment |
 | `epoch` | Precession, precessional ages, Seven Sages, cycle alignment, unified `convert()`/`correlate()` |
 | `logging` | sakshi structured logging init (replaces Rust `tracing`) |
-| `serial_*` | Hand-written round-trip JSON (`<type>_to_json` / `<type>_from_json`) via bayan — one per module |
+| `serial_*` | Hand-written round-trip JSON via bayan, one per module: `<type>_to_json` and a Result-returning `<type>_from_json` with serde's checks (ADR-009) |
 
 `src/lib.cyr` aggregates all modules (dependency order); `cyrius distlib` bundles them into
 `dist/sankhya.cyr` for consumers. `src/main.cyr` is a minimal smoke test only.
@@ -60,7 +60,8 @@ historical calendars, and archaeoastronomy for AGNOS.
 - **All math must be historically accurate** — real formulas, real correlations, cite primary sources.
 - **Cross-check against `rust-old/`** — the correctness bar is "matches what the Rust did". The
   original tree is the parity oracle; do not modify it. Diverge only with an ADR
-  (ADR-007 lists the input-domain guards, ADR-008 the accuracy corrections, as of 3.1.3).
+  (ADR-007 lists the input-domain guards, ADR-008 the accuracy corrections, as of 3.1.3;
+  ADR-009 the Result-returning decoders, 3.2.0).
 - **Zero panics** — no `unwrap`; every fallible path returns a `Result` (`Ok`/`sk_fail`) or a
   sentinel; check every fallible stdlib call. The adversarial suite enforces "Err or finite, never NaN/Inf".
 - **Euclidean modulo for calendars** — `rem_euclid`/`div_euclid` (not bare `%`/`/`) wherever an

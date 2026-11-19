@@ -6,9 +6,12 @@
 #   {"value":1776,"text":"MDCCLXXVI"}
 #
 # Self-contained (NO include lines). Relies on:
-#   * serial_util.cyr — sk_json_int / sk_json_str / sk_json_sep / sk_json_parse
+#   * serial_util.cyr — sk_json_int / sk_json_str / sk_json_sep, and the sk_de_* decoders
 #   * roman.cyr       — romannum_new / romannum_value / romannum_text (RN_* offsets)
-#   * bayan (folded stdlib) — bayan_json_v_obj_get_by_cstr / _int / _str value-tree accessors
+#
+# Decoding (3.2.0) returns a Result as serde_json::from_str did. The Rust type uses the
+# plain derive, so both fields decode as-is: the text is NOT re-derived from the value and
+# neither is validated ({"value":5,"text":"IV"} decodes, as it does in Rust).
 #
 # There are NO enums, floats, bools, nested structs, arrays, or Options among
 # roman's serde types, so this is a plain {int, string} record.
@@ -27,12 +30,15 @@ fn romannum_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Reconstruct a RomanNumeral from a parsed bayan value-tree node `v`.
+# Deserialize a RomanNumeral from a bayan value node (a JSON object), as serde's derive:
+# Ok(RomanNumeral) or Err(SKE_DESERIALIZE) — value a u32, text a String, both stored as
+# decoded (no 1-3999 or canonical-text check; romannum_from_value / romannum_parse do that).
 #must_use
 fn romannum_from_json(v) {
-    var value = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "value"));
-    var text = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "text"));
-    return romannum_new(value, text);
+    var obj = sk_de_struct(v, "RomanNumeral")?;
+    var value = sk_de_int_field(obj, "value", 0, SK_U32_MAX, "u32")?;
+    var text = sk_de_str_field(obj, "text")?;
+    return Ok(romannum_new(value, text));
 }
 
 # Field-by-field equality for the round-trip test.

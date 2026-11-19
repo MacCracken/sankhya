@@ -37,15 +37,23 @@
 #   * saptarishi_profiles → array of {name, tradition, description} objects built
 #     from avatara's prof_name/prof_tradition/prof_desc (C-string) accessors.
 #
+# Decoding (3.2.0): every *_from_json returns a Result, as serde_json::from_str did:
+# Ok(value) or Err(SKE_DESERIALIZE) with serde's wording (the sk_de_* helpers of
+# serial_util.cyr). Each field is checked against its Rust type (u8/u32/i32/i64/f64,
+# String, Vec<T>, Option<T>, unit and data enums, the (i32, u32, f64) tuple); a missing
+# required field is an Err, an Option field missing or null is None (0), unknown keys
+# are ignored and no domain validation happens (serde's derive does none).
+#
 # Reduction (documented): the itihas era/civ/event bundle exposes NO from_json,
 # and avatara ArchetypeProfile has no round-trippable serializer, so the
 # MultiCalendarDate round-trip reconstructs every INTRINSIC field (jdn, the
 # option Mayan calendars, sothic tuple, precessional age, julian year, and all
 # nested calendar records) exactly and verifies the itihas/avatara arrays
-# structurally by element COUNT. The intrinsic reduced set is what the Rust
-# assert_eq!(date, back) exercises for parity on this port.
+# structurally by element COUNT (each must still be a JSON array, else Err). The
+# intrinsic reduced set is what the Rust assert_eq!(date, back) exercises for
+# parity on this port.
 #
-# SELF-CONTAINED: no include lines. Uses the shared sk_json_* helpers from
+# SELF-CONTAINED: no include lines. Uses the shared sk_json_* / sk_de_* helpers from
 # serial_util.cyr, the epoch + calendar module accessors (via lib.cyr), the
 # itihas/avatara bundle serializers/accessors, and bayan's value-tree API.
 
@@ -82,17 +90,93 @@ fn _ep_json_str_arr(sb, key, v) {
     return 0;
 }
 
-# Parse a bayan array node of JSON strings into a fresh vec of Str.
+# Decode the Vec<String> field key of object obj: Ok(a fresh vec of Str), or Err when the
+# field is missing, not an array, or holds a non-string element.
 #must_use
-fn _ep_parse_str_arr(node) {
+fn _ep_de_str_vec_field(obj, key) {
+    var arr = sk_de_seq_field(obj, key)?;
     var v = vec_new();
-    var n = bayan_json_v_arr_len(node);
+    var n = bayan_json_v_arr_len(arr);
     var i = 0;
     while (i < n) {
-        vec_push(v, sk_json_v_str(bayan_json_v_arr_get(node, i)));
+        var s = sk_de_str(bayan_json_v_arr_get(arr, i))?;
+        vec_push(v, s);
+        i = i + 1;
+    }
+    return Ok(v);
+}
+
+# A fresh vec of the n serde identifiers that the name accessor at fp (a fn(i) -> Str)
+# writes for discriminants 0..n-1, for sk_de_variant.
+#must_use
+fn _ep_build_names(fp, n) {
+    var v = vec_new();
+    var i = 0;
+    while (i < n) {
+        vec_push(v, fncall1(fp, i));
         i = i + 1;
     }
     return v;
+}
+
+# Cached identifier vecs for the enums whose module keeps its name table private.
+var _ep_coptic_names = 0;
+var _ep_hebrew_names = 0;
+var _ep_hijri_names = 0;
+var _ep_stem_names = 0;
+var _ep_branch_names = 0;
+var _ep_caldate_names = 0;
+
+# CopticMonth serde identifiers in discriminant order (the coptic_month_name table).
+#must_use
+fn _ep_coptic_month_names() {
+    if (_ep_coptic_names == 0) { _ep_coptic_names = _ep_build_names(&coptic_month_name, 13); }
+    return _ep_coptic_names;
+}
+
+# HebrewMonth serde identifiers in discriminant order (the hebrewmonth_name table).
+#must_use
+fn _ep_hebrew_month_names() {
+    if (_ep_hebrew_names == 0) { _ep_hebrew_names = _ep_build_names(&hebrewmonth_name, 14); }
+    return _ep_hebrew_names;
+}
+
+# HijriMonth serde identifiers in discriminant order (the hijri_month_name table).
+#must_use
+fn _ep_hijri_month_names() {
+    if (_ep_hijri_names == 0) { _ep_hijri_names = _ep_build_names(&hijri_month_name, 12); }
+    return _ep_hijri_names;
+}
+
+# HeavenlyStem serde identifiers in discriminant order (the heavenly_stem_debug table).
+#must_use
+fn _ep_stem_names_vec() {
+    if (_ep_stem_names == 0) { _ep_stem_names = _ep_build_names(&heavenly_stem_debug, 10); }
+    return _ep_stem_names;
+}
+
+# EarthlyBranch serde identifiers in discriminant order (the earthly_branch_debug table).
+#must_use
+fn _ep_branch_names_vec() {
+    if (_ep_branch_names == 0) { _ep_branch_names = _ep_build_names(&earthly_branch_debug, 12); }
+    return _ep_branch_names;
+}
+
+# CalendarDate variant names in CDT_* order (the keys calendar_date_to_json writes).
+#must_use
+fn _ep_caldate_variant_names() {
+    if (_ep_caldate_names == 0) {
+        var v = vec_new();
+        vec_push(v, str_from("Jdn"));
+        vec_push(v, str_from("Gregorian"));
+        vec_push(v, str_from("Coptic"));
+        vec_push(v, str_from("Persian"));
+        vec_push(v, str_from("Hebrew"));
+        vec_push(v, str_from("Hijri"));
+        vec_push(v, str_from("MayanLongCount"));
+        _ep_caldate_names = v;
+    }
+    return _ep_caldate_names;
 }
 
 # Element-wise equality of two vecs of Str (0/1).
@@ -247,15 +331,17 @@ fn ep_lc_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh LongCount from bayan object node `v`; missing/non-numeric places read as 0.
+# Decode a Mayan LongCount (five u32 places) from bayan node v: Ok(LongCount) or
+# Err(SKE_DESERIALIZE) (not an object, a missing place, a non-integer or one outside u32).
 #must_use
 fn ep_lc_from_json(v) {
-    var b = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "baktun"));
-    var k = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "katun"));
-    var t = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "tun"));
-    var u = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "uinal"));
-    var n = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "kin"));
-    return longcount_make(b, k, t, u, n);
+    var obj = sk_de_struct(v, "LongCount")?;
+    var b = sk_de_int_field(obj, "baktun", 0, SK_U32_MAX, "u32")?;
+    var k = sk_de_int_field(obj, "katun", 0, SK_U32_MAX, "u32")?;
+    var t = sk_de_int_field(obj, "tun", 0, SK_U32_MAX, "u32")?;
+    var u = sk_de_int_field(obj, "uinal", 0, SK_U32_MAX, "u32")?;
+    var n = sk_de_int_field(obj, "kin", 0, SK_U32_MAX, "u32")?;
+    return Ok(longcount_make(b, k, t, u, n));
 }
 # Structural equality of two LongCount records (all five places); 1/0.
 #must_use
@@ -280,13 +366,14 @@ fn ep_tzolkin_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh Tzolkin from bayan object node `v`; a missing number reads as 0 and an
-# unmatched day_sign name as -1.
+# Decode a Mayan Tzolkin {number: u8, day_sign: DaySign} from bayan node v: Ok(Tzolkin) or
+# Err(SKE_DESERIALIZE).
 #must_use
 fn ep_tzolkin_from_json(v) {
-    var num = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "number"));
-    var sign = ep_daysign_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "day_sign")));
-    return tzolkin_make(num, sign);
+    var obj = sk_de_struct(v, "Tzolkin")?;
+    var num = sk_de_int_field(obj, "number", 0, SK_U8_MAX, "u8")?;
+    var sign = sk_de_variant_field(obj, "day_sign", all_daysign_names())?;
+    return Ok(tzolkin_make(num, sign));
 }
 # Structural equality of two Tzolkin records (number, day sign); 1/0.
 #must_use
@@ -308,13 +395,14 @@ fn ep_haab_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh Haab from bayan object node `v`; a missing day reads as 0 and an unmatched
-# month name as -1.
+# Decode a Mayan Haab {day: u8, month: HaabMonth} from bayan node v: Ok(Haab) or
+# Err(SKE_DESERIALIZE).
 #must_use
 fn ep_haab_from_json(v) {
-    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    var m = ep_haabmonth_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
-    return haab_make(d, m);
+    var obj = sk_de_struct(v, "Haab")?;
+    var d = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    var m = sk_de_variant_field(obj, "month", all_haabmonth_names())?;
+    return Ok(haab_make(d, m));
 }
 # Structural equality of two Haab records (day, month); 1/0.
 #must_use
@@ -338,14 +426,15 @@ fn ep_greg_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh GregorianDate from bayan object node `v`; missing year/day read as 0 and
-# an unmatched month name as -1.
+# Decode a GregorianDate {year: i64, month: GregorianMonth, day: u8} from bayan node v: Ok(GregorianDate) or
+# Err(SKE_DESERIALIZE). No calendar validation (serde's derive does none).
 #must_use
 fn ep_greg_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
-    var m = ep_greg_month_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
-    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    return gregorian_date_new(y, m, d);
+    var obj = sk_de_struct(v, "GregorianDate")?;
+    var y = sk_de_int_field(obj, "year", SK_I64_MIN, SK_I64_MAX, "i64")?;
+    var m = sk_de_variant_field(obj, "month", gregorian_month_names())?;
+    var d = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    return Ok(gregorian_date_new(y, m, d));
 }
 # Structural equality of two GregorianDate records (year, month, day); 1/0.
 #must_use
@@ -370,14 +459,15 @@ fn ep_coptic_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh CopticDate from bayan object node `v`; missing year/day read as 0 and an
-# unmatched month name as -1.
+# Decode a CopticDate {year: i64, month: CopticMonth, day: u8} from bayan node v: Ok(CopticDate) or
+# Err(SKE_DESERIALIZE). No calendar validation (serde's derive does none).
 #must_use
 fn ep_coptic_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
-    var m = ep_coptic_month_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
-    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    return coptic_date_new(y, m, d);
+    var obj = sk_de_struct(v, "CopticDate")?;
+    var y = sk_de_int_field(obj, "year", SK_I64_MIN, SK_I64_MAX, "i64")?;
+    var m = sk_de_variant_field(obj, "month", _ep_coptic_month_names())?;
+    var d = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    return Ok(coptic_date_new(y, m, d));
 }
 # Structural equality of two CopticDate records (year, month, day); 1/0.
 #must_use
@@ -402,14 +492,15 @@ fn ep_persian_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh PersianDate from bayan object node `v`; missing year/day read as 0 and an
-# unmatched month name as -1.
+# Decode a PersianDate {year: i64, month: PersianMonth, day: u8} from bayan node v: Ok(PersianDate) or
+# Err(SKE_DESERIALIZE). No calendar validation (serde's derive does none).
 #must_use
 fn ep_persian_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
-    var m = ep_persian_month_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
-    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    return persian_date_new(y, m, d);
+    var obj = sk_de_struct(v, "PersianDate")?;
+    var y = sk_de_int_field(obj, "year", SK_I64_MIN, SK_I64_MAX, "i64")?;
+    var m = sk_de_variant_field(obj, "month", persian_month_names())?;
+    var d = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    return Ok(persian_date_new(y, m, d));
 }
 # Structural equality of two PersianDate records (year, month, day); 1/0.
 #must_use
@@ -434,14 +525,15 @@ fn ep_hebrew_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh HebrewDate from bayan object node `v`; missing year/day read as 0 and an
-# unmatched month name as -1.
+# Decode a HebrewDate {year: i64, month: HebrewMonth, day: u8} from bayan node v: Ok(HebrewDate) or
+# Err(SKE_DESERIALIZE). No calendar validation (serde's derive does none).
 #must_use
 fn ep_hebrew_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
-    var m = ep_hebrew_month_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
-    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    return hebrewdate_new(y, m, d);
+    var obj = sk_de_struct(v, "HebrewDate")?;
+    var y = sk_de_int_field(obj, "year", SK_I64_MIN, SK_I64_MAX, "i64")?;
+    var m = sk_de_variant_field(obj, "month", _ep_hebrew_month_names())?;
+    var d = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    return Ok(hebrewdate_new(y, m, d));
 }
 # Structural equality of two HebrewDate records (year, month, day); 1/0.
 #must_use
@@ -466,14 +558,15 @@ fn ep_hijri_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh HijriDate from bayan object node `v`; missing year/day read as 0 and an
-# unmatched month name as -1.
+# Decode a HijriDate {year: i64, month: HijriMonth, day: u8} from bayan node v: Ok(HijriDate) or
+# Err(SKE_DESERIALIZE). No calendar validation (serde's derive does none).
 #must_use
 fn ep_hijri_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
-    var m = ep_hijri_month_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
-    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    return hijri_date_new(y, m, d);
+    var obj = sk_de_struct(v, "HijriDate")?;
+    var y = sk_de_int_field(obj, "year", SK_I64_MIN, SK_I64_MAX, "i64")?;
+    var m = sk_de_variant_field(obj, "month", _ep_hijri_month_names())?;
+    var d = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    return Ok(hijri_date_new(y, m, d));
 }
 # Structural equality of two HijriDate records (year, month, day); 1/0.
 #must_use
@@ -499,14 +592,15 @@ fn ep_sex_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh SexagenaryYear from bayan object node `v`; a missing cycle_position reads
-# as 0 and an unmatched stem/branch name as -1.
+# Decode a SexagenaryYear {stem: HeavenlyStem, branch: EarthlyBranch, cycle_position: u8}
+# from bayan node v: Ok(SexagenaryYear) or Err(SKE_DESERIALIZE).
 #must_use
 fn ep_sex_from_json(v) {
-    var stem = ep_stem_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "stem")));
-    var branch = ep_branch_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "branch")));
-    var pos = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "cycle_position"));
-    return sexagenary_year_new(stem, branch, pos);
+    var obj = sk_de_struct(v, "SexagenaryYear")?;
+    var stem = sk_de_variant_field(obj, "stem", _ep_stem_names_vec())?;
+    var branch = sk_de_variant_field(obj, "branch", _ep_branch_names_vec())?;
+    var pos = sk_de_int_field(obj, "cycle_position", 0, SK_U8_MAX, "u8")?;
+    return Ok(sexagenary_year_new(stem, branch, pos));
 }
 # Structural equality of two SexagenaryYear records (stem, branch, cycle_position); 1/0.
 #must_use
@@ -529,13 +623,14 @@ fn ep_tonal_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh Tonalpohualli from bayan object node `v`; a missing number reads as 0 and
-# an unmatched sign name as -1.
+# Decode an Aztec Tonalpohualli {number: u8, sign: TonalpohualliSign} from bayan node v:
+# Ok(Tonalpohualli) or Err(SKE_DESERIALIZE).
 #must_use
 fn ep_tonal_from_json(v) {
-    var num = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "number"));
-    var sign = ep_tonal_sign_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "sign")));
-    return tonalpohualli_new(num, sign);
+    var obj = sk_de_struct(v, "Tonalpohualli")?;
+    var num = sk_de_int_field(obj, "number", 0, SK_U8_MAX, "u8")?;
+    var sign = sk_de_variant_field(obj, "sign", all_tonal_signs())?;
+    return Ok(tonalpohualli_new(num, sign));
 }
 # Structural equality of two Tonalpohualli records (number, sign); 1/0.
 #must_use
@@ -557,13 +652,14 @@ fn ep_xiuh_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh Xiuhpohualli from bayan object node `v`; a missing day reads as 0 and an
-# unmatched month name as -1.
+# Decode an Aztec Xiuhpohualli {day: u8, month: XiuhpohuallMonth} from bayan node v:
+# Ok(Xiuhpohualli) or Err(SKE_DESERIALIZE).
 #must_use
 fn ep_xiuh_from_json(v) {
-    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    var m = ep_xiuh_month_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month")));
-    return xiuhpohualli_new(d, m);
+    var obj = sk_de_struct(v, "Xiuhpohualli")?;
+    var d = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    var m = sk_de_variant_field(obj, "month", all_xiuh_names())?;
+    return Ok(xiuhpohualli_new(d, m));
 }
 # Structural equality of two Xiuhpohualli records (day, month); 1/0.
 #must_use
@@ -619,9 +715,10 @@ fn precessionalage_to_json(age) {
     str_builder_add_json_str(sb, precessionalage_name(age));
     return str_builder_build(sb);
 }
-# Read bayan string node `v` as a PrecessionalAge: the PA_* discriminant, or -1 if unmatched.
+# Decode a PrecessionalAge from bayan node v holding its serde identifier: Ok(PA_* discriminant), or
+# Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
-fn precessionalage_from_json(v) { return precessionalage_from_name(sk_json_v_str(v)); }
+fn precessionalage_from_json(v) { return sk_de_variant(v, precessionalage_names()); }
 # Equality of two PrecessionalAge discriminants; 1/0.
 #must_use
 fn precessionalage_eq(a, b) { if (a == b) { return 1; } return 0; }
@@ -633,9 +730,10 @@ fn civilization_to_json(civ) {
     str_builder_add_json_str(sb, civilization_name(civ));
     return str_builder_build(sb);
 }
-# Read bayan string node `v` as a Civilization: the ECIV_* discriminant, or -1 if unmatched.
+# Decode a Civilization from bayan node v holding its serde identifier: Ok(ECIV_* discriminant), or
+# Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
-fn civilization_from_json(v) { return civilization_from_name(sk_json_v_str(v)); }
+fn civilization_from_json(v) { return sk_de_variant(v, civilization_names()); }
 # Equality of two Civilization discriminants; 1/0.
 #must_use
 fn civilization_eq(a, b) { if (a == b) { return 1; } return 0; }
@@ -647,9 +745,10 @@ fn cyclename_to_json(cn) {
     str_builder_add_json_str(sb, cyclename_name(cn));
     return str_builder_build(sb);
 }
-# Read bayan string node `v` as a CycleName: the CN_* discriminant, or -1 if unmatched.
+# Decode a CycleName from bayan node v holding its serde identifier: Ok(CN_* discriminant), or
+# Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
-fn cyclename_from_json(v) { return cyclename_from_name(sk_json_v_str(v)); }
+fn cyclename_from_json(v) { return sk_de_variant(v, cyclename_names()); }
 # Equality of two CycleName discriminants; 1/0.
 #must_use
 fn cyclename_eq(a, b) { if (a == b) { return 1; } return 0; }
@@ -680,17 +779,19 @@ fn sages_tradition_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh SagesTradition from bayan object node `v`. Missing string fields come back
-# as 0 (no Str), missing arrays as empty vecs, an unmatched civilization name as -1.
+# Decode a SagesTradition from bayan node v (civilization a Civilization variant, the
+# Cow<str> fields strings, sage_names/source_texts arrays of strings): Ok(SagesTradition) or
+# Err(SKE_DESERIALIZE).
 #must_use
 fn sages_tradition_from_json(v) {
-    var civ = civilization_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "civilization")));
-    var group = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "group_name"));
-    var names = _ep_parse_str_arr(bayan_json_v_obj_get_by_cstr(v, "sage_names"));
-    var texts = _ep_parse_str_arr(bayan_json_v_obj_get_by_cstr(v, "source_texts"));
-    var stars = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "associated_stars"));
-    var narr = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "catastrophe_narrative"));
-    return sgt_new(civ, group, names, texts, stars, narr);
+    var obj = sk_de_struct(v, "SagesTradition")?;
+    var civ = sk_de_variant_field(obj, "civilization", civilization_names())?;
+    var group = sk_de_str_field(obj, "group_name")?;
+    var names = _ep_de_str_vec_field(obj, "sage_names")?;
+    var texts = _ep_de_str_vec_field(obj, "source_texts")?;
+    var stars = sk_de_str_field(obj, "associated_stars")?;
+    var narr = sk_de_str_field(obj, "catastrophe_narrative")?;
+    return Ok(sgt_new(civ, group, names, texts, stars, narr));
 }
 # Structural equality of two SagesTradition records (every field; Strs and vecs by content);
 # 1/0.
@@ -726,15 +827,16 @@ fn age_position_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh AgePosition from bayan object node `v`; missing f64 fields read as 0.0 and
-# an unmatched age name as -1.
+# Decode an AgePosition {age: PrecessionalAge, years_into_age, fraction,
+# vernal_point_longitude: f64} from bayan node v: Ok(AgePosition) or Err(SKE_DESERIALIZE).
 #must_use
 fn age_position_from_json(v) {
-    var age = precessionalage_from_name(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "age")));
-    var years = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "years_into_age"));
-    var fraction = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "fraction"));
-    var lon = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "vernal_point_longitude"));
-    return ap_new(age, years, fraction, lon);
+    var obj = sk_de_struct(v, "AgePosition")?;
+    var age = sk_de_variant_field(obj, "age", precessionalage_names())?;
+    var years = sk_de_f64_field(obj, "years_into_age")?;
+    var fraction = sk_de_f64_field(obj, "fraction")?;
+    var lon = sk_de_f64_field(obj, "vernal_point_longitude")?;
+    return Ok(ap_new(age, years, fraction, lon));
 }
 # Structural equality of two AgePosition records (f64 fields by exact bit pattern); 1/0.
 #must_use
@@ -775,21 +877,24 @@ fn cycle_alignment_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a fresh CycleAlignment from bayan object node `v`; missing f64s read as 0.0, a
-# missing cycles array as an empty vec, unmatched cycle names as -1.
+# Decode a CycleAlignment {jdn: f64, cycles: Vec<CycleName>, max_residual_days: f64} from
+# bayan node v: Ok(CycleAlignment) or Err(SKE_DESERIALIZE) (every cycles element must be a
+# CycleName identifier).
 #must_use
 fn cycle_alignment_from_json(v) {
-    var jdn = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "jdn"));
-    var arr = bayan_json_v_obj_get_by_cstr(v, "cycles");
+    var obj = sk_de_struct(v, "CycleAlignment")?;
+    var jdn = sk_de_f64_field(obj, "jdn")?;
+    var arr = sk_de_seq_field(obj, "cycles")?;
     var cyc = vec_new();
     var n = bayan_json_v_arr_len(arr);
     var i = 0;
     while (i < n) {
-        vec_push(cyc, cyclename_from_name(sk_json_v_str(bayan_json_v_arr_get(arr, i))));
+        var c = sk_de_variant(bayan_json_v_arr_get(arr, i), cyclename_names())?;
+        vec_push(cyc, c);
         i = i + 1;
     }
-    var maxres = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "max_residual_days"));
-    return calgn_new(jdn, cyc, maxres);
+    var maxres = sk_de_f64_field(obj, "max_residual_days")?;
+    return Ok(calgn_new(jdn, cyc, maxres));
 }
 # Structural equality of two CycleAlignment records (f64s by bit pattern, cycles element-wise);
 # 1/0.
@@ -967,64 +1072,115 @@ fn multi_calendar_date_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Parse a bayan array node into a fresh vec of its element nodes (used to
-# recover the itihas/avatara array COUNTS for structural round-trip checking).
+# The itihas/avatara Vec field key of object obj: Ok(a fresh vec of its raw element nodes),
+# kept so the COUNT round-trips (no upstream from_json rebuilds the records), or Err when the
+# field is missing or not a JSON array.
 #must_use
-fn _ep_parse_node_arr(node) {
+fn _ep_de_node_vec_field(obj, key) {
+    var arr = sk_de_seq_field(obj, key)?;
     var v = vec_new();
-    var n = bayan_json_v_arr_len(node);
+    var n = bayan_json_v_arr_len(arr);
     var i = 0;
     while (i < n) {
-        vec_push(v, bayan_json_v_arr_get(node, i));
+        vec_push(v, bayan_json_v_arr_get(arr, i));
         i = i + 1;
     }
-    return v;
+    return Ok(v);
 }
 
-# Read an Option<> nested-calendar field: null / absent -> 0, else reconstruct.
+# An Option<> Mayan field key of object obj (kind 0=LongCount 1=Tzolkin 2=Haab): Ok(0) for
+# None (missing or null, as serde's derive), Ok(record) for Some, or the record's Err.
 #must_use
-fn _ep_opt_from_json(node, kind) {
-    if (node == 0) { return 0; }
-    if (bayan_json_v_is_null(node) == 1) { return 0; }
+fn _ep_opt_from_json(obj, key, kind) {
+    var node = sk_de_opt_field(obj, key)?;
+    if (node == 0) { return Ok(0); }
     if (kind == 0) { return ep_lc_from_json(node); }
     if (kind == 1) { return ep_tzolkin_from_json(node); }
     return ep_haab_from_json(node);
 }
 
-# Rebuild a fresh MultiCalendarDate from bayan object node `v`. Intrinsic fields are rebuilt
-# exactly (null/absent Mayan fields -> 0); eras/civilizations/events/saptarishi_profiles
-# become vecs of raw bayan element nodes (count-only round trip), NOT itihas/avatara records.
-# No Err path: expects a well-formed document.
+# Err "invalid length n, expected a tuple of size 3" (serde's tuple visitor wording).
+fn _ep_tuple3_short(n) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "invalid length ");
+    str_builder_add_int(sb, n);
+    str_builder_add_cstr(sb, ", expected a tuple of size 3");
+    return sk_de_fail(str_builder_build(sb));
+}
+
+# The sothic_position tuple (i32, u32, f64) from a JSON array node: Ok(SothicPos) or Err, as
+# serde_json::from_str: a non-array is "invalid type", elements decode in order, too few is
+# "invalid length", and a fourth element is "trailing characters".
+#must_use
+fn _ep_sothic_from_json(node) {
+    if (bayan_json_v_is_arr(node) != 1) { return sk_de_invalid_type(node, "a tuple of size 3"); }
+    var n = bayan_json_v_arr_len(node);
+    if (n < 1) { return _ep_tuple3_short(n); }
+    var cycle = sk_de_int(bayan_json_v_arr_get(node, 0), SK_I32_MIN, SK_I32_MAX, "i32")?;
+    if (n < 2) { return _ep_tuple3_short(n); }
+    var year = sk_de_int(bayan_json_v_arr_get(node, 1), 0, SK_U32_MAX, "u32")?;
+    if (n < 3) { return _ep_tuple3_short(n); }
+    var drift = sk_de_f64(bayan_json_v_arr_get(node, 2))?;
+    if (n > 3) { return sk_de_fail(str_from("trailing characters")); }
+    return Ok(sothicpos_new(cycle, year, drift));
+}
+
+# Decode a MultiCalendarDate from bayan node v: Ok(MultiCalendarDate) or Err(SKE_DESERIALIZE).
+# Every field is required except the Option<> Mayan ones (missing or null -> 0, None) and is
+# checked against its Rust type; nested calendars decode through their ep_* decoders.
+# eras/civilizations/events/saptarishi_profiles must be arrays and become vecs of raw bayan
+# element nodes (count-only round trip), NOT itihas/avatara records.
 #must_use
 fn multi_calendar_date_from_json(v) {
+    var obj = sk_de_struct(v, "MultiCalendarDate")?;
+    var jdn = sk_de_f64_field(obj, "jdn")?;
+    var lc = _ep_opt_from_json(obj, "mayan_long_count", 0)?;
+    var tz = _ep_opt_from_json(obj, "tzolkin", 1)?;
+    var hb = _ep_opt_from_json(obj, "haab", 2)?;
+    var spn = sk_de_field(obj, "sothic_position")?;
+    var sothic = _ep_sothic_from_json(spn)?;
+    var apn = sk_de_field(obj, "precessional_age")?;
+    var age = age_position_from_json(apn)?;
+    var jy = sk_de_f64_field(obj, "julian_year")?;
+    var gn = sk_de_field(obj, "gregorian")?;
+    var greg = ep_greg_from_json(gn)?;
+    var cn = sk_de_field(obj, "coptic")?;
+    var coptic = ep_coptic_from_json(cn)?;
+    var pn = sk_de_field(obj, "persian")?;
+    var persian = ep_persian_from_json(pn)?;
+    var hn = sk_de_field(obj, "hebrew")?;
+    var hebrew = ep_hebrew_from_json(hn)?;
+    var sn = sk_de_field(obj, "chinese_sexagenary")?;
+    var sex = ep_sex_from_json(sn)?;
+    var tn = sk_de_field(obj, "aztec_tonalpohualli")?;
+    var tonal = ep_tonal_from_json(tn)?;
+    var xn = sk_de_field(obj, "aztec_xiuhpohualli")?;
+    var xiuh = ep_xiuh_from_json(xn)?;
+    var eras = _ep_de_node_vec_field(obj, "eras")?;
+    var civs = _ep_de_node_vec_field(obj, "civilizations")?;
+    var events = _ep_de_node_vec_field(obj, "events")?;
+    var saps = _ep_de_node_vec_field(obj, "saptarishi_profiles")?;
+
     var p = alloc(MCD_SIZE);
-    store64(p + MCD_JDN, bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "jdn")));
-    store64(p + MCD_MAYAN_LC, _ep_opt_from_json(bayan_json_v_obj_get_by_cstr(v, "mayan_long_count"), 0));
-    store64(p + MCD_TZOLKIN, _ep_opt_from_json(bayan_json_v_obj_get_by_cstr(v, "tzolkin"), 1));
-    store64(p + MCD_HAAB, _ep_opt_from_json(bayan_json_v_obj_get_by_cstr(v, "haab"), 2));
-
-    var spn = bayan_json_v_obj_get_by_cstr(v, "sothic_position");
-    var spc = bayan_json_v_int(bayan_json_v_arr_get(spn, 0));
-    var spy = bayan_json_v_int(bayan_json_v_arr_get(spn, 1));
-    var spd = bayan_json_v_float(bayan_json_v_arr_get(spn, 2));
-    store64(p + MCD_SOTHIC, sothicpos_new(spc, spy, spd));
-
-    store64(p + MCD_AGE, age_position_from_json(bayan_json_v_obj_get_by_cstr(v, "precessional_age")));
-    store64(p + MCD_JULIAN_YEAR, bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "julian_year")));
-    store64(p + MCD_GREGORIAN, ep_greg_from_json(bayan_json_v_obj_get_by_cstr(v, "gregorian")));
-    store64(p + MCD_COPTIC, ep_coptic_from_json(bayan_json_v_obj_get_by_cstr(v, "coptic")));
-    store64(p + MCD_PERSIAN, ep_persian_from_json(bayan_json_v_obj_get_by_cstr(v, "persian")));
-    store64(p + MCD_HEBREW, ep_hebrew_from_json(bayan_json_v_obj_get_by_cstr(v, "hebrew")));
-    store64(p + MCD_CHINESE, ep_sex_from_json(bayan_json_v_obj_get_by_cstr(v, "chinese_sexagenary")));
-    store64(p + MCD_TONAL, ep_tonal_from_json(bayan_json_v_obj_get_by_cstr(v, "aztec_tonalpohualli")));
-    store64(p + MCD_XIUH, ep_xiuh_from_json(bayan_json_v_obj_get_by_cstr(v, "aztec_xiuhpohualli")));
-
-    # itihas/avatara arrays: recover element nodes so the count round-trips.
-    store64(p + MCD_ERAS, _ep_parse_node_arr(bayan_json_v_obj_get_by_cstr(v, "eras")));
-    store64(p + MCD_CIVS, _ep_parse_node_arr(bayan_json_v_obj_get_by_cstr(v, "civilizations")));
-    store64(p + MCD_EVENTS, _ep_parse_node_arr(bayan_json_v_obj_get_by_cstr(v, "events")));
-    store64(p + MCD_SAPTARISHI, _ep_parse_node_arr(bayan_json_v_obj_get_by_cstr(v, "saptarishi_profiles")));
-    return p;
+    store64(p + MCD_JDN, jdn);
+    store64(p + MCD_MAYAN_LC, lc);
+    store64(p + MCD_TZOLKIN, tz);
+    store64(p + MCD_HAAB, hb);
+    store64(p + MCD_SOTHIC, sothic);
+    store64(p + MCD_AGE, age);
+    store64(p + MCD_JULIAN_YEAR, jy);
+    store64(p + MCD_GREGORIAN, greg);
+    store64(p + MCD_COPTIC, coptic);
+    store64(p + MCD_PERSIAN, persian);
+    store64(p + MCD_HEBREW, hebrew);
+    store64(p + MCD_CHINESE, sex);
+    store64(p + MCD_TONAL, tonal);
+    store64(p + MCD_XIUH, xiuh);
+    store64(p + MCD_ERAS, eras);
+    store64(p + MCD_CIVS, civs);
+    store64(p + MCD_EVENTS, events);
+    store64(p + MCD_SAPTARISHI, saps);
+    return Ok(p);
 }
 
 # Option-pointer equality with a nested comparator selected by `kind`.
@@ -1119,26 +1275,39 @@ fn calendar_date_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Rebuild a fresh CalendarDate from an externally tagged bayan object node, taking the first
-# variant key found (Jdn, Gregorian, Coptic, Persian, Hebrew, Hijri, MayanLongCount order).
-# Returns 0 when no known variant key is present.
+# Decode a CalendarDate from serde's externally tagged single-key object, {"Jdn":<f64>} or
+# {"<Variant>":{..}}: Ok(CalendarDate) or Err(SKE_DESERIALIZE) (not an object, zero or several
+# keys, an unknown variant, or a payload that fails its own decoder).
 #must_use
 fn calendar_date_from_json(v) {
-    var jn = bayan_json_v_obj_get_by_cstr(v, "Jdn");
-    if (jn != 0) { return caldate_jdn(bayan_json_v_float(jn)); }
-    var gn = bayan_json_v_obj_get_by_cstr(v, "Gregorian");
-    if (gn != 0) { return caldate_gregorian(ep_greg_from_json(gn)); }
-    var cn = bayan_json_v_obj_get_by_cstr(v, "Coptic");
-    if (cn != 0) { return caldate_coptic(ep_coptic_from_json(cn)); }
-    var pn = bayan_json_v_obj_get_by_cstr(v, "Persian");
-    if (pn != 0) { return caldate_persian(ep_persian_from_json(pn)); }
-    var hn = bayan_json_v_obj_get_by_cstr(v, "Hebrew");
-    if (hn != 0) { return caldate_hebrew(ep_hebrew_from_json(hn)); }
-    var jn2 = bayan_json_v_obj_get_by_cstr(v, "Hijri");
-    if (jn2 != 0) { return caldate_hijri(ep_hijri_from_json(jn2)); }
-    var mn = bayan_json_v_obj_get_by_cstr(v, "MayanLongCount");
-    if (mn != 0) { return caldate_mayan_long_count(ep_lc_from_json(mn)); }
-    return 0;
+    var tag = sk_de_tagged(v, _ep_caldate_variant_names(), "CalendarDate")?;
+    var pay = bayan_json_v_obj_val(v, 0);
+    if (tag == CDT_JDN) {
+        var jdn = sk_de_f64(pay)?;
+        return Ok(caldate_jdn(jdn));
+    }
+    if (tag == CDT_GREGORIAN) {
+        var g = ep_greg_from_json(pay)?;
+        return Ok(caldate_gregorian(g));
+    }
+    if (tag == CDT_COPTIC) {
+        var c = ep_coptic_from_json(pay)?;
+        return Ok(caldate_coptic(c));
+    }
+    if (tag == CDT_PERSIAN) {
+        var pd = ep_persian_from_json(pay)?;
+        return Ok(caldate_persian(pd));
+    }
+    if (tag == CDT_HEBREW) {
+        var h = ep_hebrew_from_json(pay)?;
+        return Ok(caldate_hebrew(h));
+    }
+    if (tag == CDT_HIJRI) {
+        var hj = ep_hijri_from_json(pay)?;
+        return Ok(caldate_hijri(hj));
+    }
+    var lc = ep_lc_from_json(pay)?;
+    return Ok(caldate_mayan_long_count(lc));
 }
 
 # Structural equality of two CalendarDate values: same tag and equal payload (Jdn by f64 bit

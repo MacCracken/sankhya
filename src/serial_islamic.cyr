@@ -26,6 +26,10 @@
 #     bayan_json_v_build), whose Grisu2 formatter produces the identical "N.0".
 #   * Vec<f64> `roots` → JSON array [e0,e1,...] ; the (f64,f64,f64) tuple
 #     `coefficients` → JSON array [a,b,c] (serde serializes tuples as arrays).
+#   * Decoding (3.2.0) returns a Result as serde_json::from_str did: Ok(value) or
+#     Err(SKE_DESERIALIZE) with serde's message (sk_de_* helpers, serial_util.cyr).
+#     The tuple must be an array of exactly 3 f64s: a short one is "invalid length N,
+#     expected a tuple of size 3", a long one serde_json's "trailing characters".
 
 # ---------------------------------------------------------------------------
 # AlJabrForm name table + name<->discriminant mapping.
@@ -47,11 +51,18 @@ fn _build_aljf_names() {
     return v;
 }
 
+# Shared, lazily built vec of the 6 AlJabrForm serde identifier Strs, indexed by
+# discriminant (SquaresEqualRoots .. RootsAndNumberEqualSquares). Do not mutate.
+#must_use
+fn aljabr_form_names() {
+    if (_aljf_name_done == 0) { _aljf_name_vec = _build_aljf_names(); _aljf_name_done = 1; }
+    return _aljf_name_vec;
+}
+
 # AlJabrForm serde identifier for discriminant i.
 #must_use
 fn aljabr_form_name(i) {
-    if (_aljf_name_done == 0) { _aljf_name_vec = _build_aljf_names(); _aljf_name_done = 1; }
-    return sk_name_at(_aljf_name_vec, i);
+    return sk_name_at(aljabr_form_names(), i);
 }
 
 # AlJabrForm discriminant for a serde identifier Str, or (0 - 1) if none.
@@ -117,6 +128,20 @@ fn hijri_month_from_name(name) {
     return 0 - 1;
 }
 
+# Lazily built vec of the 12 HijriMonth serde identifiers (Muharram .. DhulHijjah), in
+# discriminant order, for sk_de_variant. Shares hijri_month_name's Strs; do not mutate.
+var _hjj_month_names = 0;
+
+fn _hjj_months() {
+    if (_hjj_month_names == 0) {
+        var v = vec_new();
+        var i = 0;
+        while (i < 12) { vec_push(v, hijri_month_name(i)); i = i + 1; }
+        _hjj_month_names = v;
+    }
+    return _hjj_month_names;
+}
+
 # ---------------------------------------------------------------------------
 # AlJabrSolution — {"form":"NAME","roots":[..],"coefficients":[a,b,c]}
 # ---------------------------------------------------------------------------
@@ -159,30 +184,51 @@ fn aljabr_sol_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Deserialize a bayan value-tree node (from sk_json_parse) back into an
-# AlJabrSolution via aljabr_sol_new.
+# Element i of the coefficients tuple array arr (n elements) as an f64, or serde's tuple
+# visitor Err "invalid length n, expected a tuple of size 3" when the array is too short.
+fn _alj_coef(arr, n, i) {
+    if (i >= n) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "invalid length ");
+        str_builder_add_int(sb, n);
+        str_builder_add_cstr(sb, ", expected a tuple of size 3");
+        return sk_de_fail(str_builder_build(sb));
+    }
+    return sk_de_f64(bayan_json_v_arr_get(arr, i));
+}
+
+# Deserialize an AlJabrSolution from a bayan value node (an object, from sk_json_parse).
+# Ok(AlJabrSolution) or Err(SKE_DESERIALIZE), with serde's checks on the Rust field types:
+# form an AlJabrForm variant, roots a Vec<f64> (a JSON array of numbers), coefficients an
+# (f64, f64, f64) tuple (a JSON array of exactly 3 numbers). No check that the roots solve
+# the equation (serde's derive does none).
 #must_use
 fn aljabr_sol_from_json(v) {
-    var form_name = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "form"));
-    var form = aljabr_form_from_name(form_name);
+    var obj = sk_de_struct(v, "AlJabrSolution")?;
+    var form = sk_de_variant_field(obj, "form", aljabr_form_names())?;
 
-    # roots array → a fresh vec of f64 bit patterns.
+    # roots: Vec<f64> → a fresh vec of f64 bit patterns, every element checked.
+    var rarr = sk_de_seq_field(obj, "roots")?;
     var rootsv = vec_new();
-    var rarr = bayan_json_v_obj_get_by_cstr(v, "roots");
     var rn = bayan_json_v_arr_len(rarr);
     var ri = 0;
     while (ri < rn) {
-        vec_push(rootsv, bayan_json_v_float(bayan_json_v_arr_get(rarr, ri)));
+        var r = sk_de_f64(bayan_json_v_arr_get(rarr, ri))?;
+        vec_push(rootsv, r);
         ri = ri + 1;
     }
 
-    # coefficients array → (a, b, c).
-    var carr = bayan_json_v_obj_get_by_cstr(v, "coefficients");
-    var a = bayan_json_v_float(bayan_json_v_arr_get(carr, 0));
-    var b = bayan_json_v_float(bayan_json_v_arr_get(carr, 1));
-    var c = bayan_json_v_float(bayan_json_v_arr_get(carr, 2));
+    # coefficients: (f64, f64, f64) → (a, b, c). A non-array is "expected a tuple of size 3".
+    var cnode = sk_de_field(obj, "coefficients")?;
+    var ct, carr = sk_de_seq(cnode);
+    if (is_ok(ct) == 0) { return sk_de_invalid_type(cnode, "a tuple of size 3"); }
+    var cn = bayan_json_v_arr_len(carr);
+    var a = _alj_coef(carr, cn, 0)?;
+    var b = _alj_coef(carr, cn, 1)?;
+    var c = _alj_coef(carr, cn, 2)?;
+    if (cn > 3) { return sk_de_fail(str_from("trailing characters")); }
 
-    return aljabr_sol_new(form, rootsv, a, b, c);
+    return Ok(aljabr_sol_new(form, rootsv, a, b, c));
 }
 
 # Field-by-field equality (Rust derives PartialEq). Enum via ==, f64 via f64_eq
@@ -235,14 +281,17 @@ fn hijri_date_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Deserialize a bayan value-tree node back into a HijriDate via hijri_date_new.
+# Deserialize a HijriDate from a bayan value node (an object).
+# Ok(HijriDate) or Err(SKE_DESERIALIZE), with serde's checks on the Rust field types:
+# year an i64, month a HijriMonth variant, day a u8. No calendar validation (a day of
+# 40 decodes; hijri_to_jdn rejects it).
 #must_use
 fn hijri_date_from_json(v) {
-    var year = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
-    var month_name = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
-    var month = hijri_month_from_name(month_name);
-    var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    return hijri_date_new(year, month, day);
+    var obj = sk_de_struct(v, "HijriDate")?;
+    var year = sk_de_int_field(obj, "year", SK_I64_MIN, SK_I64_MAX, "i64")?;
+    var month = sk_de_variant_field(obj, "month", _hjj_months())?;
+    var day = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    return Ok(hijri_date_new(year, month, day));
 }
 
 # Field-by-field equality (Rust derives PartialEq/Eq — all integer fields).

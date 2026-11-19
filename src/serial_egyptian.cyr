@@ -17,6 +17,11 @@
 #     Grisu2 formatter produces the identical "N.0" text.
 #
 # No enums in egyptian, so no <Enum>_name / <Enum>_from_name are needed.
+#
+# Decoding (3.2.0) returns a Result as serde_json::from_str did: Ok(Decan) or
+# Err(SKE_DESERIALIZE) with serde's message (the sk_de_* helpers in serial_util.cyr).
+# name is a &'static str in Rust, so a non-string reads "expected a borrowed string"
+# (serde's &str visitor) rather than String's "expected a string".
 
 # ---------------------------------------------------------------------------
 # Decan
@@ -42,15 +47,26 @@ fn decan_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Deserialize a bayan value-tree node (from sk_json_parse) back into a Decan
-# record via decan_new. number via bayan_json_v_int, name via bayan_json_v_str,
-# ecliptic_longitude via bayan_json_v_float (returns the f64 bit pattern).
+# A Rust &'static str field key of object obj, as serde reads one: Ok(Str) for a JSON
+# string, else Err "missing field" or "invalid type: ..., expected a borrowed string".
+fn _dcj_str_field(obj, key) {
+    var n = sk_de_field(obj, key)?;
+    var t, s = sk_de_str(n);
+    if (is_ok(t) == 0) { return sk_de_invalid_type(n, "a borrowed string"); }
+    return Ok(s);
+}
+
+# Deserialize a Decan from a bayan value node (an object, from sk_json_parse).
+# Ok(Decan) or Err(SKE_DESERIALIZE), with serde's checks on the Rust field types: number a
+# u8, name a &'static str, ecliptic_longitude an f64 (a JSON integer converts). No range
+# validation (a number of 99 decodes, as with serde's derive).
 #must_use
 fn decan_from_json(v) {
-    var number = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "number"));
-    var name = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "name"));
-    var lon = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "ecliptic_longitude"));
-    return decan_new(number, name, lon);
+    var obj = sk_de_struct(v, "Decan")?;
+    var number = sk_de_int_field(obj, "number", 0, SK_U8_MAX, "u8")?;
+    var name = _dcj_str_field(obj, "name")?;
+    var lon = sk_de_f64_field(obj, "ecliptic_longitude")?;
+    return Ok(decan_new(number, name, lon));
 }
 
 # Field-by-field equality of two Decan records (for round-trip testing). number

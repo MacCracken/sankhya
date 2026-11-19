@@ -14,6 +14,35 @@ include "src/serial_hebrew.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Decode js (a C-string) with decoder k (1 HebrewDate, else HebrewMonth); returns that
+# decoder's Result pair.
+fn de_run(k, js) {
+    var n = sk_json_parse(str_from(js));
+    if (k == 1) { return hebrewdate_from_json(n); }
+    return hebrewmonth_from_json(n);
+}
+
+# The C-string a followed by the C-string b, for expected messages too long for one line.
+fn cat2(a, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    return str_cstr(str_builder_build(sb));
+}
+
+# Decode js with decoder k and check it fails with SKE_DESERIALIZE and exactly the message
+# want (a C-string); a mismatch prints the message it got.
+fn de_err(k, js, want, label) {
+    var t, v = de_run(k, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) {
+        var same = str_eq_cstr(sk_err_msg(v), want);
+        if (same == 0) { str_println(sk_err_msg(v)); }
+        ok(same, label);
+    }
+    return 0;
+}
+
 # Run every serial_hebrew test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -31,8 +60,9 @@ fn main() {
     var h3 = str_contains_cstr(js, "\"day\":15");
     ok(h3, "day is bare integer 15");
 
-    var parsed = hebrewdate_from_json(sk_json_parse(js));
-    ok(hebrewdate_eq(d, parsed), "HebrewDate serde round-trip (Nisan 5785)");
+    var p_t, p_v = hebrewdate_from_json(sk_json_parse(js));
+    ok(is_ok(p_t), "HebrewDate decodes (Nisan 5785)");
+    ok(hebrewdate_eq(d, result_unwrap(p_t, p_v)), "HebrewDate serde round-trip (Nisan 5785)");
 
     # --- HebrewDate: leap-year date (Adar I) — serde identifier has NO space ---
     var d2 = hebrewdate_new(5784, HM_ADAR_I, 3);
@@ -43,29 +73,54 @@ fn main() {
     ok(ha2, "leap-year year field 5784");
     var ha3 = str_contains_cstr(js2, "\"day\":3");
     ok(ha3, "leap-year day field 3");
-    var parsed2 = hebrewdate_from_json(sk_json_parse(js2));
-    ok(hebrewdate_eq(d2, parsed2), "HebrewDate serde round-trip (Adar I 5784)");
+    var p2_t, p2_v = hebrewdate_from_json(sk_json_parse(js2));
+    ok(hebrewdate_eq(d2, result_unwrap(p2_t, p2_v)), "HebrewDate serde round-trip (Adar I 5784)");
 
     # --- HebrewMonth standalone enum: bare variant-name string ---
     var mjs = hebrewmonth_to_json(HM_ELUL);
     var hm1 = str_contains_cstr(mjs, "\"Elul\"");
     ok(hm1, "HebrewMonth serializes as bare quoted string Elul");
-    var mparsed = hebrewmonth_from_json(sk_json_parse(mjs));
-    ok(hebrewmonth_eq(HM_ELUL, mparsed), "HebrewMonth serde round-trip (Elul)");
+    var mp_t, mp_v = hebrewmonth_from_json(sk_json_parse(mjs));
+    ok(is_ok(mp_t), "HebrewMonth decodes (Elul)");
+    ok(hebrewmonth_eq(HM_ELUL, result_unwrap(mp_t, mp_v)), "HebrewMonth serde round-trip (Elul)");
 
     # Adar II identifier check (Display "Adar II" vs serde "AdarII").
     var m2js = hebrewmonth_to_json(HM_ADAR_II);
     var hm2 = str_contains_cstr(m2js, "\"AdarII\"");
     ok(hm2, "HebrewMonth Adar II serializes as AdarII (no space)");
-    var m2parsed = hebrewmonth_from_json(sk_json_parse(m2js));
-    ok(hebrewmonth_eq(HM_ADAR_II, m2parsed), "HebrewMonth serde round-trip (Adar II)");
+    var m2p_t, m2p_v = hebrewmonth_from_json(sk_json_parse(m2js));
+    ok(hebrewmonth_eq(HM_ADAR_II, result_unwrap(m2p_t, m2p_v)), "HebrewMonth serde round-trip (Adar II)");
 
     # --- Faithful port of the Rust serde_roundtrip test: jdn_to_hebrew(2460000.5) ---
     var jdn = f64_add(f64_from(2460000), F64_HALF);
     var rd = jdn_to_hebrew(jdn);
     var rjs = hebrewdate_to_json(rd);
-    var rparsed = hebrewdate_from_json(sk_json_parse(rjs));
-    ok(hebrewdate_eq(rd, rparsed), "HebrewDate serde round-trip (jdn_to_hebrew 2460000.5)");
+    var rp_t, rp_v = hebrewdate_from_json(sk_json_parse(rjs));
+    ok(hebrewdate_eq(rd, result_unwrap(rp_t, rp_v)), "HebrewDate serde round-trip (jdn_to_hebrew 2460000.5)");
+
+    # ---- 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    var hm = cat2("`Tishrei`, `Cheshvan`, `Kislev`, `Tevet`, `Shevat`, `Adar`, `AdarI`, `AdarII`, ",
+        "`Nisan`, `Iyar`, `Sivan`, `Tammuz`, `Av`, `Elul`");
+    de_err(1, "{\"year\":5785,\"day\":15}", "missing field `month`", "missing month");
+    de_err(1, "{\"year\":5785,\"month\":\"Nisan\",\"day\":256}", "invalid value: integer `256`, expected u8",
+        "day 256");
+    de_err(1, "{\"year\":true,\"month\":\"Nisan\",\"day\":15}", "invalid type: boolean `true`, expected i64",
+        "boolean year");
+    de_err(1, "{\"year\":5784,\"month\":\"Adar I\",\"day\":3}", cat2("unknown variant `Adar I`, expected one of ", hm),
+        "Display name Adar I is not a serde identifier");
+    de_err(1, "{\"year\":5785,\"month\":{\"Nisan\":1},\"day\":15}", "invalid type: map, expected variant identifier",
+        "object month");
+    de_err(1, "5785", "invalid type: integer `5785`, expected struct HebrewDate", "integer for date");
+    de_err(2, "\"Adar II\"", cat2("unknown variant `Adar II`, expected one of ", hm), "unknown month");
+    de_err(2, "8", "invalid type: integer `8`, expected variant identifier", "integer month");
+    # serde ignores unknown keys and does no calendar validation (day 40 decodes; hebrew_to_jdn
+    # rejects it).
+    var ex_t, ex_v = de_run(1, "{\"year\":5785,\"month\":\"AdarII\",\"day\":40,\"note\":\"x\"}");
+    ok(is_ok(ex_t), "unknown key ignored, day 40 decodes");
+    if (is_ok(ex_t) == 1) {
+        assert_eq(hebdate_day(ex_v), 40, "day 40 kept as decoded");
+        assert_eq(hebdate_month(ex_v), HM_ADAR_II, "AdarII decodes to HM_ADAR_II");
+    }
 
     return assert_summary();
 }

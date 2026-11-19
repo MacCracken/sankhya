@@ -7,6 +7,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] — 2026-11-19
+
+**Every `<type>_from_json` returns a Result, as serde_json::from_str did** (ADR-009). ⚠
+**Breaking:** the return type of all 60 decoders changes, so strict SemVer would call this
+4.0.0. It ships as 3.2.0 by choice; no repository in the workspace calls these decoders.
+Encoding output and every domain result are byte-identical to 3.1.3. 35 suites and
+`tests/foundation.tcyr`: 2,155 assertions, 0 failed.
+
+### Changed
+
+- ⚠ **`<type>_from_json(v)` returns `Ok(value)` or `Err(SkErr{SKE_DESERIALIZE, msg})`**, in all 15
+  serial modules. Callers bind the pair, `var t, v = gregorian_date_from_json(node);`. A
+  single-variable bind is a compile error in cyrius ≥ 6.6, so a stale call site fails at its own
+  line.
+
+  One case does compile and is wrong: a decoder passed straight as an argument,
+  `x_eq(a, x_from_json(n))`. The argument receives only the tag, so the comparison silently
+  uses the wrong value. Bind first.
+- **Decoding follows serde's derive for the Rust type:**
+  - **Structs** must be JSON objects with every non-`Option` field present. Unknown keys are
+    ignored.
+  - **Integers** must be JSON integers in the Rust field's range (`u8`, `u32`, `i64`, …). A
+    float is the wrong type, even `1.0`.
+  - **f64** accepts integers and floats. `null` is an Err, as it is for serde_json, which writes
+    NaN as `null`.
+  - **Option** is `None` when missing or `null`. **Unit enums** are their variant name.
+    **Enums with data** are externally tagged objects with exactly one key. **Tuples** are
+    fixed-length arrays.
+  - **No domain validation:** a Gregorian day of 40 decodes, and `gregorian_to_jdn` rejects
+    it.
+- **Messages are serde's:**
+  - `missing field \`month\``
+  - `unknown variant \`Foo\`, expected one of \`January\`, \`February\`, …` (with serde's one-,
+    two- and many-variant forms)
+  - `invalid type: floating point \`1.5\`, expected u8`
+  - `invalid value: integer \`-5\`, expected u8`
+  - `invalid length 2, expected a tuple of size 3`
+  - `invalid value: map, expected map with a single key`
+
+  serde_json's ` at line L column C` suffix is absent, because bayan's value tree keeps no
+  positions. `&'static str` fields (star names, decan names, Antikythera cycles) report
+  serde's "expected a borrowed string" and, unlike serde_json, accept a string with escapes.
+- **New error code `SKE_DESERIALIZE` (6).** The Rust's decode errors were `serde_json::Error`, not
+  a `SankhyaError` variant.
+- **New helpers in `serial_util.cyr`:** `sk_de_struct`, `sk_de_field`, `sk_de_int(_field)`,
+  `sk_de_f64(_field)`, `sk_de_str(_field)`, `sk_de_bool(_field)`, `sk_de_seq(_field)`,
+  `sk_de_opt_field`, `sk_de_variant(_field)`, `sk_de_tagged`, `sk_de_unknown_variant`,
+  `sk_de_invalid_type`, `sk_de_fail` and `sk_de_parse`, with the `SK_U8_MAX` … `SK_I64_MAX` range
+  constants. A decoder is a short chain of `?`, so a nested field's error propagates unchanged.
+- ⚠ **`alignmenttarget_from_json`** used to return a `(target, starcode)` register pair. It now
+  returns `Ok` of an AlignmentTarget value record (`alignmenttarget_new`, `atv_target`,
+  `atv_star`), because a Result cannot also carry two values. It accepts exactly what
+  `alignmenttarget_to_json` writes, plus serde_json's `{"EquinoxSunrise":null}` form.
+- **Removed `sk_json_v_str`** (added in 3.1.3 for the lenient decoders; no callers remain). New
+  public `aljabr_form_names()`.
+- **MultiCalendarDate:** the itihas and avatara context arrays are required fields, as in the Rust
+  (always-on features), and must be JSON arrays. Their elements are still not reconstructed
+  (roadmap #3). `sothic_position` decodes as serde's 3-tuple `(i32, u32, f64)`.
+- **Tests:**
+  - Every `serial_<module>` suite now checks serde-parity errors (missing field, wrong type,
+    out-of-range integer, unknown variant) with exact messages: 197 assertions in
+    `serial_epoch` (was 45), 125 in `serial_astro` (was 28), and so on.
+  - `serial_malformed` checks the contract on all 59 decoders × 17 hostile inputs: every Err
+    carries `SKE_DESERIALIZE` and a message, and every Ok re-serializes.
+  - The fuzz harness checks each decode Err's code and message.
+  - `usage_examples` and `docs/guides/usage.md` show the new form.
+
+### Performance
+
+- **Flat.** Interleaved A/B over 9 rounds against 3.1.3 (DCE bench binaries), comparing
+  medians, twice, at load 2.3–3.0 on 16 threads: suite total −0.2 % and +0.0 %, and no row moved
+  more than 2.5 % in either run. `serial/mcd_json_roundtrip`, the one bench that decodes, moved
+  −0.3 % and −0.0 %: the type checks are cheap, and a message is only built on the error path.
+- **The 3.2.0 rows in `bench-history.csv` carry `7824a40`** because they were recorded before the
+  3.2.0 commit.
+
+### Verified
+
+- **Encoding is unchanged:** both output dumps (1,771 and 6,660 lines) are byte-identical to
+  3.1.3.
+- **All 35 suites and `tests/foundation.tcyr` pass when each is built with `CYRIUS_DCE=1`**
+  (2,155 assertions). The suite also passes under `cyrius test --bounds`, the fuzz harness
+  passes, and `cyrius audit` exits 0.
+
 ## [3.1.3] — 2026-11-18
 
 **A P(-1) sweep: every public fn documented, a review against `rust-old/` and primary

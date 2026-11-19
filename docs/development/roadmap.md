@@ -1,9 +1,17 @@
 # Development Roadmap
 
-> **Status**: v3.1.3 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.1.3 | **Compiler**: cyrius 6.7.18
+> **Status**: v3.2.0 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.2.0 | **Compiler**: cyrius 6.7.18
 
 Completed items are in [CHANGELOG.md](../../CHANGELOG.md).
-`VERSION` is the single source of truth (`3.1.3`); `cyrius.cyml` derives it via `${file:VERSION}`.
+`VERSION` is the single source of truth (`3.2.0`); `cyrius.cyml` derives it via `${file:VERSION}`.
+
+## Completed in 3.2.0 — Result-returning decoders
+
+- [x] Every `<type>_from_json` (60, all 15 serial modules) returns `Ok(value)` or
+      `Err(SKE_DESERIALIZE)` with serde's checks and wording (ADR-009); shared `sk_de_*` helpers
+- [x] serde-parity error tests in every `serial_<module>` suite; `serial_malformed` checks the
+      contract on every decoder; the fuzz harness checks every decode Err's code and message
+- [x] Encoding output byte-identical to 3.1.3 (8,431 dump lines)
 
 ## Completed in 3.1.3 — P(-1) sweep
 
@@ -90,9 +98,10 @@ at `rust-old/` as the parity oracle.
   appends the subdirectories it descends into, so the docs walk visits `tests/tcyr/` three times and the
   lint walk twice. The "795 undocumented" was 533 (533 + 2 × 131); the "16 lint warnings" in `tests/` were 8.
   Not yet filed with cyrius.
-- **API (next minor):** `<type>_from_json` returns a record, not a `Result`. Malformed input no longer
-  crashes it (3.1.3), but a missing field reads as 0 / "" / -1 where serde returned an Err. A
-  `Result`-returning decoder set changes every signature, so it is 3.2.0 work.
+- ~~**API:** `<type>_from_json` returns a record, not a `Result`.~~ **Done in 3.2.0** (ADR-009).
+  Decode errors lack serde_json's " at line L column C" suffix, because bayan's value tree keeps
+  no positions; `&'static str` fields accept escaped strings, which serde_json's borrowed
+  deserialization refuses.
 - **Upstream accuracy, models left as the Rust has them** (ADR-008 lists what was corrected):
   - the arcus visionis heliacal model puts Sirius's first sighting about three weeks before the observed
     date;
@@ -140,10 +149,10 @@ its own work-loop cycle behind the cleanliness + benchmark gates.
 
 | Gate | Command | Expected |
 |------|---------|----------|
-| Tests | `cyrius test tests/tcyr` | `35 passed, 0 failed` (1,527 assertions; `tests/foundation.tcyr` adds 22) |
+| Tests | `cyrius test tests/tcyr` | `35 passed, 0 failed` (2,133 assertions; `tests/foundation.tcyr` adds 22) |
 | Fuzz | `cyrius build tests/sankhya.fcyr build/f && ./build/f` | `fuzz: ok` (20,000 rounds) |
 | Benchmarks | `cyrius bench tests/sankhya.bcyr` | 24 benches; recorded via `scripts/bench-history.sh` |
-| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.1.3 (cyrius port)` |
+| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.2.0 (cyrius port)` |
 | Docs | `cyrdoc --check <file>` | 0 undocumented in every `src/` and `tests/` file |
 | Lint / format | `cyrius lint <file>` / `cyrius fmt <file> --check` | 0 warnings and clean for every `src/*.cyr` (CI gates both) |
 | Bundle | `cyrius distlib` | regenerates `dist/sankhya.cyr` |

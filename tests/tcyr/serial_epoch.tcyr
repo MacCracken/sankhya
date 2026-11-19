@@ -5,6 +5,7 @@
 # calendar_date_serde_roundtrip): construct a value, emit JSON, assert the shape
 # matches serde_json (field names, enum-as-variant-name string, bools/ints/floats,
 # externally-tagged data enum), then parse it back and assert field-by-field eq.
+# 3.2.0: every decoder returns a Result; the de_* sections check serde's Err messages.
 #
 # stdlib + the itihas/avatara/varna dist bundles are auto-resolved via cyrius.cyml
 # [deps]. lib.cyr pulls in the foundation + every calendar module + epoch;
@@ -17,6 +18,27 @@ include "src/serial_epoch.cyr"
 
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
+
+# The C-string a followed by the C-string b, as a fresh C-string (long expected messages).
+fn cat(a, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    return str_cstr(str_builder_build(sb));
+}
+
+# Assert that the Result pair (t, v) is Err(SKE_DESERIALIZE) whose message is exactly want (a
+# C-string); a different message is printed to help the diagnosis.
+fn expect_err(t, v, want, label) {
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) {
+        var m = sk_err_msg(v);
+        var same = str_eq_cstr(m, want);
+        ok(same, label);
+        if (same == 0) { str_println(m); }
+    }
+    return 0;
+}
 
 # ---- AgePosition round-trip (serde_roundtrip_age_position) ----
 # Ported age_position cases from the Rust integration tests.
@@ -34,8 +56,9 @@ fn test_age_position() {
     var h4 = str_contains_cstr(js, "\"vernal_point_longitude\":");
     ok(h4, "AgePosition vernal_point_longitude field present");
 
-    var back = age_position_from_json(sk_json_parse(js));
-    ok(age_position_eq(pos, back), "AgePosition serde round-trip");
+    var b_t, b_v = age_position_from_json(sk_json_parse(js));
+    ok(is_ok(b_t), "AgePosition decodes");
+    ok(age_position_eq(pos, result_unwrap(b_t, b_v)), "AgePosition serde round-trip");
     return 0;
 }
 
@@ -58,8 +81,9 @@ fn test_sages_tradition() {
     var h6 = str_contains_cstr(js, "\"catastrophe_narrative\":\"Survived the pralaya");
     ok(h6, "SagesTradition catastrophe_narrative present");
 
-    var back = sages_tradition_from_json(sk_json_parse(js));
-    ok(sages_tradition_eq(ved, back), "SagesTradition serde round-trip");
+    var b_t, b_v = sages_tradition_from_json(sk_json_parse(js));
+    ok(is_ok(b_t), "SagesTradition decodes");
+    ok(sages_tradition_eq(ved, result_unwrap(b_t, b_v)), "SagesTradition serde round-trip");
     return 0;
 }
 
@@ -97,8 +121,23 @@ fn test_multi_calendar_date() {
     var h11 = str_contains_cstr(js, "\"saptarishi_profiles\":[{\"name\":");
     ok(h11, "saptarishi_profiles array of name objects present");
 
-    var back = multi_calendar_date_from_json(sk_json_parse(js));
-    ok(multi_calendar_date_eq(date, back), "MultiCalendarDate serde round-trip");
+    var b_t, b_v = multi_calendar_date_from_json(sk_json_parse(js));
+    ok(is_ok(b_t), "MultiCalendarDate decodes");
+    ok(multi_calendar_date_eq(date, result_unwrap(b_t, b_v)), "MultiCalendarDate serde round-trip");
+
+    # One day before creation the Mayan fields are None -> null, and decode back to None.
+    var pr_t, pr_v = correlate(f64_from(EPOCH_JDN - 1));
+    ok(is_ok(pr_t), "correlate before Mayan creation ok");
+    var pre = result_unwrap(pr_t, pr_v);
+    var pjs = multi_calendar_date_to_json(pre);
+    ok(str_contains_cstr(pjs, "\"mayan_long_count\":null"), "None mayan_long_count emits null");
+    var pb_t, pb_v = multi_calendar_date_from_json(sk_json_parse(pjs));
+    ok(is_ok(pb_t), "pre-creation MultiCalendarDate decodes");
+    var pback = result_unwrap(pb_t, pb_v);
+    assert_eq(mcd_mayan_lc(pback), 0, "null mayan_long_count decodes to None");
+    assert_eq(mcd_tzolkin(pback), 0, "null tzolkin decodes to None");
+    assert_eq(mcd_haab(pback), 0, "null haab decodes to None");
+    ok(multi_calendar_date_eq(pre, pback), "pre-creation MultiCalendarDate serde round-trip");
     return 0;
 }
 
@@ -119,8 +158,9 @@ fn test_calendar_date() {
     var h4 = str_contains_cstr(js, "\"day\":1");
     ok(h4, "CalendarDate Gregorian day 1");
 
-    var back = calendar_date_from_json(sk_json_parse(js));
-    ok(calendar_date_eq(cd, back), "CalendarDate serde round-trip (Gregorian)");
+    var b_t, b_v = calendar_date_from_json(sk_json_parse(js));
+    ok(is_ok(b_t), "CalendarDate (Gregorian) decodes");
+    ok(calendar_date_eq(cd, result_unwrap(b_t, b_v)), "CalendarDate serde round-trip (Gregorian)");
 
     # Also exercise the Jdn f64 variant and MayanLongCount variant.
     var jd = f64_add(f64_from(2451544), F64_HALF);
@@ -128,8 +168,8 @@ fn test_calendar_date() {
     var jjs = calendar_date_to_json(cdj);
     var hj = str_contains_cstr(jjs, "\"Jdn\":2451544.5");
     ok(hj, "CalendarDate Jdn variant is a JSON float 2451544.5");
-    var backj = calendar_date_from_json(sk_json_parse(jjs));
-    ok(calendar_date_eq(cdj, backj), "CalendarDate serde round-trip (Jdn f64)");
+    var bj_t, bj_v = calendar_date_from_json(sk_json_parse(jjs));
+    ok(calendar_date_eq(cdj, result_unwrap(bj_t, bj_v)), "CalendarDate serde round-trip (Jdn f64)");
 
     var lcr_t, lcr_v = long_count_from_days(1872000);
     ok(is_ok(lcr_t), "long_count_from_days ok");
@@ -138,8 +178,24 @@ fn test_calendar_date() {
     var mjs = calendar_date_to_json(cdm);
     var hm = str_contains_cstr(mjs, "\"MayanLongCount\":{\"baktun\":13");
     ok(hm, "CalendarDate MayanLongCount variant object with baktun 13");
-    var backm = calendar_date_from_json(sk_json_parse(mjs));
-    ok(calendar_date_eq(cdm, backm), "CalendarDate serde round-trip (MayanLongCount)");
+    var bm_t, bm_v = calendar_date_from_json(sk_json_parse(mjs));
+    ok(calendar_date_eq(cdm, result_unwrap(bm_t, bm_v)), "CalendarDate serde round-trip (MayanLongCount)");
+
+    # The remaining variants (each payload's month decodes through its own identifier table).
+    var cdc = caldate_coptic(coptic_date_new(1741, 12, 5));
+    var bc_t, bc_v = calendar_date_from_json(sk_json_parse(calendar_date_to_json(cdc)));
+    ok(calendar_date_eq(cdc, result_unwrap(bc_t, bc_v)), "CalendarDate serde round-trip (Coptic Nasie)");
+    var cdp = caldate_persian(persian_date_new(1404, 11, 29));
+    var bp_t, bp_v = calendar_date_from_json(sk_json_parse(calendar_date_to_json(cdp)));
+    ok(calendar_date_eq(cdp, result_unwrap(bp_t, bp_v)), "CalendarDate serde round-trip (Persian)");
+    var cdh = caldate_hebrew(hebrewdate_new(5784, 7, 14));
+    var bh_t, bh_v = calendar_date_from_json(sk_json_parse(calendar_date_to_json(cdh)));
+    ok(calendar_date_eq(cdh, result_unwrap(bh_t, bh_v)), "CalendarDate serde round-trip (Hebrew AdarII)");
+    var cdi = caldate_hijri(hijri_date_new(1446, 11, 10));
+    var hijs = calendar_date_to_json(cdi);
+    ok(str_contains_cstr(hijs, "\"Hijri\":{\"year\":1446,\"month\":\"DhulHijjah\""), "Hijri JSON shape");
+    var bi_t, bi_v = calendar_date_from_json(sk_json_parse(hijs));
+    ok(calendar_date_eq(cdi, result_unwrap(bi_t, bi_v)), "CalendarDate serde round-trip (Hijri)");
     return 0;
 }
 
@@ -148,15 +204,18 @@ fn test_calendar_date() {
 fn test_enums() {
     var aj = precessionalage_to_json(PA_LEO);
     ok(str_eq_cstr(aj, "\"Leo\""), "PrecessionalAge Leo -> bare string");
-    ok(precessionalage_eq(PA_LEO, precessionalage_from_json(sk_json_parse(aj))), "PrecessionalAge round-trip");
+    var a_t, a_v = precessionalage_from_json(sk_json_parse(aj));
+    ok(precessionalage_eq(PA_LEO, result_unwrap(a_t, a_v)), "PrecessionalAge round-trip");
 
     var cj = civilization_to_json(ECIV_MAYAN);
     ok(str_eq_cstr(cj, "\"Mayan\""), "Civilization Mayan -> bare string");
-    ok(civilization_eq(ECIV_MAYAN, civilization_from_json(sk_json_parse(cj))), "Civilization round-trip");
+    var c_t, c_v = civilization_from_json(sk_json_parse(cj));
+    ok(civilization_eq(ECIV_MAYAN, result_unwrap(c_t, c_v)), "Civilization round-trip");
 
     var nj = cyclename_to_json(CN_VENUS_SYNODIC);
     ok(str_eq_cstr(nj, "\"VenusSynodic\""), "CycleName VenusSynodic -> bare string");
-    ok(cyclename_eq(CN_VENUS_SYNODIC, cyclename_from_json(sk_json_parse(nj))), "CycleName round-trip");
+    var n_t, n_v = cyclename_from_json(sk_json_parse(nj));
+    ok(cyclename_eq(CN_VENUS_SYNODIC, result_unwrap(n_t, n_v)), "CycleName round-trip");
     return 0;
 }
 
@@ -178,8 +237,295 @@ fn test_cycle_alignment() {
     var h3 = str_contains_cstr(js, "\"max_residual_days\":");
     ok(h3, "CycleAlignment max_residual_days present");
 
-    var back = cycle_alignment_from_json(sk_json_parse(js));
-    ok(cycle_alignment_eq(ca, back), "CycleAlignment serde round-trip");
+    var b_t, b_v = cycle_alignment_from_json(sk_json_parse(js));
+    ok(is_ok(b_t), "CycleAlignment decodes");
+    ok(cycle_alignment_eq(ca, result_unwrap(b_t, b_v)), "CycleAlignment serde round-trip");
+    return 0;
+}
+
+# ===========================================================================
+# 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE, exact message)
+# ===========================================================================
+
+var _mcd_keys = 0;
+var _mcd_vals = 0;
+
+# A hand-written MultiCalendarDate document, field by field in serde order (C-strings).
+fn mcd_fields() {
+    if (_mcd_keys != 0) { return 0; }
+    _mcd_keys = vec_new();
+    _mcd_vals = vec_new();
+    vec_push(_mcd_keys, "jdn");
+    vec_push(_mcd_vals, "584283.0");
+    vec_push(_mcd_keys, "mayan_long_count");
+    vec_push(_mcd_vals, "{\"baktun\":0,\"katun\":0,\"tun\":0,\"uinal\":0,\"kin\":0}");
+    vec_push(_mcd_keys, "tzolkin");
+    vec_push(_mcd_vals, "{\"number\":4,\"day_sign\":\"Ahau\"}");
+    vec_push(_mcd_keys, "haab");
+    vec_push(_mcd_vals, "{\"day\":8,\"month\":\"Kumku\"}");
+    vec_push(_mcd_keys, "sothic_position");
+    vec_push(_mcd_vals, "[-2,100,1.5]");
+    vec_push(_mcd_keys, "precessional_age");
+    vec_push(_mcd_vals, "{\"age\":\"Taurus\",\"years_into_age\":1.5,\"fraction\":0.5,\"vernal_point_longitude\":3.0}");
+    vec_push(_mcd_keys, "julian_year");
+    vec_push(_mcd_vals, "-3113.5");
+    vec_push(_mcd_keys, "gregorian");
+    vec_push(_mcd_vals, "{\"year\":-3113,\"month\":\"August\",\"day\":11}");
+    vec_push(_mcd_keys, "coptic");
+    vec_push(_mcd_vals, "{\"year\":-3396,\"month\":\"Thout\",\"day\":1}");
+    vec_push(_mcd_keys, "persian");
+    vec_push(_mcd_vals, "{\"year\":-3734,\"month\":\"Farvardin\",\"day\":1}");
+    vec_push(_mcd_keys, "hebrew");
+    vec_push(_mcd_vals, "{\"year\":648,\"month\":\"Av\",\"day\":1}");
+    vec_push(_mcd_keys, "chinese_sexagenary");
+    vec_push(_mcd_vals, "{\"stem\":\"Jia\",\"branch\":\"Zi\",\"cycle_position\":1}");
+    vec_push(_mcd_keys, "aztec_tonalpohualli");
+    vec_push(_mcd_vals, "{\"number\":1,\"sign\":\"Cipactli\"}");
+    vec_push(_mcd_keys, "aztec_xiuhpohualli");
+    vec_push(_mcd_vals, "{\"day\":1,\"month\":\"Atlcahualo\"}");
+    vec_push(_mcd_keys, "eras");
+    vec_push(_mcd_vals, "[]");
+    vec_push(_mcd_keys, "civilizations");
+    vec_push(_mcd_vals, "[]");
+    vec_push(_mcd_keys, "events");
+    vec_push(_mcd_vals, "[{\"x\":1},{\"x\":2}]");
+    vec_push(_mcd_keys, "saptarishi_profiles");
+    vec_push(_mcd_vals, "[]");
+    return 0;
+}
+
+# The hand-written MultiCalendarDate JSON with field key's value replaced by val (C-strings);
+# val 0 omits the field, and a key that is not a field is appended as an extra (unknown) key.
+fn mcd_js(key, val) {
+    mcd_fields();
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{");
+    var first = 1;
+    var found = 0;
+    var i = 0;
+    while (i < vec_len(_mcd_keys)) {
+        var k = vec_get(_mcd_keys, i);
+        var vv = vec_get(_mcd_vals, i);
+        if (key != 0 && str_eq_cstr(str_from(k), key) == 1) {
+            vv = val;
+            found = 1;
+        }
+        if (vv != 0) {
+            if (first == 0) { str_builder_add_cstr(sb, ","); }
+            sk_json_key(sb, k);
+            str_builder_add_cstr(sb, vv);
+            first = 0;
+        }
+        i = i + 1;
+    }
+    if (key != 0 && found == 0) {
+        str_builder_add_cstr(sb, ",");
+        sk_json_key(sb, key);
+        str_builder_add_cstr(sb, val);
+    }
+    str_builder_add_cstr(sb, "}");
+    return str_builder_build(sb);
+}
+
+# Decode the hand-written MultiCalendarDate with key set to val and expect Err message want.
+fn mcd_err(key, val, want, label) {
+    var t, v = multi_calendar_date_from_json(sk_json_parse(mcd_js(key, val)));
+    expect_err(t, v, want, label);
+    return 0;
+}
+
+# Decode js (a C-string) as a CalendarDate and expect Err message want.
+fn cd_err(js, want, label) {
+    var t, v = calendar_date_from_json(sk_json_parse(str_from(js)));
+    expect_err(t, v, want, label);
+    return 0;
+}
+
+# MultiCalendarDate: the hand-written document decodes; every field type is serde's.
+fn test_de_multi_calendar_date() {
+    var t, v = multi_calendar_date_from_json(sk_json_parse(mcd_js(0, 0)));
+    ok(is_ok(t), "hand-written MultiCalendarDate decodes");
+    var d = result_unwrap(t, v);
+    var sp = mcd_sothic(d);
+    assert_eq(sothicpos_cycle(sp), 0 - 2, "sothic_position cycle (i32) -2");
+    assert_eq(sothicpos_year(sp), 100, "sothic_position year (u32) 100");
+    assert_eq(sothicpos_drift(sp), f64_parse("1.5"), "sothic_position drift (f64) 1.5");
+    assert_eq(mcd_julian_year(d), f64_parse("-3113.5"), "julian_year -3113.5");
+    assert_eq(gd_year(mcd_gregorian(d)), 0 - 3113, "gregorian year -3113");
+    assert_eq(vec_len(mcd_events(d)), 2, "events kept count-only (2 nodes)");
+    assert_eq(vec_len(mcd_eras(d)), 0, "eras empty");
+
+    # Missing required fields (Option fields excepted).
+    mcd_err("julian_year", 0, "missing field `julian_year`", "mcd missing julian_year");
+    mcd_err("gregorian", 0, "missing field `gregorian`", "mcd missing gregorian");
+    mcd_err("sothic_position", 0, "missing field `sothic_position`", "mcd missing sothic_position");
+    mcd_err("eras", 0, "missing field `eras`", "mcd missing eras (itihas Vec required)");
+    mcd_err("saptarishi_profiles", 0, "missing field `saptarishi_profiles`", "mcd missing saptarishi_profiles");
+
+    # Unknown variants (nested enums, through each identifier table).
+    var w_age = cat("unknown variant `Ophiuchus`, expected one of `Leo`, `Cancer`, `Gemini`, `Taurus`, `Aries`, ",
+        "`Pisces`, `Aquarius`, `Capricorn`, `Sagittarius`, `Scorpio`, `Libra`, `Virgo`");
+    mcd_err("precessional_age",
+        "{\"age\":\"Ophiuchus\",\"years_into_age\":1.5,\"fraction\":0.5,\"vernal_point_longitude\":3.0}", w_age,
+        "mcd unknown age");
+    var w_heb = cat("unknown variant `Adar III`, expected one of `Tishrei`, `Cheshvan`, `Kislev`, `Tevet`, `Shevat`, ",
+        "`Adar`, `AdarI`, `AdarII`, `Nisan`, `Iyar`, `Sivan`, `Tammuz`, `Av`, `Elul`");
+    mcd_err("hebrew", "{\"year\":648,\"month\":\"Adar III\",\"day\":1}", w_heb, "mcd unknown hebrew month");
+    var w_br = cat("unknown variant `Cat`, expected one of `Zi`, `Chou`, `Yin`, `Mao`, `Chen`, `Si`, `Wu`, `Wei`, ",
+        "`Shen`, `You`, `Xu`, `Hai`");
+    mcd_err("chinese_sexagenary", "{\"stem\":\"Jia\",\"branch\":\"Cat\",\"cycle_position\":1}", w_br,
+        "mcd unknown branch");
+
+    # Wrong JSON types.
+    mcd_err("jdn", "\"x\"", "invalid type: string \"x\", expected f64", "mcd string jdn");
+    mcd_err("jdn", "null", "invalid type: null, expected f64", "mcd null jdn (f64 is not optional)");
+    mcd_err("gregorian", "[1]", "invalid type: sequence, expected struct GregorianDate", "mcd array gregorian");
+    mcd_err("precessional_age", "\"Pisces\"", "invalid type: string \"Pisces\", expected struct AgePosition",
+        "mcd string precessional_age");
+    mcd_err("tzolkin", "5", "invalid type: integer `5`, expected struct Tzolkin", "mcd integer Some(tzolkin)");
+    mcd_err("eras", "{}", "invalid type: map, expected a sequence", "mcd map eras");
+    mcd_err("saptarishi_profiles", "null", "invalid type: null, expected a sequence", "mcd null saptarishi_profiles");
+    mcd_err("aztec_tonalpohualli", "{\"number\":1,\"sign\":7}",
+        "invalid type: integer `7`, expected variant identifier", "mcd integer tonalpohualli sign");
+    mcd_err("chinese_sexagenary", "{\"stem\":\"Jia\",\"branch\":\"Zi\",\"cycle_position\":1.5}",
+        "invalid type: floating point `1.5`, expected u8", "mcd float cycle_position");
+
+    # Out-of-range integers.
+    mcd_err("haab", "{\"day\":256,\"month\":\"Pop\"}", "invalid value: integer `256`, expected u8", "mcd haab day 256");
+    mcd_err("mayan_long_count", "{\"baktun\":4294967296,\"katun\":0,\"tun\":0,\"uinal\":0,\"kin\":0}",
+        "invalid value: integer `4294967296`, expected u32", "mcd baktun beyond u32");
+    mcd_err("aztec_xiuhpohualli", "{\"day\":-1,\"month\":\"Nemontemi\"}", "invalid value: integer `-1`, expected u8",
+        "mcd negative xiuhpohualli day");
+
+    # The (i32, u32, f64) sothic tuple.
+    mcd_err("sothic_position", "{}", "invalid type: map, expected a tuple of size 3", "mcd map sothic tuple");
+    mcd_err("sothic_position", "[]", "invalid length 0, expected a tuple of size 3", "mcd empty sothic tuple");
+    mcd_err("sothic_position", "[1,2]", "invalid length 2, expected a tuple of size 3", "mcd short sothic tuple");
+    mcd_err("sothic_position", "[1,2,3.0,4]", "trailing characters", "mcd long sothic tuple");
+    mcd_err("sothic_position", "[1,-1,3.0]", "invalid value: integer `-1`, expected u32", "mcd sothic year u32");
+    mcd_err("sothic_position", "[2147483648,1,3.0]", "invalid value: integer `2147483648`, expected i32",
+        "mcd sothic cycle i32");
+    mcd_err("sothic_position", "[1,\"x\"]", "invalid type: string \"x\", expected u32",
+        "mcd sothic element type before length");
+    mcd_err("sothic_position", "[1,2,null]", "invalid type: null, expected f64", "mcd sothic null drift");
+
+    # Not an object at all.
+    var n_t, n_v = multi_calendar_date_from_json(sk_json_parse(str_from("null")));
+    expect_err(n_t, n_v, "invalid type: null, expected struct MultiCalendarDate", "mcd null document");
+    var a_t, a_v = multi_calendar_date_from_json(sk_json_parse(str_from("[]")));
+    expect_err(a_t, a_v, "invalid type: sequence, expected struct MultiCalendarDate", "mcd array document");
+
+    # Option fields: null or missing is None; an integer jdn reads as f64; unknown keys ignored.
+    var o1_t, o1_v = multi_calendar_date_from_json(sk_json_parse(mcd_js("mayan_long_count", "null")));
+    ok(is_ok(o1_t), "mcd null mayan_long_count decodes");
+    assert_eq(mcd_mayan_lc(result_unwrap(o1_t, o1_v)), 0, "mcd null mayan_long_count is None");
+    var o2_t, o2_v = multi_calendar_date_from_json(sk_json_parse(mcd_js("tzolkin", 0)));
+    ok(is_ok(o2_t), "mcd missing tzolkin decodes");
+    assert_eq(mcd_tzolkin(result_unwrap(o2_t, o2_v)), 0, "mcd missing tzolkin is None");
+    var o3_t, o3_v = multi_calendar_date_from_json(sk_json_parse(mcd_js("haab", "null")));
+    assert_eq(mcd_haab(result_unwrap(o3_t, o3_v)), 0, "mcd null haab is None");
+    var i_t, i_v = multi_calendar_date_from_json(sk_json_parse(mcd_js("jdn", "584283")));
+    ok(is_ok(i_t), "mcd integer jdn decodes");
+    assert_eq(mcd_jdn(result_unwrap(i_t, i_v)), f64_from(584283), "mcd integer jdn reads as f64");
+    var u_t, u_v = multi_calendar_date_from_json(sk_json_parse(mcd_js("extra_key", "{\"x\":[1]}")));
+    ok(is_ok(u_t), "mcd unknown key ignored");
+    var g_js = mcd_js("gregorian", "{\"year\":-3113,\"month\":\"August\",\"day\":40}");
+    var g_t, g_v = multi_calendar_date_from_json(sk_json_parse(g_js));
+    ok(is_ok(g_t), "mcd no calendar validation (day 40 decodes)");
+    return 0;
+}
+
+# CalendarDate: externally tagged, one key; payloads decode through their own types.
+fn test_de_calendar_date() {
+    cd_err("{\"Gregorian\":{\"year\":2000,\"day\":1}}", "missing field `month`", "cd missing month");
+    cd_err("{\"MayanLongCount\":{\"baktun\":13,\"katun\":0,\"tun\":0,\"uinal\":0}}", "missing field `kin`",
+        "cd missing kin");
+    var w_cd = cat("unknown variant `Julian`, expected one of `Jdn`, `Gregorian`, `Coptic`, `Persian`, `Hebrew`, ",
+        "`Hijri`, `MayanLongCount`");
+    cd_err("{\"Julian\":5}", w_cd, "cd unknown variant Julian");
+    var w_cop = cat("unknown variant `Foo`, expected one of `Thout`, `Paopi`, `Hathor`, `Koiak`, `Tobi`, `Meshir`, ",
+        "`Paremhat`, `Parmouti`, `Pashons`, `Paoni`, `Epip`, `Mesori`, `Nasie`");
+    cd_err("{\"Coptic\":{\"year\":1741,\"month\":\"Foo\",\"day\":1}}", w_cop, "cd unknown coptic month");
+    var w_hij = cat("unknown variant `Muharam`, expected one of `Muharram`, `Safar`, `RabiAlAwwal`, `RabiAlThani`, ",
+        "`JumadaAlUla`, `JumadaAlThani`, `Rajab`, `Shaban`, `Ramadan`, `Shawwal`, `DhulQadah`, `DhulHijjah`");
+    cd_err("{\"Hijri\":{\"year\":1446,\"month\":\"Muharam\",\"day\":1}}", w_hij, "cd unknown hijri month");
+    cd_err("{\"Jdn\":\"x\"}", "invalid type: string \"x\", expected f64", "cd string Jdn");
+    cd_err("{\"Jdn\":null}", "invalid type: null, expected f64", "cd null Jdn (not an Option)");
+    cd_err("{\"Hijri\":[]}", "invalid type: sequence, expected struct HijriDate", "cd array Hijri");
+    cd_err("{\"Persian\":{\"year\":1404,\"month\":\"Farvardin\",\"day\":1.5}}",
+        "invalid type: floating point `1.5`, expected u8", "cd float Persian day");
+    cd_err("5", "invalid type: integer `5`, expected enum CalendarDate", "cd integer document");
+    cd_err("\"Jdn\"", "invalid type: string \"Jdn\", expected enum CalendarDate", "cd bare string document");
+    cd_err("{\"MayanLongCount\":{\"baktun\":-1,\"katun\":0,\"tun\":0,\"uinal\":0,\"kin\":0}}",
+        "invalid value: integer `-1`, expected u32", "cd negative baktun");
+    cd_err("{\"Hebrew\":{\"year\":5785,\"month\":\"Nisan\",\"day\":300}}", "invalid value: integer `300`, expected u8",
+        "cd hebrew day 300");
+    cd_err("{\"Jdn\":2451545.0,\"Gregorian\":{\"year\":2000,\"month\":\"January\",\"day\":1}}",
+        "invalid value: map, expected map with a single key", "cd two keys");
+    cd_err("{}", "invalid value: map, expected map with a single key", "cd no keys");
+
+    # Ok paths: an integer Jdn reads as f64; unknown payload keys are ignored, no validation.
+    var j_t, j_v = calendar_date_from_json(sk_json_parse(str_from("{\"Jdn\":2451545}")));
+    ok(is_ok(j_t), "cd integer Jdn decodes");
+    var jd = result_unwrap(j_t, j_v);
+    assert_eq(cdv_tag(jd), CDT_JDN, "cd integer Jdn tag");
+    assert_eq(cdv_val(jd), f64_from(2451545), "cd integer Jdn reads as f64");
+    var x_js = str_from("{\"Gregorian\":{\"year\":2000,\"month\":\"May\",\"day\":40,\"x\":1}}");
+    var x_t, x_v = calendar_date_from_json(sk_json_parse(x_js));
+    ok(is_ok(x_t), "cd unknown payload key ignored, day 40 decodes");
+    return 0;
+}
+
+# The other epoch decoders: struct, Vec, String and unit-enum checks.
+fn test_de_other() {
+    # Unit enums.
+    var e1_t, e1_v = precessionalage_from_json(sk_json_parse(str_from("5")));
+    expect_err(e1_t, e1_v, "invalid type: integer `5`, expected variant identifier", "PrecessionalAge integer");
+    var e2_t, e2_v = civilization_from_json(sk_json_parse(str_from("\"Atlantean\"")));
+    expect_err(e2_t, e2_v,
+        "unknown variant `Atlantean`, expected one of `Vedic`, `Babylonian`, `Egyptian`, `Mayan`, `Greek`, `Chinese`",
+        "Civilization unknown");
+    var e3_t, e3_v = cyclename_from_json(sk_json_parse(str_from("null")));
+    expect_err(e3_t, e3_v, "invalid type: null, expected variant identifier", "CycleName null");
+
+    # SagesTradition.
+    var s1j = cat("{\"civilization\":\"Vedic\",\"sage_names\":[],\"source_texts\":[],",
+        "\"associated_stars\":\"a\",\"catastrophe_narrative\":\"b\"}");
+    var s1_t, s1_v = sages_tradition_from_json(sk_json_parse(str_from(s1j)));
+    expect_err(s1_t, s1_v, "missing field `group_name`", "SagesTradition missing group_name");
+    var s2j = cat("{\"civilization\":\"Vedic\",\"group_name\":\"g\",\"sage_names\":[\"a\",1],\"source_texts\":[],",
+        "\"associated_stars\":\"a\",\"catastrophe_narrative\":\"b\"}");
+    var s2_t, s2_v = sages_tradition_from_json(sk_json_parse(str_from(s2j)));
+    expect_err(s2_t, s2_v, "invalid type: integer `1`, expected a string", "SagesTradition integer sage name");
+    var s3j = cat("{\"civilization\":\"Vedic\",\"group_name\":\"g\",\"sage_names\":\"a\",\"source_texts\":[],",
+        "\"associated_stars\":\"a\",\"catastrophe_narrative\":\"b\"}");
+    var s3_t, s3_v = sages_tradition_from_json(sk_json_parse(str_from(s3j)));
+    expect_err(s3_t, s3_v, "invalid type: string \"a\", expected a sequence", "SagesTradition string sage_names");
+    var s4j = cat("{\"civilization\":\"Vedic\",\"group_name\":7,\"sage_names\":[],\"source_texts\":[],",
+        "\"associated_stars\":\"a\",\"catastrophe_narrative\":\"b\"}");
+    var s4_t, s4_v = sages_tradition_from_json(sk_json_parse(str_from(s4j)));
+    expect_err(s4_t, s4_v, "invalid type: integer `7`, expected a string", "SagesTradition integer group_name");
+
+    # AgePosition.
+    var a1 = str_from("{\"age\":\"Leo\",\"years_into_age\":1.0,\"fraction\":true,\"vernal_point_longitude\":2.0}");
+    var a1_t, a1_v = age_position_from_json(sk_json_parse(a1));
+    expect_err(a1_t, a1_v, "invalid type: boolean `true`, expected f64", "AgePosition boolean fraction");
+    var a2 = str_from("{\"age\":\"Leo\",\"years_into_age\":1.0,\"fraction\":0.5}");
+    var a2_t, a2_v = age_position_from_json(sk_json_parse(a2));
+    expect_err(a2_t, a2_v, "missing field `vernal_point_longitude`", "AgePosition missing longitude");
+
+    # CycleAlignment.
+    var c1 = str_from("{\"jdn\":1.0,\"cycles\":[\"Metonic\",\"Foo\"],\"max_residual_days\":0.0}");
+    var c1_t, c1_v = cycle_alignment_from_json(sk_json_parse(c1));
+    var w_cyc = cat("unknown variant `Foo`, expected one of `Precession`, `Sothic`, `Saros`, `VenusSynodic`, ",
+        "`CalendarRound`, `Metonic`, `PrecessionalAge`");
+    expect_err(c1_t, c1_v, w_cyc, "CycleAlignment unknown cycle");
+    var c2 = str_from("{\"jdn\":1.0,\"cycles\":\"Metonic\",\"max_residual_days\":0.0}");
+    var c2_t, c2_v = cycle_alignment_from_json(sk_json_parse(c2));
+    expect_err(c2_t, c2_v, "invalid type: string \"Metonic\", expected a sequence", "CycleAlignment string cycles");
+    var c3 = str_from("{\"jdn\":1.0,\"cycles\":[]}");
+    var c3_t, c3_v = cycle_alignment_from_json(sk_json_parse(c3));
+    expect_err(c3_t, c3_v, "missing field `max_residual_days`", "CycleAlignment missing max_residual_days");
     return 0;
 }
 
@@ -202,6 +548,9 @@ fn main() {
     test_calendar_date();
     test_enums();
     test_cycle_alignment();
+    test_de_multi_calendar_date();
+    test_de_calendar_date();
+    test_de_other();
 
     return assert_summary();
 }

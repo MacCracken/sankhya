@@ -15,6 +15,13 @@
 # nikhilam_new, nk_base/nk_da/nk_db/nk_cross/nk_product in src/vedic.cyr); we
 # emit/parse it as the 5-element array serde would produce for the tuple.
 #
+# Decoding (3.2.0) returns a Result as serde_json::from_str did: Ok(value) or
+# Err(SKE_DESERIALIZE) with serde's message (the sk_de_* helpers in serial_util.cyr).
+# Every number is a u64 (a negative is "invalid value: integer `-1`, expected u64"; the
+# port's i64 cells cap it at i64::MAX). The tuple must be an array of exactly 5: a short
+# one is "invalid length N, expected a tuple of size 5", a long one serde_json's
+# "trailing characters".
+#
 # Self-contained: NO include lines. Resolves stdlib (str_builder_*, vec_*,
 # bayan_json_v_*) and the vedic module accessors from the consumer's [deps].
 
@@ -41,16 +48,35 @@ fn nikhilam_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Reconstruct a NikhilamSteps record from a parsed bayan array node
-# (v = the [b,da,db,cr,pr] array value from sk_json_parse).
+# Element i of the tuple array arr (n elements) as a u64, or serde's tuple visitor Err
+# "invalid length n, expected a tuple of size 5" when the array is too short.
+fn _nkj_elem(arr, n, i) {
+    if (i >= n) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "invalid length ");
+        str_builder_add_int(sb, n);
+        str_builder_add_cstr(sb, ", expected a tuple of size 5");
+        return sk_de_fail(str_builder_build(sb));
+    }
+    return sk_de_int(bayan_json_v_arr_get(arr, i), 0, SK_I64_MAX, "u64");
+}
+
+# Deserialize a NikhilamSteps record from a bayan array node (the [b,da,db,cr,pr] array
+# from sk_json_parse), as serde reads the (u64, u64, u64, u64, u64) tuple: Ok(NikhilamSteps)
+# or Err(SKE_DESERIALIZE). A non-array is "expected a tuple of size 5". The steps are not
+# re-checked against each other.
 #must_use
 fn nikhilam_from_json(v) {
-    var b = bayan_json_v_int(bayan_json_v_arr_get(v, 0));
-    var da = bayan_json_v_int(bayan_json_v_arr_get(v, 1));
-    var db = bayan_json_v_int(bayan_json_v_arr_get(v, 2));
-    var cr = bayan_json_v_int(bayan_json_v_arr_get(v, 3));
-    var pr = bayan_json_v_int(bayan_json_v_arr_get(v, 4));
-    return nikhilam_new(b, da, db, cr, pr);
+    var t, arr = sk_de_seq(v);
+    if (is_ok(t) == 0) { return sk_de_invalid_type(v, "a tuple of size 5"); }
+    var n = bayan_json_v_arr_len(arr);
+    var b = _nkj_elem(arr, n, 0)?;
+    var da = _nkj_elem(arr, n, 1)?;
+    var db = _nkj_elem(arr, n, 2)?;
+    var cr = _nkj_elem(arr, n, 3)?;
+    var pr = _nkj_elem(arr, n, 4)?;
+    if (n > 5) { return sk_de_fail(str_from("trailing characters")); }
+    return Ok(nikhilam_new(b, da, db, cr, pr));
 }
 
 # Field-by-field equality for the round-trip test. Returns 1 if equal, else 0.
@@ -94,25 +120,30 @@ fn meru_to_json(tri) {
     return str_builder_build(sb);
 }
 
-# Reconstruct a vec-of-vecs from a parsed bayan array-of-arrays node.
+# Deserialize a vec-of-vecs from a bayan array-of-arrays node, as serde reads Vec<Vec<u64>>:
+# Ok(vec of row vecs) or Err(SKE_DESERIALIZE) — the outer value and every row must be JSON
+# arrays ("expected a sequence") and every cell a u64. The rows are not checked to form
+# Pingala's triangle.
 #must_use
 fn meru_from_json(v) {
+    var outer = sk_de_seq(v)?;
     var tri = vec_new();
-    var n = bayan_json_v_arr_len(v);
+    var n = bayan_json_v_arr_len(outer);
     var i = 0;
     while (i < n) {
-        var rowv = bayan_json_v_arr_get(v, i);
+        var rowv = sk_de_seq(bayan_json_v_arr_get(outer, i))?;
         var row = vec_new();
         var m = bayan_json_v_arr_len(rowv);
         var j = 0;
         while (j < m) {
-            vec_push(row, bayan_json_v_int(bayan_json_v_arr_get(rowv, j)));
+            var cell = sk_de_int(bayan_json_v_arr_get(rowv, j), 0, SK_I64_MAX, "u64")?;
+            vec_push(row, cell);
             j = j + 1;
         }
         vec_push(tri, row);
         i = i + 1;
     }
-    return tri;
+    return Ok(tri);
 }
 
 # Deep equality over the vec-of-vecs. Returns 1 if equal, else 0.

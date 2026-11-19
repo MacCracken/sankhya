@@ -11,6 +11,8 @@
 # module's coptic_month_name(idx) accessor — NOT the integer discriminant and
 # NOT any spaced Display form (they are identical here, but name is authoritative).
 # All fields are integer-valued, so no f64 JSON-number path is needed.
+# Decoding (3.2.0) returns a Result as serde_json::from_str did: Ok(value) or
+# Err(SKE_DESERIALIZE) with serde's message (the sk_de_* helpers in serial_util.cyr).
 #
 # Self-contained: no include lines (the distlib bundler resolves stdlib + the
 # coptic module; the serial_util helpers are pulled in by the manifest order).
@@ -32,6 +34,20 @@ fn coptic_month_from_name(cstr) {
     return 0 - 1;
 }
 
+# Lazily built vec of the 13 CopticMonth serde identifiers (Thout .. Nasie), in
+# discriminant order, for sk_de_variant. Shares coptic_month_name's Strs; do not mutate.
+var _cpj_month_names = 0;
+
+fn _cpj_months() {
+    if (_cpj_month_names == 0) {
+        var v = vec_new();
+        var i = 0;
+        while (i < 13) { vec_push(v, coptic_month_name(i)); i = i + 1; }
+        _cpj_month_names = v;
+    }
+    return _cpj_month_names;
+}
+
 # Serialize a CopticMonth as a bare JSON string, e.g. "Thout" (serde emits a
 # unit enum variant as a quoted identifier).
 #must_use
@@ -41,12 +57,11 @@ fn coptic_month_to_json(m) {
     return str_builder_build(msb);
 }
 
-# Parse a CopticMonth from a bayan JSON string node. Returns the discriminant
-# (or 0 - 1 if the variant name is unknown).
+# Deserialize a CopticMonth from a bayan value node holding a JSON string, as serde:
+# Ok(discriminant 0-12), or Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
 fn coptic_month_from_json(v) {
-    var mname = sk_json_v_str(v);
-    return coptic_month_from_name(str_data(mname));
+    return sk_de_variant(v, _cpj_months());
 }
 
 # Field-by-field equality for the round-trip test (an enum is a plain i64).
@@ -74,17 +89,17 @@ fn coptic_date_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Reconstruct a CopticDate from a bayan JSON object node (from sk_json_parse).
-# year/day are read as integers; month is read as its variant name then mapped
-# back to the discriminant via coptic_month_from_name.
+# Deserialize a CopticDate from a bayan value node (an object, from sk_json_parse).
+# Ok(CopticDate) or Err(SKE_DESERIALIZE), with serde's checks on the Rust field types:
+# year an i64, month a CopticMonth variant, day a u8. No calendar validation (a day of
+# 40 decodes; coptic_to_jdn rejects it).
 #must_use
 fn coptic_date_from_json(v) {
-    var year = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
-    var mnode = bayan_json_v_obj_get_by_cstr(v, "month");
-    var mstr = sk_json_v_str(mnode);
-    var month = coptic_month_from_name(str_data(mstr));
-    var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    return coptic_date_new(year, month, day);
+    var obj = sk_de_struct(v, "CopticDate")?;
+    var year = sk_de_int_field(obj, "year", SK_I64_MIN, SK_I64_MAX, "i64")?;
+    var month = sk_de_variant_field(obj, "month", _cpj_months())?;
+    var day = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    return Ok(coptic_date_new(year, month, day));
 }
 
 # Field-by-field equality (year, month, day) for the round-trip test.

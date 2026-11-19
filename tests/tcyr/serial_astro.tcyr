@@ -2,7 +2,9 @@
 # Ports the three Rust #[cfg(test)] serde tests from rust-old/src/astro.rs
 # (serde_roundtrip_celestial_coord / _star_name / _alignment_result) plus extra
 # coverage for every other serde type (Star, EclipticCoord, HorizontalCoord,
-# HeliacalEvent, HeliacalEventType, and the AlignmentTarget StarRising path).
+# HeliacalEvent, HeliacalEventType, and the AlignmentTarget StarRising path), then the
+# 3.2.0 decode errors: every <type>_from_json returns Err(SKE_DESERIALIZE) with serde's
+# message for a missing field, a wrong JSON type and an unknown variant.
 # Build:  cyrius build tests/tcyr/serial_astro.tcyr build/_s_astro
 # Run:    ./build/_s_astro   (directly — exit code = failure count)
 include "src/error.cyr"
@@ -16,6 +18,83 @@ include "src/serial_astro.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# The C-strings a and b joined into one Str (expected messages longer than a line).
+fn cat2(a, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    return str_builder_build(sb);
+}
+
+# Decoder selectors for de_any / de_err.
+var K_CC = 0;
+var K_ECL = 1;
+var K_HZ = 2;
+var K_STAR = 3;
+var K_SN = 4;
+var K_HET = 5;
+var K_HE = 6;
+var K_AT = 7;
+var K_AR = 8;
+
+# Parse js (a C-string) and run the decoder selected by kind; returns its Result pair.
+fn de_any(kind, js) {
+    var n = sk_json_parse(str_from(js));
+    if (kind == K_CC) { return celestial_coord_from_json(n); }
+    if (kind == K_ECL) { return ecliptic_coord_from_json(n); }
+    if (kind == K_HZ) { return horizontal_coord_from_json(n); }
+    if (kind == K_STAR) { return star_from_json(n); }
+    if (kind == K_SN) { return starname_from_json(n); }
+    if (kind == K_HET) { return heltype_from_json(n); }
+    if (kind == K_HE) { return heliacal_event_from_json(n); }
+    if (kind == K_AT) { return alignmenttarget_from_json(n); }
+    return alignment_result_from_json(n);
+}
+
+# Check that decoding js with decoder kind fails with SKE_DESERIALIZE and exactly the
+# message want (a Str).
+fn de_err_s(kind, js, want, label) {
+    var t, v = de_any(kind, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) { ok(str_eq(sk_err_msg(v), want), label); }
+    return 0;
+}
+
+# de_err_s with the expected message as a C-string.
+fn de_err(kind, js, want, label) { return de_err_s(kind, js, str_from(want), label); }
+
+# The serde "expected one of" list of the 20 StarName variants.
+var SN_LIST_A = "`Sirius`, `Canopus`, `Vega`, `Arcturus`, `Rigel`, `Procyon`, `Betelgeuse`, `Aldebaran`, ";
+var SN_LIST_B = "`Antares`, `Spica`, `Pollux`, `Fomalhaut`, `Deneb`, `Regulus`, `Polaris`, `Thuban`, ";
+var SN_LIST_C = "`Kochab`, `Pleiades`, `Alcyone`, `Dubhe`";
+
+# The serde "expected one of" list of the 7 AlignmentTarget variants.
+var AT_LIST_A = "`SummerSolsticeSunrise`, `SummerSolsticeSunset`, `WinterSolsticeSunrise`, ";
+var AT_LIST_B = "`WinterSolsticeSunset`, `EquinoxSunrise`, `EquinoxSunset`, `StarRising`";
+
+# "unknown variant `<name>`, expected one of <the StarName list>" as a Str.
+fn sn_unknown(name) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "unknown variant `");
+    str_builder_add_cstr(sb, name);
+    str_builder_add_cstr(sb, "`, expected one of ");
+    str_builder_add_cstr(sb, SN_LIST_A);
+    str_builder_add_cstr(sb, SN_LIST_B);
+    str_builder_add_cstr(sb, SN_LIST_C);
+    return str_builder_build(sb);
+}
+
+# "unknown variant `<name>`, expected one of <the AlignmentTarget list>" as a Str.
+fn at_unknown(name) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "unknown variant `");
+    str_builder_add_cstr(sb, name);
+    str_builder_add_cstr(sb, "`, expected one of ");
+    str_builder_add_cstr(sb, AT_LIST_A);
+    str_builder_add_cstr(sb, AT_LIST_B);
+    return str_builder_build(sb);
+}
+
 # Run every serial_astro test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -26,14 +105,16 @@ fn main() {
     var cjs = celestial_coord_to_json(c);
     ok(str_contains_cstr(cjs, "\"ra_hours\":"), "cc field ra_hours");
     ok(str_contains_cstr(cjs, "\"dec_degrees\":"), "cc field dec_degrees");
-    var cparsed = celestial_coord_from_json(sk_json_parse(cjs));
-    ok(celestial_coord_eq(c, cparsed), "CelestialCoord serde roundtrip");
+    var cp_t, cp_v = celestial_coord_from_json(sk_json_parse(cjs));
+    ok(is_ok(cp_t), "CelestialCoord decodes");
+    ok(celestial_coord_eq(c, result_unwrap(cp_t, cp_v)), "CelestialCoord serde roundtrip");
 
     # -- Rust: serde_roundtrip_star_name --
     var snjs = starname_to_json(SN_VEGA);
     ok(str_contains_cstr(snjs, "\"Vega\""), "starname json is \"Vega\"");
-    var snparsed = starname_from_json(sk_json_parse(snjs));
-    ok(starname_eq(SN_VEGA, snparsed), "StarName serde roundtrip");
+    var sn_t, sn_v = starname_from_json(sk_json_parse(snjs));
+    ok(is_ok(sn_t), "StarName decodes");
+    ok(starname_eq(SN_VEGA, result_unwrap(sn_t, sn_v)), "StarName serde roundtrip");
 
     # -- Rust: serde_roundtrip_alignment_result (unit-variant target) --
     var no_star = 0 - 1;
@@ -42,8 +123,9 @@ fn main() {
     ok(str_contains_cstr(arjs, "\"target\":\"SummerSolsticeSunrise\""), "ar target unit-variant string");
     ok(str_contains_cstr(arjs, "\"azimuth\":"), "ar field azimuth");
     ok(str_contains_cstr(arjs, "\"deviation\":"), "ar field deviation");
-    var arparsed = alignment_result_from_json(sk_json_parse(arjs));
-    ok(alignment_result_eq(ar, arparsed), "AlignmentResult serde roundtrip");
+    var arp_t, arp_v = alignment_result_from_json(sk_json_parse(arjs));
+    ok(is_ok(arp_t), "AlignmentResult decodes");
+    ok(alignment_result_eq(ar, result_unwrap(arp_t, arp_v)), "AlignmentResult serde roundtrip");
 
     # -- Extra: Star (3 strings + 3 floats) --
     var st = star(SN_SIRIUS);
@@ -52,24 +134,27 @@ fn main() {
     ok(str_contains_cstr(stjs, "\"bayer\":"), "star field bayer");
     ok(str_contains_cstr(stjs, "\"constellation\":"), "star field constellation");
     ok(str_contains_cstr(stjs, "\"visual_magnitude\":"), "star field visual_magnitude");
-    var stparsed = star_from_json(sk_json_parse(stjs));
-    ok(star_eq(st, stparsed), "Star serde roundtrip");
+    var stp_t, stp_v = star_from_json(sk_json_parse(stjs));
+    ok(is_ok(stp_t), "Star decodes");
+    ok(star_eq(st, result_unwrap(stp_t, stp_v)), "Star serde roundtrip");
 
     # -- Extra: EclipticCoord --
     var ecl = ecliptic_new(f64_parse("123.456"), f64_parse("-12.5"));
     var ecljs = ecliptic_coord_to_json(ecl);
     ok(str_contains_cstr(ecljs, "\"longitude\":"), "ecl field longitude");
     ok(str_contains_cstr(ecljs, "\"latitude\":"), "ecl field latitude");
-    var eclparsed = ecliptic_coord_from_json(sk_json_parse(ecljs));
-    ok(ecliptic_coord_eq(ecl, eclparsed), "EclipticCoord serde roundtrip");
+    var eclp_t, eclp_v = ecliptic_coord_from_json(sk_json_parse(ecljs));
+    ok(is_ok(eclp_t), "EclipticCoord decodes");
+    ok(ecliptic_coord_eq(ecl, result_unwrap(eclp_t, eclp_v)), "EclipticCoord serde roundtrip");
 
     # -- Extra: HorizontalCoord --
     var hz = horizontal_new(f64_parse("51.0"), f64_parse("23.44"));
     var hzjs = horizontal_coord_to_json(hz);
     ok(str_contains_cstr(hzjs, "\"azimuth\":"), "hz field azimuth");
     ok(str_contains_cstr(hzjs, "\"altitude\":"), "hz field altitude");
-    var hzparsed = horizontal_coord_from_json(sk_json_parse(hzjs));
-    ok(horizontal_coord_eq(hz, hzparsed), "HorizontalCoord serde roundtrip");
+    var hzp_t, hzp_v = horizontal_coord_from_json(sk_json_parse(hzjs));
+    ok(is_ok(hzp_t), "HorizontalCoord decodes");
+    ok(horizontal_coord_eq(hz, result_unwrap(hzp_t, hzp_v)), "HorizontalCoord serde roundtrip");
 
     # -- Extra: HeliacalEvent (float + two enum-as-string fields) --
     var he = heliacal_event_new(f64_from(2451545), SN_SIRIUS, HET_RISING);
@@ -77,21 +162,107 @@ fn main() {
     ok(str_contains_cstr(hejs, "\"jdn\":"), "he field jdn");
     ok(str_contains_cstr(hejs, "\"star\":\"Sirius\""), "he field star Sirius");
     ok(str_contains_cstr(hejs, "\"event_type\":\"Rising\""), "he field event_type Rising");
-    var heparsed = heliacal_event_from_json(sk_json_parse(hejs));
-    ok(heliacal_event_eq(he, heparsed), "HeliacalEvent serde roundtrip");
+    var hep_t, hep_v = heliacal_event_from_json(sk_json_parse(hejs));
+    ok(is_ok(hep_t), "HeliacalEvent decodes");
+    ok(heliacal_event_eq(he, result_unwrap(hep_t, hep_v)), "HeliacalEvent serde roundtrip");
 
     # -- Extra: HeliacalEventType standalone enum --
     var etjs = heltype_to_json(HET_SETTING);
     ok(str_contains_cstr(etjs, "\"Setting\""), "heltype json is \"Setting\"");
-    var etparsed = heltype_from_json(sk_json_parse(etjs));
-    ok(heltype_eq(HET_SETTING, etparsed), "HeliacalEventType serde roundtrip");
+    var etp_t, etp_v = heltype_from_json(sk_json_parse(etjs));
+    ok(is_ok(etp_t), "HeliacalEventType decodes");
+    ok(heltype_eq(HET_SETTING, result_unwrap(etp_t, etp_v)), "HeliacalEventType serde roundtrip");
 
     # -- Extra: AlignmentResult with StarRising(StarName) target (nested object) --
     var ar2 = alignment_result_new(AT_STAR_RISING, SN_VEGA, f64_parse("70.0"), f64_parse("1.5"));
     var ar2js = alignment_result_to_json(ar2);
     ok(str_contains_cstr(ar2js, "\"target\":{\"StarRising\":\"Vega\"}"), "ar StarRising nested object");
-    var ar2parsed = alignment_result_from_json(sk_json_parse(ar2js));
-    ok(alignment_result_eq(ar2, ar2parsed), "AlignmentResult StarRising serde roundtrip");
+    var ar2p_t, ar2p_v = alignment_result_from_json(sk_json_parse(ar2js));
+    ok(is_ok(ar2p_t), "AlignmentResult StarRising decodes");
+    ok(alignment_result_eq(ar2, result_unwrap(ar2p_t, ar2p_v)), "AlignmentResult StarRising serde roundtrip");
+
+    # -- Extra: AlignmentTarget standalone, both shapes alignmenttarget_to_json writes --
+    var atu_js = alignmenttarget_to_json(AT_WINTER_SOLSTICE_SUNSET, 0 - 1);
+    ok(str_eq_cstr(atu_js, "\"WinterSolsticeSunset\""), "AlignmentTarget unit json is a string");
+    var atu_t, atu_v = alignmenttarget_from_json(sk_json_parse(atu_js));
+    ok(is_ok(atu_t), "AlignmentTarget unit decodes");
+    var atu = result_unwrap(atu_t, atu_v);
+    assert_eq(atv_target(atu), AT_WINTER_SOLSTICE_SUNSET, "AlignmentTarget unit target");
+    assert_eq(atv_star(atu), 0 - 1, "AlignmentTarget unit star is -1");
+    var ats_js = alignmenttarget_to_json(AT_STAR_RISING, SN_THUBAN);
+    ok(str_eq_cstr(ats_js, "{\"StarRising\":\"Thuban\"}"), "AlignmentTarget StarRising json");
+    var ats_t, ats_v = alignmenttarget_from_json(sk_json_parse(ats_js));
+    ok(is_ok(ats_t), "AlignmentTarget StarRising decodes");
+    var ats = result_unwrap(ats_t, ats_v);
+    ok(alignmenttarget_eq(atv_target(ats), atv_star(ats), AT_STAR_RISING, SN_THUBAN), "AlignmentTarget StarRising");
+
+    # ---- 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    # CelestialCoord
+    de_err(K_CC, "{\"ra_hours\":1.5}", "missing field `dec_degrees`", "cc missing dec_degrees");
+    de_err(K_CC, "{\"ra_hours\":\"x\",\"dec_degrees\":1}", "invalid type: string \"x\", expected f64", "cc string ra");
+    de_err(K_CC, "{\"ra_hours\":null,\"dec_degrees\":1}", "invalid type: null, expected f64", "cc null ra");
+    de_err(K_CC, "[1,2]", "invalid type: sequence, expected struct CelestialCoord", "cc array");
+    var cci_t, cci_v = de_any(K_CC, "{\"ra_hours\":6,\"dec_degrees\":-16,\"extra\":[1]}");
+    ok(is_ok(cci_t), "cc integer members convert, unknown key ignored");
+    ok(f64_eq(cc_ra_hours(result_unwrap(cci_t, cci_v)), f64_from(6)), "cc integer ra reads 6.0");
+    # EclipticCoord
+    de_err(K_ECL, "{\"longitude\":1}", "missing field `latitude`", "ecl missing latitude");
+    de_err(K_ECL, "{\"longitude\":true,\"latitude\":0}", "invalid type: boolean `true`, expected f64", "ecl bool lon");
+    de_err(K_ECL, "7", "invalid type: integer `7`, expected struct EclipticCoord", "ecl integer");
+    # HorizontalCoord
+    de_err(K_HZ, "{\"altitude\":1}", "missing field `azimuth`", "hz missing azimuth");
+    de_err(K_HZ, "{\"azimuth\":{},\"altitude\":1}", "invalid type: map, expected f64", "hz map azimuth");
+    de_err(K_HZ, "null", "invalid type: null, expected struct HorizontalCoord", "hz null");
+    # Star (the &'static str fields expect "a borrowed string")
+    de_err(K_STAR, "{\"name\":\"Sirius\"}", "missing field `bayer`", "star missing bayer");
+    var st_head = "{\"bayer\":\"a\",\"constellation\":\"b\",\"ra_j2000\":1,\"dec_j2000\":2,";
+    var st_bad = str_cstr(cat2(st_head, "\"visual_magnitude\":3,\"name\":5}"));
+    de_err(K_STAR, st_bad, "invalid type: integer `5`, expected a borrowed string", "star integer name");
+    var st_mag = str_cstr(cat2(st_head, "\"name\":\"S\",\"visual_magnitude\":\"bright\"}"));
+    de_err(K_STAR, st_mag, "invalid type: string \"bright\", expected f64", "star string magnitude");
+    de_err(K_STAR, "\"Sirius\"", "invalid type: string \"Sirius\", expected struct Star", "star string");
+    # StarName
+    de_err_s(K_SN, "\"Vulcan\"", sn_unknown("Vulcan"), "starname unknown variant");
+    de_err(K_SN, "5", "invalid type: integer `5`, expected variant identifier", "starname integer");
+    de_err(K_SN, "null", "invalid type: null, expected variant identifier", "starname null");
+    # HeliacalEventType (two variants: serde writes "expected `A` or `B`")
+    de_err(K_HET, "\"Rise\"", "unknown variant `Rise`, expected `Rising` or `Setting`", "heltype unknown variant");
+    de_err(K_HET, "true", "invalid type: boolean `true`, expected variant identifier", "heltype bool");
+    # HeliacalEvent
+    de_err(K_HE, "{\"jdn\":1,\"star\":\"Sirius\"}", "missing field `event_type`", "he missing event_type");
+    de_err_s(K_HE, "{\"jdn\":1,\"star\":\"Sol\",\"event_type\":\"Rising\"}", sn_unknown("Sol"), "he unknown star");
+    de_err(K_HE, "{\"jdn\":\"x\",\"star\":\"Sirius\",\"event_type\":\"Rising\"}",
+        "invalid type: string \"x\", expected f64", "he string jdn");
+    de_err(K_HE, "{\"jdn\":1,\"star\":\"Sirius\",\"event_type\":0}",
+        "invalid type: integer `0`, expected variant identifier", "he integer event_type");
+    # AlignmentTarget (externally tagged; unit variants as plain strings)
+    de_err_s(K_AT, "\"Noon\"", at_unknown("Noon"), "target unknown unit variant");
+    de_err_s(K_AT, "{\"MoonRising\":\"Vega\"}", at_unknown("MoonRising"), "target unknown tag");
+    de_err(K_AT, "{\"StarRising\":\"Vega\",\"x\":1}", "invalid value: map, expected map with a single key",
+        "target map with two keys");
+    de_err(K_AT, "{}", "invalid value: map, expected map with a single key", "target empty map");
+    de_err(K_AT, "5", "invalid type: integer `5`, expected enum AlignmentTarget", "target integer");
+    de_err(K_AT, "[\"StarRising\",\"Vega\"]", "invalid type: sequence, expected enum AlignmentTarget",
+        "target array");
+    de_err(K_AT, "\"StarRising\"", "invalid type: unit variant, expected newtype variant", "StarRising without star");
+    de_err_s(K_AT, "{\"StarRising\":\"Vulcan\"}", sn_unknown("Vulcan"), "StarRising unknown star");
+    de_err(K_AT, "{\"StarRising\":3}", "invalid type: integer `3`, expected variant identifier",
+        "StarRising integer star");
+    de_err(K_AT, "{\"EquinoxSunrise\":1}", "invalid type: integer `1`, expected unit", "unit variant with payload");
+    var atn_t, atn_v = alignmenttarget_from_json(0);
+    ok(str_eq_cstr(sk_err_msg(atn_v), "invalid type: null, expected enum AlignmentTarget"), "target no node");
+    # serde_json also reads a unit variant in map form with a null value.
+    var atm_t, atm_v = de_any(K_AT, "{\"EquinoxSunrise\":null}");
+    ok(is_ok(atm_t), "unit variant {\"EquinoxSunrise\":null} decodes");
+    assert_eq(atv_target(result_unwrap(atm_t, atm_v)), AT_EQUINOX_SUNRISE, "map-form unit variant target");
+    # AlignmentResult
+    de_err(K_AR, "{\"azimuth\":1,\"deviation\":2}", "missing field `target`", "ar missing target");
+    de_err_s(K_AR, "{\"target\":\"Noon\",\"azimuth\":1,\"deviation\":2}", at_unknown("Noon"), "ar unknown target");
+    de_err(K_AR, "{\"target\":\"EquinoxSunset\",\"azimuth\":1}", "missing field `deviation`", "ar missing deviation");
+    de_err(K_AR, "{\"target\":\"EquinoxSunset\",\"azimuth\":1,\"deviation\":[]}",
+        "invalid type: sequence, expected f64", "ar array deviation");
+    de_err(K_AR, "\"EquinoxSunset\"", "invalid type: string \"EquinoxSunset\", expected struct AlignmentResult",
+        "ar string");
 
     return assert_summary();
 }

@@ -581,48 +581,64 @@ fn test_serde() {
     ok(is_ok(lcr_t), "serde lc from_days ok");
     var lc = result_unwrap(lcr_t, lcr_v);
     var lcj = longcount_to_json(lc);
-    ok(longcount_eq(lc, longcount_from_json(sk_json_parse(lcj))), "LongCount serde roundtrip");
+    var lc_rt_t, lc_rt_v = longcount_from_json(sk_json_parse(lcj));
+    ok(is_ok(lc_rt_t), "LongCount serde roundtrip");
+    ok(longcount_eq(lc, result_unwrap(lc_rt_t, lc_rt_v)), "LongCount serde roundtrip");
 
     # tzolkin
     var tz = tzolkin_from_days(0);
     var tzj = tzolkin_to_json(tz);
-    ok(tzolkin_eq(tz, tzolkin_from_json(sk_json_parse(tzj))), "Tzolkin serde roundtrip");
+    var tz_rt_t, tz_rt_v = tzolkin_from_json(sk_json_parse(tzj));
+    ok(is_ok(tz_rt_t), "Tzolkin serde roundtrip");
+    ok(tzolkin_eq(tz, result_unwrap(tz_rt_t, tz_rt_v)), "Tzolkin serde roundtrip");
 
     # babylonian_numeral
     var bnr_t, bnr_v = babnum_from_value(42);
     ok(is_ok(bnr_t), "serde babnum from_value ok");
     var bn = result_unwrap(bnr_t, bnr_v);
     var bnj = babnum_to_json(bn);
-    ok(babnum_eq(bn, babnum_from_json(sk_json_parse(bnj))), "BabylonianNumeral serde roundtrip");
+    var bn_rt_t, bn_rt_v = babnum_from_json(sk_json_parse(bnj));
+    ok(is_ok(bn_rt_t), "BabylonianNumeral serde roundtrip");
+    ok(babnum_eq(bn, result_unwrap(bn_rt_t, bn_rt_v)), "BabylonianNumeral serde roundtrip");
 
     # mayan_numeral
     var mnr_t, mnr_v = mayan_numeral_from_value(13);
     ok(is_ok(mnr_t), "serde mayan numeral from_value ok");
     var mn = result_unwrap(mnr_t, mnr_v);
     var mnj = mayan_numeral_to_json(mn);
-    ok(mayan_numeral_eq(mn, mayan_numeral_from_json(sk_json_parse(mnj))), "MayanNumeral serde roundtrip");
+    var mn_rt_t, mn_rt_v = mayan_numeral_from_json(sk_json_parse(mnj));
+    ok(is_ok(mn_rt_t), "MayanNumeral serde roundtrip");
+    ok(mayan_numeral_eq(mn, result_unwrap(mn_rt_t, mn_rt_v)), "MayanNumeral serde roundtrip");
 
     # haab
     var hb = haab_from_days(100);
     var hbj = haab_to_json(hb);
-    ok(haab_eq(hb, haab_from_json(sk_json_parse(hbj))), "Haab serde roundtrip");
+    var hb_rt_t, hb_rt_v = haab_from_json(sk_json_parse(hbj));
+    ok(is_ok(hb_rt_t), "Haab serde roundtrip");
+    ok(haab_eq(hb, result_unwrap(hb_rt_t, hb_rt_v)), "Haab serde roundtrip");
 
     # rod_numeral
     var rn = rod_numeral_new(42);
     var rnj = rod_numeral_to_json(rn);
-    ok(rod_numeral_eq(rn, rod_numeral_from_json(sk_json_parse(rnj))), "RodNumeral serde roundtrip");
+    var rn_rt_t, rn_rt_v = rod_numeral_from_json(sk_json_parse(rnj));
+    ok(is_ok(rn_rt_t), "RodNumeral serde roundtrip");
+    ok(rod_numeral_eq(rn, result_unwrap(rn_rt_t, rn_rt_v)), "RodNumeral serde roundtrip");
 
     # venus_phase
     var vp = venus_phase(100);
     var vpj = venusphase_to_json(vp);
-    ok(venusphase_eq(vp, venusphase_from_json(sk_json_parse(vpj))), "VenusPhase serde roundtrip");
+    var vp_rt_t, vp_rt_v = venusphase_from_json(sk_json_parse(vpj));
+    ok(is_ok(vp_rt_t), "VenusPhase serde roundtrip");
+    ok(venusphase_eq(vp, result_unwrap(vp_rt_t, vp_rt_v)), "VenusPhase serde roundtrip");
 
     # roman_numeral
     var rr_t, rr_v = romannum_from_value(1776);
     ok(is_ok(rr_t), "serde roman from_value ok");
     var rmn = result_unwrap(rr_t, rr_v);
     var rmj = romannum_to_json(rmn);
-    ok(romannum_eq(rmn, romannum_from_json(sk_json_parse(rmj))), "RomanNumeral serde roundtrip");
+    var rmn_rt_t, rmn_rt_v = romannum_from_json(sk_json_parse(rmj));
+    ok(is_ok(rmn_rt_t), "RomanNumeral serde roundtrip");
+    ok(romannum_eq(rmn, result_unwrap(rmn_rt_t, rmn_rt_v)), "RomanNumeral serde roundtrip");
 
     # error (InvalidDate "test")
     var e = sk_err(SKE_INVALID_DATE, str_from("test"));

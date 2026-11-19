@@ -164,23 +164,29 @@ garbage `Ok`.
 
 ### JSON round-trip (serial layer)
 
-Every domain type has `<type>_to_json(p)` → `Str`, `<type>_from_json(v)` →
-pointer, and `<type>_eq(a, b)` for verification. Parse a JSON string into a
-`bayan` value with `sk_json_parse` before calling `_from_json`.
+Every domain type has `<type>_to_json(p)` → `Str`, `<type>_from_json(v)` → a `Result`
+(from 3.2.0), and `<type>_eq(a, b)` for verification. Parse a JSON string into a `bayan`
+value with `sk_json_parse` before calling `_from_json`.
 
 ```cyrius
 var r_t, r_v = long_count_from_julian_day(2456283);
 var lc = result_unwrap(r_t, r_v);
 var js = longcount_to_json(lc);          # {"baktun":13,"katun":0,"tun":0,"uinal":0,"kin":0}
-var back = longcount_from_json(sk_json_parse(js));
-var same = longcount_eq(lc, back);       # 1
+var b_t, b_v = longcount_from_json(sk_json_parse(js));   # Ok(LongCount) or Err
+var same = longcount_eq(lc, result_unwrap(b_t, b_v));   # 1
+# Malformed input is an Err with serde's message.
+var e_t, e_v = longcount_from_json(sk_json_parse(str_from("{\"baktun\":13}")));
+var msg = sk_err_msg(e_v);               # "missing field `katun`"
 ```
 
-A decoder never crashes on malformed JSON (`tests/tcyr/serial_malformed.tcyr` feeds
-every one of them hostile input), but unlike serde it does not return an `Err` either:
-a missing or mistyped enum field decodes to the code -1, which renders as `"?"` and which
-the domain functions (`convert`, `*_to_jdn`) reject. A `Result`-returning decoder API is
-on the roadmap.
+Decoding follows serde's derive for the Rust type (ADR-009). A struct must be a JSON object
+with every non-`Option` field present; unknown keys are ignored. An integer must fit the Rust
+field type (`u8`, `u32`, …) and a float is not an integer. An `Option` is `None` when missing
+or `null`. An enum is its variant name. The error code is `SKE_DESERIALIZE`, and the message
+is serde's: `missing field \`x\``, `unknown variant \`Foo\`, expected one of …`,
+`invalid type: floating point \`1.5\`, expected u8`, `invalid value: integer \`-5\`,
+expected u8`. As with serde, a decoder checks types, not calendar rules: a day of 40 decodes,
+and `gregorian_to_jdn` rejects it.
 
 > The `MultiCalendarDate` serializes its itihas eras/civilizations/events and
 > avatara Saptarishi context on the `_to_json` path; those external-context

@@ -14,6 +14,44 @@ include "src/serial_islamic.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Decode js (a C-string) with decoder k (1 AlJabrSolution, else HijriDate); returns that
+# decoder's Result pair.
+fn de_run(k, js) {
+    var n = sk_json_parse(str_from(js));
+    if (k == 1) { return aljabr_sol_from_json(n); }
+    return hijri_date_from_json(n);
+}
+
+# An AlJabrSolution JSON object with the given coefficients JSON text (a C-string).
+fn sol_with_coef(coef) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "{\"form\":\"SquaresEqualRoots\",\"roots\":[1.0],\"coefficients\":");
+    str_builder_add_cstr(sb, coef);
+    str_builder_add_cstr(sb, "}");
+    return str_cstr(str_builder_build(sb));
+}
+
+# The C-string a followed by the C-string b, for expected messages too long for one line.
+fn cat2(a, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    return str_cstr(str_builder_build(sb));
+}
+
+# Decode js with decoder k and check it fails with SKE_DESERIALIZE and exactly the message
+# want (a C-string); a mismatch prints the message it got.
+fn de_err(k, js, want, label) {
+    var t, v = de_run(k, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) {
+        var same = str_eq_cstr(sk_err_msg(v), want);
+        if (same == 0) { str_println(sk_err_msg(v)); }
+        ok(same, label);
+    }
+    return 0;
+}
+
 # Run every serial_islamic test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -29,8 +67,9 @@ fn main() {
     ok(str_contains_cstr(djs, "\"year\":3"), "hijri json year field");
     ok(str_contains_cstr(djs, "\"month\":\"Shawwal\""), "hijri json month as variant name");
     ok(str_contains_cstr(djs, "\"day\":26"), "hijri json day field");
-    var d2 = hijri_date_from_json(sk_json_parse(djs));
-    ok(hijri_date_eq(d, d2), "HijriDate serde round-trip");
+    var d2_t, d2_v = hijri_date_from_json(sk_json_parse(djs));
+    ok(is_ok(d2_t), "HijriDate decodes");
+    ok(hijri_date_eq(d, result_unwrap(d2_t, d2_v)), "HijriDate serde round-trip");
 
     # ---- serde_roundtrip_al_jabr_solution ----
     # Rust: solve_al_jabr(1.0, -5.0, 6.0) → form SquaresAndNumberEqualRoots,
@@ -45,16 +84,17 @@ fn main() {
     ok(str_contains_cstr(sjs, "\"form\":\"SquaresAndNumberEqualRoots\""), "aljabr json form as variant name");
     ok(str_contains_cstr(sjs, "\"roots\":[3.0,2.0]"), "aljabr json roots f64 array");
     ok(str_contains_cstr(sjs, "\"coefficients\":[1.0,-5.0,6.0]"), "aljabr json coefficients tuple");
-    var sol2 = aljabr_sol_from_json(sk_json_parse(sjs));
-    ok(aljabr_sol_eq(sol, sol2), "AlJabrSolution serde round-trip");
+    var sol2_t, sol2_v = aljabr_sol_from_json(sk_json_parse(sjs));
+    ok(is_ok(sol2_t), "AlJabrSolution decodes");
+    ok(aljabr_sol_eq(sol, result_unwrap(sol2_t, sol2_v)), "AlJabrSolution serde round-trip");
 
     # ---- HijriMonth variant-name parity: serde id 'RabiAlAwwal' has NO space
     # (Display would be "Rabi al-Awwal"). ----
     var dm = hijri_date_new(1400, HM_RABI_AL_AWWAL, 15);
     var dmjs = hijri_date_to_json(dm);
     ok(str_contains_cstr(dmjs, "\"month\":\"RabiAlAwwal\""), "serde id 'RabiAlAwwal' (no space)");
-    var dm2 = hijri_date_from_json(sk_json_parse(dmjs));
-    ok(hijri_date_eq(dm, dm2), "HijriDate RabiAlAwwal round-trip");
+    var dm2_t, dm2_v = hijri_date_from_json(sk_json_parse(dmjs));
+    ok(hijri_date_eq(dm, result_unwrap(dm2_t, dm2_v)), "HijriDate RabiAlAwwal round-trip");
 
     # ---- AlJabrForm / KhayyamCubicType name<->from_name parity ----
     ok(str_eq_cstr(aljabr_form_name(ALJ_ROOTS_EQUAL_NUMBER), "RootsEqualNumber"), "aljabr_form_name RootsEqualNumber");
@@ -67,6 +107,52 @@ fn main() {
     # ---- from_name miss returns (0 - 1) ----
     var miss = hijri_month_from_name(str_from("NotAMonth"));
     assert_eq(miss, 0 - 1, "unknown month name -> -1");
+
+    # ---- 3.2.0: AlJabrSolution decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    de_err(1, "{\"form\":\"SquaresEqualRoots\",\"roots\":[1.0]}", "missing field `coefficients`",
+        "missing coefficients");
+    de_err(1, "{\"roots\":[1.0],\"coefficients\":[1.0,2.0,3.0]}", "missing field `form`", "missing form");
+    var af = cat2("`SquaresEqualRoots`, `SquaresEqualNumber`, `RootsEqualNumber`, `SquaresAndRootsEqualNumber`, ",
+        "`SquaresAndNumberEqualRoots`, `RootsAndNumberEqualSquares`");
+    de_err(1, "{\"form\":\"Cubic\",\"roots\":[],\"coefficients\":[1.0,2.0,3.0]}",
+        cat2("unknown variant `Cubic`, expected one of ", af), "unknown form");
+    de_err(1, "{\"form\":3,\"roots\":[],\"coefficients\":[1.0,2.0,3.0]}",
+        "invalid type: integer `3`, expected variant identifier", "integer form");
+    de_err(1, "{\"form\":\"SquaresEqualRoots\",\"roots\":{},\"coefficients\":[1.0,2.0,3.0]}",
+        "invalid type: map, expected a sequence", "object roots");
+    de_err(1, "{\"form\":\"SquaresEqualRoots\",\"roots\":[1.0,\"2\"],\"coefficients\":[1.0,2.0,3.0]}",
+        "invalid type: string \"2\", expected f64", "string root");
+    de_err(1, sol_with_coef("[1.0,2.0]"), "invalid length 2, expected a tuple of size 3", "short coefficients");
+    de_err(1, sol_with_coef("[]"), "invalid length 0, expected a tuple of size 3", "empty coefficients");
+    de_err(1, sol_with_coef("[1.0,2.0,3.0,4.0]"), "trailing characters", "long coefficients");
+    de_err(1, sol_with_coef("{\"a\":1.0}"), "invalid type: map, expected a tuple of size 3", "object coefficients");
+    de_err(1, sol_with_coef("[1.0,false,3.0]"), "invalid type: boolean `false`, expected f64", "boolean coefficient");
+    # serde checks the elements in order, so a bad element before the end wins over the length.
+    de_err(1, sol_with_coef("[null]"), "invalid type: null, expected f64", "null coefficient before short length");
+    # Integers convert to f64 (serde accepts them); unknown keys are ignored.
+    var ix_t, ix_v = de_run(1, "{\"form\":\"RootsEqualNumber\",\"roots\":[2],\"coefficients\":[0,3,-6],\"x\":1}");
+    ok(is_ok(ix_t), "integer roots/coefficients and unknown key decode");
+    if (is_ok(ix_t) == 1) {
+        assert_eq(aljabr_sol_form(ix_v), ALJ_ROOTS_EQUAL_NUMBER, "form RootsEqualNumber");
+        ok(f64_eq(aljabr_sol_c(ix_v), f64_from(0 - 6)), "integer coefficient -6 -> -6.0");
+        ok(f64_eq(vec_get(aljabr_sol_roots(ix_v), 0), f64_from(2)), "integer root 2 -> 2.0");
+    }
+
+    # ---- 3.2.0: HijriDate decode errors ----
+    var hj = cat2("`Muharram`, `Safar`, `RabiAlAwwal`, `RabiAlThani`, `JumadaAlUla`, `JumadaAlThani`, ",
+        "`Rajab`, `Shaban`, `Ramadan`, `Shawwal`, `DhulQadah`, `DhulHijjah`");
+    de_err(2, "{\"month\":\"Shawwal\",\"day\":26}", "missing field `year`", "hijri missing year");
+    de_err(2, "{\"year\":3,\"month\":\"Shawwal\",\"day\":-26}", "invalid value: integer `-26`, expected u8",
+        "hijri negative day");
+    de_err(2, "{\"year\":3,\"month\":\"Rabi al-Awwal\",\"day\":1}",
+        cat2("unknown variant `Rabi al-Awwal`, expected one of ", hj), "hijri Display name is not a serde identifier");
+    de_err(2, "{\"year\":3,\"month\":null,\"day\":1}", "invalid type: null, expected variant identifier",
+        "hijri null month");
+    de_err(2, "[3,9,26]", "invalid type: sequence, expected struct HijriDate", "array for HijriDate");
+    # No calendar validation: DhulHijjah 30 decodes in any year.
+    var hx_t, hx_v = de_run(2, "{\"year\":1,\"month\":\"DhulHijjah\",\"day\":30}");
+    ok(is_ok(hx_t), "DhulHijjah 30 decodes");
+    if (is_ok(hx_t) == 1) { assert_eq(hijri_date_day(hx_v), 30, "day 30 kept as decoded"); }
 
     return assert_summary();
 }

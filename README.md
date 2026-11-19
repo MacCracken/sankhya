@@ -106,11 +106,11 @@ Ported from Rust v2.0.0 (9,857 lines, 17 files) to Cyrius v3.0.0 (10,733 lines a
 - **Benchmarks** — 18 benches in `tests/sankhya.bcyr`: all 16 original Rust criterion benches plus new `coptic` and `aztec` benches.
 - **Consumer bundle** — `dist/sankhya.cyr`, regenerated via `cyrius distlib`.
 - **Deps** — `bayan` (JSON, replaces serde / serde_json, full round-trip), `sakshi` (logging, replaces tracing), and `math` + `ganita` (f64 / extended math) are folded stdlib; `varna` 2.6.0, `itihas` 2.6.2, and `avatara` 2.16.1 are git-tagged sibling deps, always-on for full parity; `net` / `http` come in transitively to satisfy itihas's bundled hoosh HTTP client (unused by sankhya).
-- **Version** — `VERSION` holds `3.1.3`; `cyrius.cyml` derives it via `${file:VERSION}`.
+- **Version** — `VERSION` holds `3.2.0`; `cyrius.cyml` derives it via `${file:VERSION}`.
 
 ### Cyrius idioms
 
-- No serde derive — each type carries hand-written `<type>_to_json` / `<type>_from_json`.
+- No serde derive — each type carries hand-written `<type>_to_json` and a `<type>_from_json` that returns a Result with serde's checks and messages (3.2.0, ADR-009).
 - `Result` via `Ok` / `sk_fail`, where an error is a `{ code, message }` record.
 - `rem_euclid` / `div_euclid` for calendar modulo arithmetic.
 - f64 values constructed with `f64_from` / `f64_parse`.

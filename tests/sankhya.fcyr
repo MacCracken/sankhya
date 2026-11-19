@@ -2,8 +2,8 @@
 #
 # A deterministic xorshift64 stream drives the library with hostile inputs. Each check
 # is "no crash, no hang, and the documented invariant holds":
-#   - random bytes -> sk_json_parse -> a sample of the <type>_from_json decoders, each
-#     result re-serialized (the serial layer crashed on such input before 3.1.3);
+#   - random bytes -> sk_json_parse -> a sample of the <type>_from_json decoders: each
+#     returns Ok (re-serialized) or Err(SKE_DESERIALIZE) with a message (3.2.0);
 #   - random f64 bit patterns (NaN, +/-Inf, subnormals, huge) -> every jdn_to_<calendar>
 #     and correlate(); for an ordinary JDN, <calendar>_to_jdn(jdn_to_<calendar>(j)) == j;
 #   - random ASCII -> from_roman; an Ok value v must satisfy to_roman(v) == upper(s);
@@ -51,23 +51,30 @@ fn fz_bytes(len) {
     return str_new(buf, len);
 }
 
-# Feed one input to a sample of decoders and re-serialize each result.
+# Feed one input to a sample of decoders. Each returns Ok or Err (3.2.0); an Ok result
+# must re-serialize, and a decoded CalendarDate must convert to Ok or Err, never crash.
 fn fz_json(js) {
     var v = sk_json_parse(js);
-    var a = multi_calendar_date_from_json(v);
-    if (a != 0) { var sa = multi_calendar_date_to_json(a); }
-    var b = calendar_date_from_json(v);
-    if (b != 0) { var sb = calendar_date_to_json(b); }
-    var c = heliacal_event_from_json(v);
-    if (c != 0) { var sc = heliacal_event_to_json(c); }
-    var d = sages_tradition_from_json(v);
-    if (d != 0) { var sd = sages_tradition_to_json(d); }
-    var e = longcount_from_json(v);
-    if (e != 0) { var se = longcount_to_json(e); }
-    var f = starname_from_json(v);
-    var sf = starname_to_json(f);
-    # A decoded CalendarDate must convert to Ok or Err, never crash.
-    var cv_t, cv_v = convert(b);
+    var a_t, a_v = multi_calendar_date_from_json(v);
+    if (is_ok(a_t) == 1) { var sa = multi_calendar_date_to_json(a_v); }
+    var b_t, b_v = calendar_date_from_json(v);
+    if (is_ok(b_t) == 1) {
+        var sb = calendar_date_to_json(b_v);
+        var cv_t, cv_v = convert(b_v);
+    }
+    var c_t, c_v = heliacal_event_from_json(v);
+    if (is_ok(c_t) == 1) { var sc = heliacal_event_to_json(c_v); }
+    var d_t, d_v = sages_tradition_from_json(v);
+    if (is_ok(d_t) == 1) { var sd = sages_tradition_to_json(d_v); }
+    var e_t, e_v = longcount_from_json(v);
+    if (is_ok(e_t) == 1) { var se = longcount_to_json(e_v); }
+    var f_t, f_v = starname_from_json(v);
+    if (is_ok(f_t) == 1) { var sf = starname_to_json(f_v); }
+    # An Err must carry SKE_DESERIALIZE and a message.
+    if (is_ok(a_t) == 0) {
+        if (sk_err_code(a_v) != SKE_DESERIALIZE) { fz_fail("fuzz: decode Err without SKE_DESERIALIZE"); }
+        if (str_len(sk_err_msg(a_v)) == 0) { fz_fail("fuzz: decode Err without a message"); }
+    }
     return 0;
 }
 

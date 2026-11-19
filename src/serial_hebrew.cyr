@@ -16,6 +16,9 @@
 # only non-integer field is the month enum (emitted as its variant-name string)
 # and the two integer fields (year, day). serde_json output is compact (no
 # spaces), which the sk_json_* helpers reproduce exactly.
+#
+# Decoding (3.2.0) returns a Result as serde_json::from_str did: Ok(value) or
+# Err(SKE_DESERIALIZE) with serde's message (the sk_de_* helpers in serial_util.cyr).
 
 # ---------------------------------------------------------------------------
 # HebrewMonth enum <-> serde variant-name string
@@ -35,6 +38,20 @@ fn hebrewmonth_from_name(name) {
     return 0 - 1;
 }
 
+# Lazily built vec of the 14 HebrewMonth serde identifiers (Tishrei .. Elul, "AdarI"/"AdarII"),
+# in discriminant order, for sk_de_variant. Shares hebrewmonth_name's Strs; do not mutate.
+var _hbj_month_names = 0;
+
+fn _hbj_months() {
+    if (_hbj_month_names == 0) {
+        var v = vec_new();
+        var i = 0;
+        while (i < 14) { vec_push(v, hebrewmonth_name(i)); i = i + 1; }
+        _hbj_month_names = v;
+    }
+    return _hbj_month_names;
+}
+
 # Serialize a HebrewMonth discriminant to a bare JSON string ("Nisan").
 #must_use
 fn hebrewmonth_to_json(m) {
@@ -43,11 +60,12 @@ fn hebrewmonth_to_json(m) {
     return str_builder_build(sb);
 }
 
-# Deserialize a bayan value node (a JSON string) to a HebrewMonth discriminant.
+# Deserialize a HebrewMonth from a bayan value node holding a JSON string, as serde:
+# Ok(discriminant 0-13), or Err(SKE_DESERIALIZE) "unknown variant" / "invalid type". The
+# identifiers have no spaces: "Adar I" is an unknown variant, "AdarI" decodes.
 #must_use
 fn hebrewmonth_from_json(v) {
-    var name = sk_json_v_str(v);
-    return hebrewmonth_from_name(name);
+    return sk_de_variant(v, _hbj_months());
 }
 
 # Equality of two HebrewMonth discriminants (0/1).
@@ -79,17 +97,17 @@ fn hebrewdate_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Deserialize a bayan value node (a JSON object) to a HebrewDate pointer. The
-# month field is read as its variant-name string and mapped back to the
-# discriminant via hebrewmonth_from_name.
+# Deserialize a HebrewDate from a bayan value node (a JSON object).
+# Ok(HebrewDate) or Err(SKE_DESERIALIZE), with serde's checks on the Rust field types:
+# year an i64, month a HebrewMonth variant, day a u8. No calendar validation (a day of 40,
+# or AdarI in a common year, decodes; hebrew_to_jdn rejects them).
 #must_use
 fn hebrewdate_from_json(v) {
-    var y = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "year"));
-    var mv = bayan_json_v_obj_get_by_cstr(v, "month");
-    var mname = sk_json_v_str(mv);
-    var m = hebrewmonth_from_name(mname);
-    var d = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    return hebrewdate_new(y, m, d);
+    var obj = sk_de_struct(v, "HebrewDate")?;
+    var y = sk_de_int_field(obj, "year", SK_I64_MIN, SK_I64_MAX, "i64")?;
+    var m = sk_de_variant_field(obj, "month", _hbj_months())?;
+    var d = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    return Ok(hebrewdate_new(y, m, d));
 }
 
 # Field-by-field equality of two HebrewDate pointers (0/1).

@@ -11,13 +11,19 @@
 #   HaabMonth    enum (19 variants)      → variant-name JSON string
 #   VenusPhase   enum (4 variants)       → variant-name JSON string
 #
-# Emit uses the sk_json_* helpers from serial_util.cyr (str_builder based).
-# Parse uses the bayan value tree (sk_json_parse → bayan_json_v_*). Enum fields
-# serialize via <Enum>_name(value) and deserialize via <Enum>_from_name(Str).
-# No f64 fields exist in any mayan serde type, so every numeric field is an int.
+# Emit uses the sk_json_* helpers from serial_util.cyr (str_builder based); enum
+# fields serialize via <Enum>_name(value). No f64 fields exist in any mayan serde
+# type, so every numeric field is an int.
+#
+# Decoding (3.2.0): every <type>_from_json takes a bayan value node and returns a
+# Result as serde_json::from_str did: Ok(value) or Err(SKE_DESERIALIZE) with serde's
+# message, via the sk_de_* helpers (serial_util.cyr). Fields are checked against
+# their Rust types (u8 / u32 / bool / enum variant names); unknown keys are ignored
+# and no calendar validation happens (a katun of 25 decodes; long_count_new rejects it).
 
 # ---------------------------------------------------------------------------
-# Enum <-> variant-name mapping (module supplies <Enum>_name; add from_name)
+# Enum <-> variant-name mapping (module supplies <Enum>_name; add from_name).
+# The *_from_name lookups stay public; the decoders use sk_de_variant instead.
 # ---------------------------------------------------------------------------
 
 # DaySign: map a variant-name Str back to its discriminant; -1 if unmatched.
@@ -75,14 +81,16 @@ fn mayan_numeral_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a MayanNumeral (fresh, unvalidated) from a parsed bayan object node
-# v. Missing members read as 0 / false.
+# Deserialize a MayanNumeral from a bayan value node (an object), as serde:
+# Ok(fresh, unvalidated MayanNumeral) or Err(SKE_DESERIALIZE). dots and bars are
+# required u8 (0..255), shell a required JSON boolean.
 #must_use
 fn mayan_numeral_from_json(v) {
-    var dots = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "dots"));
-    var bars = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "bars"));
-    var shell = bayan_json_v_bool(bayan_json_v_obj_get_by_cstr(v, "shell"));
-    return mayan_numeral_make(dots, bars, shell);
+    var obj = sk_de_struct(v, "MayanNumeral")?;
+    var dots = sk_de_int_field(obj, "dots", 0, SK_U8_MAX, "u8")?;
+    var bars = sk_de_int_field(obj, "bars", 0, SK_U8_MAX, "u8")?;
+    var shell = sk_de_bool_field(obj, "shell")?;
+    return Ok(mayan_numeral_make(dots, bars, shell));
 }
 # Structural equality of two MayanNumerals (dots, bars, shell): 1 or 0.
 #must_use
@@ -114,16 +122,18 @@ fn longcount_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a LongCount (fresh, no range checks) from a parsed bayan object
-# node v. Missing members read as 0; JSON floats are truncated via f64_to.
+# Deserialize a LongCount from a bayan value node (an object), as serde:
+# Ok(fresh LongCount, no period range checks) or Err(SKE_DESERIALIZE). All five
+# periods are required u32 (0..4294967295); a float or negative value is an Err.
 #must_use
 fn longcount_from_json(v) {
-    var baktun = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "baktun"));
-    var katun = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "katun"));
-    var tun = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "tun"));
-    var uinal = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "uinal"));
-    var kin = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "kin"));
-    return longcount_make(baktun, katun, tun, uinal, kin);
+    var obj = sk_de_struct(v, "LongCount")?;
+    var baktun = sk_de_int_field(obj, "baktun", 0, SK_U32_MAX, "u32")?;
+    var katun = sk_de_int_field(obj, "katun", 0, SK_U32_MAX, "u32")?;
+    var tun = sk_de_int_field(obj, "tun", 0, SK_U32_MAX, "u32")?;
+    var uinal = sk_de_int_field(obj, "uinal", 0, SK_U32_MAX, "u32")?;
+    var kin = sk_de_int_field(obj, "kin", 0, SK_U32_MAX, "u32")?;
+    return Ok(longcount_make(baktun, katun, tun, uinal, kin));
 }
 # Structural equality of two LongCounts (all five periods): 1 or 0.
 #must_use
@@ -150,15 +160,15 @@ fn tzolkin_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a Tzolkin (fresh record) from a parsed bayan object node v. A
-# missing number reads as 0; an unknown day_sign name maps to -1 (day_sign
-# must be a JSON string: a null Str is not guarded).
+# Deserialize a Tzolkin from a bayan value node (an object), as serde:
+# Ok(fresh Tzolkin) or Err(SKE_DESERIALIZE). number is a required u8 and day_sign a
+# required DaySign variant string.
 #must_use
 fn tzolkin_from_json(v) {
-    var number = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "number"));
-    var signname = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "day_sign"));
-    var sign = daysign_from_name(signname);
-    return tzolkin_make(number, sign);
+    var obj = sk_de_struct(v, "Tzolkin")?;
+    var number = sk_de_int_field(obj, "number", 0, SK_U8_MAX, "u8")?;
+    var sign = sk_de_variant_field(obj, "day_sign", all_daysign_names())?;
+    return Ok(tzolkin_make(number, sign));
 }
 # Structural equality of two Tzolkins (number, day sign): 1 or 0.
 #must_use
@@ -182,15 +192,15 @@ fn haab_to_json(p) {
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
-# Rebuild a Haab (fresh record) from a parsed bayan object node v. A missing
-# day reads as 0; an unknown month name maps to -1 (month must be a JSON
-# string: a null Str is not guarded).
+# Deserialize a Haab from a bayan value node (an object), as serde: Ok(fresh Haab) or
+# Err(SKE_DESERIALIZE). day is a required u8 and month a required HaabMonth variant
+# string.
 #must_use
 fn haab_from_json(v) {
-    var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    var monthname = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
-    var month = haabmonth_from_name(monthname);
-    return haab_make(day, month);
+    var obj = sk_de_struct(v, "Haab")?;
+    var day = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    var month = sk_de_variant_field(obj, "month", all_haabmonth_names())?;
+    return Ok(haab_make(day, month));
 }
 # Structural equality of two Haabs (day, month): 1 or 0.
 #must_use
@@ -210,11 +220,11 @@ fn daysign_to_json(val) {
     str_builder_add_json_str(sb, daysign_name(val));
     return str_builder_build(sb);
 }
-# DaySign code for a parsed bayan string node v, or -1 if the name is
-# unknown. v must be a string node (a null Str is not guarded).
+# Deserialize a DaySign from a bayan value node holding a JSON string, as serde:
+# Ok(DS_* code), or Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
 fn daysign_from_json(v) {
-    return daysign_from_name(sk_json_v_str(v));
+    return sk_de_variant(v, all_daysign_names());
 }
 # Equality of two DaySign codes: 1 or 0.
 #must_use
@@ -233,11 +243,11 @@ fn haabmonth_to_json(val) {
     str_builder_add_json_str(sb, haabmonth_name(val));
     return str_builder_build(sb);
 }
-# HaabMonth code for a parsed bayan string node v, or -1 if the name is
-# unknown. v must be a string node (a null Str is not guarded).
+# Deserialize a HaabMonth from a bayan value node holding a JSON string, as serde:
+# Ok(HM_* code), or Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
 fn haabmonth_from_json(v) {
-    return haabmonth_from_name(sk_json_v_str(v));
+    return sk_de_variant(v, all_haabmonth_names());
 }
 # Equality of two HaabMonth codes: 1 or 0.
 #must_use
@@ -256,11 +266,11 @@ fn venusphase_to_json(val) {
     str_builder_add_json_str(sb, venusphase_name(val));
     return str_builder_build(sb);
 }
-# VenusPhase code for a parsed bayan string node v, or -1 if the name is
-# unknown. v must be a string node (a null Str is not guarded).
+# Deserialize a VenusPhase from a bayan value node holding a JSON string, as serde:
+# Ok(VP_* code), or Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
 fn venusphase_from_json(v) {
-    return venusphase_from_name(sk_json_v_str(v));
+    return sk_de_variant(v, all_venusphase_names());
 }
 # Equality of two VenusPhase codes: 1 or 0.
 #must_use

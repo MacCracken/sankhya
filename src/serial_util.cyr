@@ -46,21 +46,278 @@ fn sk_json_bool(sb, key, b) {
 # Field separator.
 fn sk_json_sep(sb) { str_builder_add_cstr(sb, ","); return 0; }
 
-# The string payload of a JSON node, or "" when the node is missing, null or not a string.
-# bayan_json_v_str returns 0 there, and the decoders passed that 0 straight to str_eq /
-# str_cstr / str_data, which read address 8 and crashed on malformed JSON (serde returns
-# an Err). Every `*_from_name` maps "" to its -1 "unknown" code (3.1.3).
-#must_use
-fn sk_json_v_str(v) {
-    var s = bayan_json_v_str(v);
-    if (s == 0) { return str_from(""); }
-    return s;
-}
-
 # Parse a JSON Str into a bayan value tree (0 on error). Wrapper over bayan.
 # NOTE: bayan_json_v_parse takes a Str (it does str_data/str_len internally) —
 # pass the Str directly, NOT str_data(js).
 #must_use
 fn sk_json_parse(js) {
     return bayan_json_v_parse(js);
+}
+
+# ===========================================================================
+# Decoding (3.2.0): every <type>_from_json returns a Result, as serde_json's
+# from_str did. Ok(value), or Err(SkErr{SKE_DESERIALIZE, msg}) with serde's wording:
+#   missing field `year`
+#   unknown variant `Foo`, expected one of `January`, `February`, ...
+#   invalid type: string "x", expected u8
+#   invalid value: integer `-5`, expected u8
+# serde_json appends " at line L column C"; bayan's value tree keeps no positions, so the
+# messages stop before it. As with serde's derive, unknown object keys are ignored and no
+# domain validation happens here (a day of 40 decodes; gregorian_to_jdn rejects it).
+# ===========================================================================
+
+# Integer ranges of the Rust field types, for sk_de_int.
+var SK_U8_MAX = 255;
+var SK_U16_MAX = 65535;
+var SK_U32_MAX = 4294967295;
+var SK_I32_MIN = 0 - 2147483648;
+var SK_I32_MAX = 2147483647;
+var SK_I64_MIN = 0 - 0x7FFFFFFFFFFFFFFF - 1;
+var SK_I64_MAX = 0x7FFFFFFFFFFFFFFF;
+
+# Err(SKE_DESERIALIZE) carrying msg (a Str).
+fn sk_de_fail(msg) {
+    return sk_fail(SKE_DESERIALIZE, msg);
+}
+
+# serde's description of an unexpected JSON value: null, boolean `true`, integer `5`,
+# floating point `1.5`, string "x", sequence, map. v == 0 (no node) reads as null.
+#must_use
+fn sk_de_unexpected(v) {
+    var sb = str_builder_new();
+    var t = bayan_json_v_tag(v);
+    if (v == 0 || t == JTAG_NULL) { str_builder_add_cstr(sb, "null"); }
+    if (v != 0 && t == JTAG_BOOL) {
+        str_builder_add_cstr(sb, "boolean `");
+        if (bayan_json_v_bool(v) != 0) { str_builder_add_cstr(sb, "true`"); }
+        else { str_builder_add_cstr(sb, "false`"); }
+    }
+    if (v != 0 && t == JTAG_INT) {
+        str_builder_add_cstr(sb, "integer `");
+        str_builder_add_int(sb, bayan_json_v_int(v));
+        str_builder_add_cstr(sb, "`");
+    }
+    if (v != 0 && t == JTAG_FLOAT) {
+        str_builder_add_cstr(sb, "floating point `");
+        var buf = alloc(48);
+        if (buf != 0) {
+            var n = bayan_f64_to_json(bayan_json_v_float(v), buf);
+            str_builder_add(sb, str_new(buf, n));
+        }
+        str_builder_add_cstr(sb, "`");
+    }
+    if (v != 0 && t == JTAG_STR) {
+        str_builder_add_cstr(sb, "string ");
+        str_builder_add_json_str(sb, bayan_json_v_str(v));
+    }
+    if (v != 0 && t == JTAG_ARR) { str_builder_add_cstr(sb, "sequence"); }
+    if (v != 0 && t == JTAG_OBJ) { str_builder_add_cstr(sb, "map"); }
+    return str_builder_build(sb);
+}
+
+# Err "invalid type: <what v is>, expected <expected>" (expected is a C-string).
+fn sk_de_invalid_type(v, expected) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "invalid type: ");
+    str_builder_add(sb, sk_de_unexpected(v));
+    str_builder_add_cstr(sb, ", expected ");
+    str_builder_add_cstr(sb, expected);
+    return sk_de_fail(str_builder_build(sb));
+}
+
+# Ok(v) when v is a JSON object, else Err "invalid type: ..., expected struct <name>".
+#must_use
+fn sk_de_struct(v, name) {
+    if (bayan_json_v_is_obj(v) == 1) { return Ok(v); }
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "struct ");
+    str_builder_add_cstr(sb, name);
+    return sk_de_invalid_type(v, str_cstr(str_builder_build(sb)));
+}
+
+# Ok(the node for key) of object obj, or Err "missing field `key`".
+#must_use
+fn sk_de_field(obj, key) {
+    var n = bayan_json_v_obj_get_by_cstr(obj, key);
+    if (n != 0) { return Ok(n); }
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "missing field `");
+    str_builder_add_cstr(sb, key);
+    str_builder_add_cstr(sb, "`");
+    return sk_de_fail(str_builder_build(sb));
+}
+
+# Ok(i64) when node is a JSON integer within lo..hi, else Err: "invalid type" for any
+# other JSON type (a float too, as serde: 1.0 is not a u8), "invalid value: integer `N`,
+# expected <ty>" when out of range. ty names the Rust type ("u8", "i32", ...).
+#must_use
+fn sk_de_int(node, lo, hi, ty) {
+    if (bayan_json_v_is_int(node) != 1) { return sk_de_invalid_type(node, ty); }
+    var n = bayan_json_v_int(node);
+    if (n < lo || n > hi) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "invalid value: integer `");
+        str_builder_add_int(sb, n);
+        str_builder_add_cstr(sb, "`, expected ");
+        str_builder_add_cstr(sb, ty);
+        return sk_de_fail(str_builder_build(sb));
+    }
+    return Ok(n);
+}
+
+# sk_de_int on field key of object obj (missing field -> Err).
+#must_use
+fn sk_de_int_field(obj, key, lo, hi, ty) {
+    var n = sk_de_field(obj, key)?;
+    return sk_de_int(n, lo, hi, ty);
+}
+
+# Ok(f64 bits) when node is a JSON number (an integer converts, as serde accepts), else
+# Err "invalid type: ..., expected f64". null is an Err: serde_json writes NaN and +/-Inf
+# as null and then cannot read them back, and neither can this.
+#must_use
+fn sk_de_f64(node) {
+    if (bayan_json_v_is_float(node) == 1) { return Ok(bayan_json_v_float(node)); }
+    if (bayan_json_v_is_int(node) == 1) { return Ok(f64_from(bayan_json_v_int(node))); }
+    return sk_de_invalid_type(node, "f64");
+}
+
+# sk_de_f64 on field key of object obj.
+#must_use
+fn sk_de_f64_field(obj, key) {
+    var n = sk_de_field(obj, key)?;
+    return sk_de_f64(n);
+}
+
+# Ok(Str) when node is a JSON string, else Err "invalid type: ..., expected a string".
+#must_use
+fn sk_de_str(node) {
+    if (bayan_json_v_is_str(node) == 1) { return Ok(bayan_json_v_str(node)); }
+    return sk_de_invalid_type(node, "a string");
+}
+
+# sk_de_str on field key of object obj.
+#must_use
+fn sk_de_str_field(obj, key) {
+    var n = sk_de_field(obj, key)?;
+    return sk_de_str(n);
+}
+
+# Ok(0/1) when node is a JSON boolean, else Err "invalid type: ..., expected a boolean".
+#must_use
+fn sk_de_bool(node) {
+    if (bayan_json_v_is_bool(node) == 1) {
+        if (bayan_json_v_bool(node) != 0) { return Ok(1); }
+        return Ok(0);
+    }
+    return sk_de_invalid_type(node, "a boolean");
+}
+
+# sk_de_bool on field key of object obj.
+#must_use
+fn sk_de_bool_field(obj, key) {
+    var n = sk_de_field(obj, key)?;
+    return sk_de_bool(n);
+}
+
+# Ok(node) when node is a JSON array, else Err "invalid type: ..., expected a sequence".
+#must_use
+fn sk_de_seq(node) {
+    if (bayan_json_v_is_arr(node) == 1) { return Ok(node); }
+    return sk_de_invalid_type(node, "a sequence");
+}
+
+# sk_de_seq on field key of object obj.
+#must_use
+fn sk_de_seq_field(obj, key) {
+    var n = sk_de_field(obj, key)?;
+    return sk_de_seq(n);
+}
+
+# An Option<T> field: Ok(0) when key is missing or null (serde's derive reads both as None),
+# else Ok(the node).
+#must_use
+fn sk_de_opt_field(obj, key) {
+    var n = bayan_json_v_obj_get_by_cstr(obj, key);
+    if (n == 0) { return Ok(0); }
+    if (bayan_json_v_is_null(n) == 1) { return Ok(0); }
+    return Ok(n);
+}
+
+# Err "unknown variant `name`, expected <list>", serde's wording: "expected `A`" for one
+# variant, "expected `A` or `B`" for two, "expected one of `A`, `B`, `C`" for more.
+fn sk_de_unknown_variant(name, names) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "unknown variant `");
+    str_builder_add(sb, name);
+    str_builder_add_cstr(sb, "`, expected ");
+    var n = vec_len(names);
+    if (n > 2) { str_builder_add_cstr(sb, "one of "); }
+    var i = 0;
+    while (i < n) {
+        if (i > 0) {
+            if (n == 2) { str_builder_add_cstr(sb, " or "); } else { str_builder_add_cstr(sb, ", "); }
+        }
+        str_builder_add_cstr(sb, "`");
+        str_builder_add(sb, vec_get(names, i));
+        str_builder_add_cstr(sb, "`");
+        i = i + 1;
+    }
+    return sk_de_fail(str_builder_build(sb));
+}
+
+# A unit-variant enum: Ok(index into names) when node is a string equal to names[i] (a vec
+# of the serde identifiers as Strs, in discriminant order), else Err "unknown variant" for
+# an unknown string or "invalid type: ..., expected variant identifier" for a non-string.
+#must_use
+fn sk_de_variant(node, names) {
+    if (bayan_json_v_is_str(node) != 1) { return sk_de_invalid_type(node, "variant identifier"); }
+    var s = bayan_json_v_str(node);
+    var i = 0;
+    while (i < vec_len(names)) {
+        if (str_eq(vec_get(names, i), s) == 1) { return Ok(i); }
+        i = i + 1;
+    }
+    return sk_de_unknown_variant(s, names);
+}
+
+# sk_de_variant on field key of object obj.
+#must_use
+fn sk_de_variant_field(obj, key, names) {
+    var n = sk_de_field(obj, key)?;
+    return sk_de_variant(n, names);
+}
+
+# An externally tagged enum whose variants carry data, as serde writes it: {"Variant": {..}}.
+# Ok(index into names) when v is an object with exactly one key naming a variant; the
+# payload is then bayan_json_v_obj_val(v, 0). Errors as serde's: a non-object is "invalid
+# type: ..., expected enum <name>", an unknown key "unknown variant", and an object with
+# zero or several keys "invalid value: map, expected map with a single key".
+#must_use
+fn sk_de_tagged(v, names, enum_name) {
+    if (bayan_json_v_is_obj(v) != 1) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "enum ");
+        str_builder_add_cstr(sb, enum_name);
+        return sk_de_invalid_type(v, str_cstr(str_builder_build(sb)));
+    }
+    if (bayan_json_v_obj_len(v) != 1) {
+        return sk_de_fail(str_from("invalid value: map, expected map with a single key"));
+    }
+    var key = bayan_json_v_obj_key(v, 0);
+    var i = 0;
+    while (i < vec_len(names)) {
+        if (str_eq(vec_get(names, i), key) == 1) { return Ok(i); }
+        i = i + 1;
+    }
+    return sk_de_unknown_variant(key, names);
+}
+
+# Parse a JSON Str and decode it in one step: Ok(node) or Err on malformed JSON (bayan
+# returned 0). The decoders take a node, so this is the usual first call.
+#must_use
+fn sk_de_parse(js) {
+    var v = bayan_json_v_parse(js);
+    if (v == 0) { return sk_de_fail(str_from("malformed JSON")); }
+    return Ok(v);
 }

@@ -935,8 +935,9 @@ fn calendar_to_jdn(date) {
         var _dm = str_from("converting calendar date to JDN");
         sk_debug(str_data(_dm), str_len(_dm));
     }
-    # A null date (calendar_date_from_json returns 0 when no variant key matches) or a tag
-    # outside the six variants was read as a Mayan Long Count record (ADR-007).
+    # A null date (0 from a caller's own bookkeeping) or a tag outside the six variants was
+    # read as a Mayan Long Count record (ADR-007). From 3.2.0 calendar_date_from_json returns
+    # an Err for malformed input instead of a 0 date, so this guards hand-built values.
     if (date == 0) { return sk_fail(SKE_INVALID_DATE, str_from("no calendar date")); }
     var tag = cdv_tag(date);
     var val = cdv_val(date);

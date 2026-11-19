@@ -13,6 +13,34 @@ include "src/serial_greek.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Decode js (a C-string) as an AntikytheraCycle; returns anti_from_json's Result pair (k is
+# unused: greek has one decoder).
+fn de_run(k, js) {
+    var n = sk_json_parse(str_from(js));
+    return anti_from_json(n);
+}
+
+# The C-string a followed by the C-string b, for expected messages too long for one line.
+fn cat2(a, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    return str_cstr(str_builder_build(sb));
+}
+
+# Decode js with decoder k and check it fails with SKE_DESERIALIZE and exactly the message
+# want (a C-string); a mismatch prints the message it got.
+fn de_err(k, js, want, label) {
+    var t, v = de_run(k, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) {
+        var same = str_eq_cstr(sk_err_msg(v), want);
+        if (same == 0) { str_println(sk_err_msg(v)); }
+        ok(same, label);
+    }
+    return 0;
+}
+
 # Run every serial_greek test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -32,8 +60,9 @@ fn main() {
     var h4 = str_contains_cstr(js, "\"description\":\"19 tropical years");
     ok(h4, "description field present as quoted string");
 
-    var parsed = anti_from_json(sk_json_parse(js));
-    ok(anti_eq(c, parsed), "AntikytheraCycle serde round-trip (Metonic)");
+    var p_t, p_v = anti_from_json(sk_json_parse(js));
+    ok(is_ok(p_t), "AntikytheraCycle decodes (Metonic)");
+    ok(anti_eq(c, result_unwrap(p_t, p_v)), "AntikytheraCycle serde round-trip (Metonic)");
 
     # --- AntikytheraCycle: UTF-8 em-dash in description (Saros) ---
     var s = anti_new(str_from("Saros"), str_from("18.03"), 223,
@@ -45,8 +74,29 @@ fn main() {
     ok(hs2, "Saros period_years quoted string 18.03");
     var hs3 = str_contains_cstr(sjs, "\"gear_teeth\":223");
     ok(hs3, "Saros gear_teeth integer 223");
-    var sparsed = anti_from_json(sk_json_parse(sjs));
-    ok(anti_eq(s, sparsed), "AntikytheraCycle serde round-trip (Saros, UTF-8)");
+    var sp_t, sp_v = anti_from_json(sk_json_parse(sjs));
+    ok(anti_eq(s, result_unwrap(sp_t, sp_v)), "AntikytheraCycle serde round-trip (Saros, UTF-8)");
+
+    # ---- 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    de_err(0, "{\"name\":\"Metonic\",\"period_years\":\"19\",\"gear_teeth\":235}", "missing field `description`",
+        "missing description");
+    de_err(0, "{\"name\":\"Metonic\",\"period_years\":\"19\",\"description\":\"d\"}", "missing field `gear_teeth`",
+        "missing gear_teeth");
+    # The string fields are Rust &'static strs: serde's &str visitor expects "a borrowed string".
+    de_err(0, "{\"name\":\"Metonic\",\"period_years\":19,\"gear_teeth\":235,\"description\":\"d\"}",
+        "invalid type: integer `19`, expected a borrowed string", "integer period_years");
+    de_err(0, "{\"name\":\"Metonic\",\"period_years\":\"19\",\"gear_teeth\":-1,\"description\":\"d\"}",
+        "invalid value: integer `-1`, expected u32", "negative gear_teeth");
+    de_err(0, "{\"name\":\"Metonic\",\"period_years\":\"19\",\"gear_teeth\":4294967296,\"description\":\"d\"}",
+        "invalid value: integer `4294967296`, expected u32", "gear_teeth over u32");
+    de_err(0, "{\"name\":\"Metonic\",\"period_years\":\"19\",\"gear_teeth\":235.0,\"description\":\"d\"}",
+        "invalid type: floating point `235.0`, expected u32", "float gear_teeth");
+    de_err(0, "\"Metonic\"", "invalid type: string \"Metonic\", expected struct AntikytheraCycle", "string for struct");
+    # u32::MAX decodes; unknown keys are ignored.
+    var ex_js = "{\"name\":\"n\",\"period_years\":\"p\",\"gear_teeth\":4294967295,\"description\":\"d\",\"x\":0}";
+    var ex_t, ex_v = de_run(0, ex_js);
+    ok(is_ok(ex_t), "u32::MAX gear_teeth and unknown key decode");
+    if (is_ok(ex_t) == 1) { assert_eq(anti_gear_teeth(ex_v), 4294967295, "gear_teeth u32::MAX kept"); }
 
     return assert_summary();
 }

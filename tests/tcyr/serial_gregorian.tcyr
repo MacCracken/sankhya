@@ -19,6 +19,15 @@ include "src/serial_gregorian.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Decode js as a GregorianDate and check it fails with SKE_DESERIALIZE and a message that
+# starts with want (a C-string).
+fn de_err(js, want, label) {
+    var t, v = gregorian_date_from_json(sk_json_parse(str_from(js)));
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) { ok(str_starts_with(sk_err_msg(v), str_from(want)), label); }
+    return 0;
+}
+
 # Run every serial_gregorian test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -31,8 +40,9 @@ fn main() {
     ok(str_contains_cstr(js, "\"day\":1"), "json has day:1");
     var v = sk_json_parse(js);
     ok(v, "json parses");
-    var back = gregorian_date_from_json(v);
-    ok(gregorian_date_eq(date, back), "GregorianDate serde round-trip");
+    var back_t, back_v = gregorian_date_from_json(v);
+    ok(is_ok(back_t), "GregorianDate decodes");
+    ok(gregorian_date_eq(date, result_unwrap(back_t, back_v)), "GregorianDate serde round-trip");
 
     # ---- BCE date (negative year): year -43, March, 15 ----
     var dbce = gregorian_date_new(0 - 43, GM_MARCH, 15);
@@ -41,19 +51,36 @@ fn main() {
     ok(str_contains_cstr(jbce, "\"month\":\"March\""), "bce json month is March");
     ok(str_contains_cstr(jbce, "\"day\":15"), "bce json has day:15");
     var vbce = sk_json_parse(jbce);
-    var backbce = gregorian_date_from_json(vbce);
-    ok(gregorian_date_eq(dbce, backbce), "BCE GregorianDate round-trip");
+    var bb_t, bb_v = gregorian_date_from_json(vbce);
+    ok(gregorian_date_eq(dbce, result_unwrap(bb_t, bb_v)), "BCE GregorianDate round-trip");
 
     # ---- GregorianMonth enum standalone serde ----
     var jm = gregorian_month_to_json(GM_DECEMBER);
     ok(str_eq_cstr(jm, "\"December\""), "month to_json is quoted variant name");
     var vm = sk_json_parse(jm);
-    var mback = gregorian_month_from_json(vm);
-    ok(gregorian_month_eq(GM_DECEMBER, mback), "GregorianMonth serde round-trip");
+    var mb_t, mb_v = gregorian_month_from_json(vm);
+    ok(gregorian_month_eq(GM_DECEMBER, result_unwrap(mb_t, mb_v)), "GregorianMonth serde round-trip");
 
     # ---- from_name mapping ----
     assert_eq(gregorian_month_from_name(str_from("September")), GM_SEPTEMBER, "from_name September=8");
     assert_eq(gregorian_month_from_name(str_from("Nonexistent")), 0 - 1, "from_name unmatched -> -1");
+
+    # ---- 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    de_err("{\"year\":2000,\"day\":1}", "missing field `month`", "missing month");
+    de_err("{\"year\":2000,\"month\":\"Foo\",\"day\":1}",
+        "unknown variant `Foo`, expected one of `January`, `February`", "unknown month");
+    de_err("{\"year\":2000,\"month\":\"May\",\"day\":-5}", "invalid value: integer `-5`, expected u8", "negative day");
+    de_err("{\"year\":2000,\"month\":\"May\",\"day\":1.5}",
+        "invalid type: floating point `1.5`, expected u8", "float day");
+    de_err("{\"year\":\"x\",\"month\":\"May\",\"day\":1}", "invalid type: string \"x\", expected i64", "string year");
+    de_err("[1,2]", "invalid type: sequence, expected struct GregorianDate", "array for struct");
+    de_err("null", "invalid type: null, expected struct GregorianDate", "null for struct");
+    var mi_t, mi_v = gregorian_month_from_json(sk_json_parse(str_from("5")));
+    ok(str_eq_cstr(sk_err_msg(mi_v), "invalid type: integer `5`, expected variant identifier"), "integer month");
+    # serde ignores unknown keys and does no calendar validation.
+    var ex_js = str_from("{\"year\":2000,\"month\":\"May\",\"day\":40,\"x\":1}");
+    var ex_t, ex_v = gregorian_date_from_json(sk_json_parse(ex_js));
+    ok(is_ok(ex_t), "unknown key ignored, day 40 decodes");
 
     return assert_summary();
 }

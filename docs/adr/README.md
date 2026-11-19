@@ -5,7 +5,7 @@ Decisions about sankhya — what we chose, the context, and the consequences we 
 ## Conventions
 
 - **Filename**: `NNN-kebab-case-title.md`, zero-padded to three digits (the established
-  scheme here — `001`…`008`). Never renumber.
+  scheme here — `001`…`009`). Never renumber.
 - **One decision per ADR.** If a decision supersedes a prior one, add a new ADR and set the old one's status to `Superseded by NNN`.
 - **Status lifecycle**: `Proposed` → `Accepted` → (optionally) `Superseded` or `Deprecated`.
 - Use [`template.md`](template.md) as the starting point.
@@ -30,6 +30,7 @@ Decisions about sankhya — what we chose, the context, and the consequences we 
 | [006](006-always-on-dependencies.md) | Compile `varna` / `itihas` / `avatara` in unconditionally (Cyrius port) | Accepted (v3.0.0) |
 | [007](007-input-domain-guards.md) | Reject inputs the Rust types ruled out (negative counts, bad months, non-finite f64) | Accepted (v3.1.3) |
 | [008](008-accuracy-corrections-to-the-rust-oracle.md) | Correct the Rust oracle where it disagrees with its own sources (Hebrew epoch, Aztec correlation, precession, …) | Accepted (v3.1.3) |
+| [009](009-result-returning-decoders.md) | `<type>_from_json` returns a Result with serde's checks and messages | Accepted (v3.2.0) |
 
 ADRs 001–005 were written for the Rust crate (v1.x–2.0.0). They remain accurate about the
 *domain* decisions (algorithms, correlation constants, data models); where the Rust

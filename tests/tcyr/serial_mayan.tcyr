@@ -1,7 +1,9 @@
 # serial_mayan.tcyr — serde round-trip parity for the mayan module.
 # For each serde type: construct a value, emit JSON, assert the emitted text
 # matches Rust serde_json (correct field names, enum as variant-name string,
-# bool as true/false), then parse + reconstruct + field-by-field compare.
+# bool as true/false), then parse + reconstruct + field-by-field compare. Then the
+# 3.2.0 decode errors: every <type>_from_json returns Err(SKE_DESERIALIZE) with serde's
+# message for a missing field, a wrong JSON type or range and an unknown variant.
 # Build+run:
 #   cyrius build tests/tcyr/serial_mayan.tcyr build/_s_mayan && ./build/_s_mayan
 include "src/error.cyr"
@@ -15,6 +17,56 @@ include "src/serial_mayan.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Decoder selectors for de_any / de_err.
+var K_MN = 0;
+var K_LC = 1;
+var K_TZ = 2;
+var K_HB = 3;
+var K_DS = 4;
+var K_HM = 5;
+var K_VP = 6;
+
+# Parse js (a C-string) and run the decoder selected by kind; returns its Result pair.
+fn de_any(kind, js) {
+    var n = sk_json_parse(str_from(js));
+    if (kind == K_MN) { return mayan_numeral_from_json(n); }
+    if (kind == K_LC) { return longcount_from_json(n); }
+    if (kind == K_TZ) { return tzolkin_from_json(n); }
+    if (kind == K_HB) { return haab_from_json(n); }
+    if (kind == K_DS) { return daysign_from_json(n); }
+    if (kind == K_HM) { return haabmonth_from_json(n); }
+    return venusphase_from_json(n);
+}
+
+# Check that decoding js with decoder kind fails with SKE_DESERIALIZE and exactly the
+# message want (a Str).
+fn de_err_s(kind, js, want, label) {
+    var t, v = de_any(kind, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) { ok(str_eq(sk_err_msg(v), want), label); }
+    return 0;
+}
+
+# de_err_s with the expected message as a C-string.
+fn de_err(kind, js, want, label) { return de_err_s(kind, js, str_from(want), label); }
+
+# The serde "expected one of" lists of the DaySign (20) and HaabMonth (19) variants.
+var DS_LIST_A = "`Imix`, `Ik`, `Akbal`, `Kan`, `Chicchan`, `Cimi`, `Manik`, `Lamat`, `Muluc`, `Oc`, ";
+var DS_LIST_B = "`Chuen`, `Eb`, `Ben`, `Ix`, `Men`, `Cib`, `Caban`, `Etznab`, `Cauac`, `Ahau`";
+var HM_LIST_A = "`Pop`, `Wo`, `Sip`, `Sotz`, `Sek`, `Xul`, `Yaxkin`, `Mol`, `Chen`, `Yax`, ";
+var HM_LIST_B = "`Sak`, `Keh`, `Mak`, `Kankin`, `Muan`, `Pax`, `Kayab`, `Kumku`, `Wayeb`";
+
+# "unknown variant `<name>`, expected one of <list_a><list_b>" as a Str.
+fn unknown2(name, list_a, list_b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "unknown variant `");
+    str_builder_add_cstr(sb, name);
+    str_builder_add_cstr(sb, "`, expected one of ");
+    str_builder_add_cstr(sb, list_a);
+    str_builder_add_cstr(sb, list_b);
+    return str_builder_build(sb);
+}
+
 # Run every serial_mayan test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -26,15 +78,16 @@ fn main() {
     ok(str_contains_cstr(mnj, "\"dots\":3"), "MayanNumeral dots field");
     ok(str_contains_cstr(mnj, "\"bars\":2"), "MayanNumeral bars field");
     ok(str_contains_cstr(mnj, "\"shell\":false"), "MayanNumeral shell false");
-    var mn2 = mayan_numeral_from_json(sk_json_parse(mnj));
-    ok(mayan_numeral_eq(mn, mn2), "MayanNumeral roundtrip");
+    var mn2_t, mn2_v = mayan_numeral_from_json(sk_json_parse(mnj));
+    ok(is_ok(mn2_t), "MayanNumeral decodes");
+    ok(mayan_numeral_eq(mn, result_unwrap(mn2_t, mn2_v)), "MayanNumeral roundtrip");
 
     # ---- MayanNumeral shell case (value 0 => shell true) ----
     var mz = mayan_numeral_make(0, 0, 1);
     var mzj = mayan_numeral_to_json(mz);
     ok(str_contains_cstr(mzj, "\"shell\":true"), "MayanNumeral shell true");
-    var mz2 = mayan_numeral_from_json(sk_json_parse(mzj));
-    ok(mayan_numeral_eq(mz, mz2), "MayanNumeral shell roundtrip");
+    var mz2_t, mz2_v = mayan_numeral_from_json(sk_json_parse(mzj));
+    ok(mayan_numeral_eq(mz, result_unwrap(mz2_t, mz2_v)), "MayanNumeral shell roundtrip");
 
     # ---- LongCount 13.0.0.0.0 ----
     var lc = longcount_make(13, 0, 0, 0, 0);
@@ -44,8 +97,9 @@ fn main() {
     ok(str_contains_cstr(lcj, "\"tun\":0"), "LongCount tun field");
     ok(str_contains_cstr(lcj, "\"uinal\":0"), "LongCount uinal field");
     ok(str_contains_cstr(lcj, "\"kin\":0"), "LongCount kin field");
-    var lc2 = longcount_from_json(sk_json_parse(lcj));
-    ok(longcount_eq(lc, lc2), "LongCount roundtrip");
+    var lc2_t, lc2_v = longcount_from_json(sk_json_parse(lcj));
+    ok(is_ok(lc2_t), "LongCount decodes");
+    ok(longcount_eq(lc, result_unwrap(lc2_t, lc2_v)), "LongCount roundtrip");
 
     # ---- LongCount with all distinct fields ----
     var lcb = longcount_make(9, 12, 11, 5, 18);
@@ -53,47 +107,100 @@ fn main() {
     ok(str_contains_cstr(lcbj, "\"baktun\":9"), "LongCount2 baktun");
     ok(str_contains_cstr(lcbj, "\"uinal\":5"), "LongCount2 uinal");
     ok(str_contains_cstr(lcbj, "\"kin\":18"), "LongCount2 kin");
-    var lcb2 = longcount_from_json(sk_json_parse(lcbj));
-    ok(longcount_eq(lcb, lcb2), "LongCount2 roundtrip");
+    var lcb2_t, lcb2_v = longcount_from_json(sk_json_parse(lcbj));
+    ok(longcount_eq(lcb, result_unwrap(lcb2_t, lcb2_v)), "LongCount2 roundtrip");
 
     # ---- Tzolkin (4 Ahau at creation) ----
     var tz = tzolkin_from_days(0);
     var tzj = tzolkin_to_json(tz);
     ok(str_contains_cstr(tzj, "\"number\":4"), "Tzolkin number field");
     ok(str_contains_cstr(tzj, "\"day_sign\":\"Ahau\""), "Tzolkin day_sign variant name");
-    var tz2 = tzolkin_from_json(sk_json_parse(tzj));
-    ok(tzolkin_eq(tz, tz2), "Tzolkin roundtrip");
+    var tz2_t, tz2_v = tzolkin_from_json(sk_json_parse(tzj));
+    ok(is_ok(tz2_t), "Tzolkin decodes");
+    ok(tzolkin_eq(tz, result_unwrap(tz2_t, tz2_v)), "Tzolkin roundtrip");
 
     # ---- Haab (8 Kumku at creation) ----
     var hb = haab_from_days(0);
     var hbj = haab_to_json(hb);
     ok(str_contains_cstr(hbj, "\"day\":8"), "Haab day field");
     ok(str_contains_cstr(hbj, "\"month\":\"Kumku\""), "Haab month variant name");
-    var hb2 = haab_from_json(sk_json_parse(hbj));
-    ok(haab_eq(hb, hb2), "Haab roundtrip");
+    var hb2_t, hb2_v = haab_from_json(sk_json_parse(hbj));
+    ok(is_ok(hb2_t), "Haab decodes");
+    ok(haab_eq(hb, result_unwrap(hb2_t, hb2_v)), "Haab roundtrip");
 
     # ---- DaySign standalone enum ----
     var dsj = daysign_to_json(DS_AHAU);
     ok(str_eq_cstr(dsj, "\"Ahau\""), "DaySign json is variant string");
-    var ds2 = daysign_from_json(sk_json_parse(dsj));
-    ok(daysign_eq(DS_AHAU, ds2), "DaySign roundtrip");
+    var ds2_t, ds2_v = daysign_from_json(sk_json_parse(dsj));
+    ok(is_ok(ds2_t), "DaySign decodes");
+    ok(daysign_eq(DS_AHAU, result_unwrap(ds2_t, ds2_v)), "DaySign roundtrip");
     var dsi = daysign_to_json(DS_IMIX);
     ok(str_eq_cstr(dsi, "\"Imix\""), "DaySign Imix json");
-    ok(daysign_eq(DS_IMIX, daysign_from_json(sk_json_parse(dsi))), "DaySign Imix roundtrip");
+    var dsi_t, dsi_v = daysign_from_json(sk_json_parse(dsi));
+    ok(daysign_eq(DS_IMIX, result_unwrap(dsi_t, dsi_v)), "DaySign Imix roundtrip");
 
     # ---- HaabMonth standalone enum ----
     var hmj = haabmonth_to_json(HM_WAYEB);
     ok(str_eq_cstr(hmj, "\"Wayeb\""), "HaabMonth json is variant string");
-    ok(haabmonth_eq(HM_WAYEB, haabmonth_from_json(sk_json_parse(hmj))), "HaabMonth roundtrip");
+    var hm2_t, hm2_v = haabmonth_from_json(sk_json_parse(hmj));
+    ok(is_ok(hm2_t), "HaabMonth decodes");
+    ok(haabmonth_eq(HM_WAYEB, result_unwrap(hm2_t, hm2_v)), "HaabMonth roundtrip");
 
     # ---- VenusPhase standalone enum ----
     var vpj = venusphase_to_json(VP_MORNING_STAR);
     ok(str_eq_cstr(vpj, "\"MorningStar\""), "VenusPhase json is variant string");
-    ok(venusphase_eq(VP_MORNING_STAR, venusphase_from_json(sk_json_parse(vpj))), "VenusPhase roundtrip");
+    var vp2_t, vp2_v = venusphase_from_json(sk_json_parse(vpj));
+    ok(is_ok(vp2_t), "VenusPhase decodes");
+    ok(venusphase_eq(VP_MORNING_STAR, result_unwrap(vp2_t, vp2_v)), "VenusPhase roundtrip");
     var vpe = venusphase_to_json(VP_INFERIOR_CONJUNCTION);
     ok(str_eq_cstr(vpe, "\"InferiorConjunction\""), "VenusPhase InferiorConjunction json");
-    var vpe_back = venusphase_from_json(sk_json_parse(vpe));
-    ok(venusphase_eq(VP_INFERIOR_CONJUNCTION, vpe_back), "VenusPhase Inferior roundtrip");
+    var vpe_t, vpe_v = venusphase_from_json(sk_json_parse(vpe));
+    ok(venusphase_eq(VP_INFERIOR_CONJUNCTION, result_unwrap(vpe_t, vpe_v)), "VenusPhase Inferior roundtrip");
+
+    # ---- 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    # MayanNumeral { dots: u8, bars: u8, shell: bool }
+    de_err(K_MN, "{\"dots\":1,\"bars\":2}", "missing field `shell`", "numeral missing shell");
+    de_err(K_MN, "{\"dots\":256,\"bars\":0,\"shell\":false}", "invalid value: integer `256`, expected u8",
+        "numeral dots over u8");
+    de_err(K_MN, "{\"dots\":1,\"bars\":0,\"shell\":1}", "invalid type: integer `1`, expected a boolean",
+        "numeral integer shell");
+    de_err(K_MN, "[]", "invalid type: sequence, expected struct MayanNumeral", "numeral array");
+    var mnx_t, mnx_v = de_any(K_MN, "{\"dots\":9,\"bars\":7,\"shell\":true,\"glyph\":\"x\"}");
+    ok(is_ok(mnx_t), "numeral: no range validation, unknown key ignored");
+    assert_eq(mayan_numeral_dots(result_unwrap(mnx_t, mnx_v)), 9, "numeral dots 9 kept as decoded");
+    # LongCount { baktun..kin: u32 }
+    de_err(K_LC, "{\"baktun\":9,\"katun\":12,\"tun\":11,\"uinal\":5}", "missing field `kin`", "lc missing kin");
+    de_err(K_LC, "{\"baktun\":-1,\"katun\":0,\"tun\":0,\"uinal\":0,\"kin\":0}",
+        "invalid value: integer `-1`, expected u32", "lc negative baktun");
+    de_err(K_LC, "{\"baktun\":4294967296,\"katun\":0,\"tun\":0,\"uinal\":0,\"kin\":0}",
+        "invalid value: integer `4294967296`, expected u32", "lc baktun over u32");
+    de_err(K_LC, "{\"baktun\":9,\"katun\":0,\"tun\":1.5,\"uinal\":0,\"kin\":0}",
+        "invalid type: floating point `1.5`, expected u32", "lc float tun");
+    de_err(K_LC, "\"9.12.11.5.18\"", "invalid type: string \"9.12.11.5.18\", expected struct LongCount",
+        "lc string");
+    var lcm_t, lcm_v = de_any(K_LC, "{\"baktun\":4294967295,\"katun\":25,\"tun\":0,\"uinal\":0,\"kin\":0}");
+    ok(is_ok(lcm_t), "lc u32 max and katun 25 decode (no period validation)");
+    assert_eq(lc_baktun(result_unwrap(lcm_t, lcm_v)), SK_U32_MAX, "lc baktun u32 max kept");
+    # Tzolkin { number: u8, day_sign: DaySign }
+    de_err(K_TZ, "{\"number\":4}", "missing field `day_sign`", "tzolkin missing day_sign");
+    de_err_s(K_TZ, "{\"number\":4,\"day_sign\":\"Foo\"}", unknown2("Foo", DS_LIST_A, DS_LIST_B),
+        "tzolkin unknown day_sign");
+    de_err(K_TZ, "{\"number\":\"4\",\"day_sign\":\"Ahau\"}", "invalid type: string \"4\", expected u8",
+        "tzolkin string number");
+    # Haab { day: u8, month: HaabMonth }
+    de_err(K_HB, "{\"month\":\"Kumku\"}", "missing field `day`", "haab missing day");
+    de_err_s(K_HB, "{\"day\":8,\"month\":\"Uayeb\"}", unknown2("Uayeb", HM_LIST_A, HM_LIST_B),
+        "haab unknown month");
+    de_err(K_HB, "{\"day\":8,\"month\":null}", "invalid type: null, expected variant identifier", "haab null month");
+    de_err(K_HB, "{\"day\":-1,\"month\":\"Pop\"}", "invalid value: integer `-1`, expected u8", "haab negative day");
+    # DaySign / HaabMonth / VenusPhase standalone enums
+    de_err_s(K_DS, "\"Kawak\"", unknown2("Kawak", DS_LIST_A, DS_LIST_B), "daysign unknown variant");
+    de_err(K_DS, "3", "invalid type: integer `3`, expected variant identifier", "daysign integer");
+    de_err_s(K_HM, "\"Cumku\"", unknown2("Cumku", HM_LIST_A, HM_LIST_B), "haabmonth unknown variant");
+    de_err(K_HM, "{}", "invalid type: map, expected variant identifier", "haabmonth map");
+    var vp_names = unknown2("Dusk", "`MorningStar`, `SuperiorConjunction`, ", "`EveningStar`, `InferiorConjunction`");
+    de_err_s(K_VP, "\"Dusk\"", vp_names, "venusphase unknown variant");
+    de_err(K_VP, "false", "invalid type: boolean `false`, expected variant identifier", "venusphase bool");
 
     return assert_summary();
 }

@@ -147,7 +147,8 @@ fn _b_aztec_calendar_round() { return aztec_calendar_round(JDN_AZTEC); }
 # serial (3.1.3): a full MultiCalendarDate -> JSON Str -> bayan parse -> from_json.
 fn _b_mcd_json_roundtrip() {
     var js = multi_calendar_date_to_json(BENCH_MCD);
-    return multi_calendar_date_from_json(sk_json_parse(js));
+    var back_t, back_v = multi_calendar_date_from_json(sk_json_parse(js));
+    return back_v;
 }
 
 # mayan (3.1.3): worst-case Calendar Round search. 4 Ahau 8 Kumku falls on day 0,

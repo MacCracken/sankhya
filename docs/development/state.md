@@ -5,11 +5,12 @@
 
 ## Version
 
-**3.1.3** — cyrius pin 6.7.18, with the sibling deps at their latest tags (varna 2.6.0).
+**3.2.0** — cyrius pin 6.7.18, with the sibling deps at their latest tags (varna 2.6.0).
 The Rust→Cyrius port completed at 3.0.0 (2026-07-21); 3.0.1 migrated to the cyrius 6.6.x
 `Result` value form, 3.1.0 moved to the 6.7 language minor, 3.1.2 cleared the line-length
-and fmt backlog, and 3.1.3 was a P(-1) sweep: every public fn documented, input-domain
-guards (ADR-007) and accuracy corrections to the Rust oracle (ADR-008). The original Rust
+and fmt backlog, 3.1.3 was a P(-1) sweep: every public fn documented, input-domain
+guards (ADR-007) and accuracy corrections to the Rust oracle (ADR-008), and 3.2.0 made
+every `<type>_from_json` return a Result with serde's checks and messages (ADR-009). The original Rust
 crate (v2.0.0, 9,857 lines across 17 files) is preserved at `rust-old/` as the frozen
 parity oracle; ADR-007 and ADR-008 list where sankhya now differs from it.
 
@@ -32,11 +33,12 @@ parity oracle; ADR-007 and ADR-008 list where sankhya now differs from it.
 
 ## Tests
 
-`cyrius test tests/tcyr` → **35 suites, 0 failed** (1,527 assertions, plus 22 in
+`cyrius test tests/tcyr` → **35 suites, 0 failed** (2,133 assertions, plus 22 in
 `tests/foundation.tcyr`). Besides the per-module, serial round-trip, integration and
 adversarial suites ported from Rust, three were added at 3.1.3: `serial_malformed`
 (every decoder on hostile JSON), `lazy_init` (no init calls, logging off) and
-`usage_examples` (every sample in `docs/guides/usage.md`, compiled).
+`usage_examples` (every sample in `docs/guides/usage.md`, compiled). From 3.2.0 every
+`serial_<module>` suite also checks the decoders' serde-parity errors.
 
 **Fuzz**: `tests/sankhya.fcyr` runs 20,000 xorshift-driven rounds (malformed JSON, raw f64
 JDNs with round-trip checks, Roman and Katapayadi strings) and exits 1 on a violation; CI

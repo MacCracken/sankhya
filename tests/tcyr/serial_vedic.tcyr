@@ -15,6 +15,35 @@ include "src/serial_vedic.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Decode js (a C-string) with decoder k (1 NikhilamSteps, else Meru Prastara); returns that
+# decoder's Result pair.
+fn de_run(k, js) {
+    var n = sk_json_parse(str_from(js));
+    if (k == 1) { return nikhilam_from_json(n); }
+    return meru_from_json(n);
+}
+
+# The C-string a followed by the C-string b, for expected messages too long for one line.
+fn cat2(a, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    return str_cstr(str_builder_build(sb));
+}
+
+# Decode js with decoder k and check it fails with SKE_DESERIALIZE and exactly the message
+# want (a C-string); a mismatch prints the message it got.
+fn de_err(k, js, want, label) {
+    var t, v = de_run(k, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) {
+        var same = str_eq_cstr(sk_err_msg(v), want);
+        if (same == 0) { str_println(sk_err_msg(v)); }
+        ok(same, label);
+    }
+    return 0;
+}
+
 # Run every serial_vedic test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -30,8 +59,9 @@ fn main() {
 
     var tree = sk_json_parse(js);
     ok(tree, "nikhilam json parses");
-    var steps2 = nikhilam_from_json(tree);
-    ok(nikhilam_eq(steps, steps2), "nikhilam serde round-trip");
+    var s2_t, s2_v = nikhilam_from_json(tree);
+    ok(is_ok(s2_t), "nikhilam decodes");
+    ok(nikhilam_eq(steps, result_unwrap(s2_t, s2_v)), "nikhilam serde round-trip");
 
     # ---- Meru Prastara: Vec<Vec<u64>> -> nested JSON array round-trip ----
     var mr_t, mr_v = meru_prastara(5);
@@ -44,8 +74,9 @@ fn main() {
 
     var mtree = sk_json_parse(mjs);
     ok(mtree, "meru json parses");
-    var tri2 = meru_from_json(mtree);
-    ok(meru_eq(tri, tri2), "meru serde round-trip");
+    var tri2_t, tri2_v = meru_from_json(mtree);
+    ok(is_ok(tri2_t), "meru decodes");
+    ok(meru_eq(tri, result_unwrap(tri2_t, tri2_v)), "meru serde round-trip");
 
     # empty Meru round-trips to "[]"
     var mr0_t, mr0_v = meru_prastara(0);
@@ -53,8 +84,31 @@ fn main() {
     var tri0 = result_unwrap(mr0_t, mr0_v);
     var mjs0 = meru_to_json(tri0);
     ok(str_eq_cstr(mjs0, "[]"), "empty meru json = []");
-    var tri0b = meru_from_json(sk_json_parse(mjs0));
-    ok(meru_eq(tri0, tri0b), "empty meru round-trip");
+    var tri0b_t, tri0b_v = meru_from_json(sk_json_parse(mjs0));
+    ok(meru_eq(tri0, result_unwrap(tri0b_t, tri0b_v)), "empty meru round-trip");
+
+    # ---- 3.2.0: NikhilamSteps (a u64 5-tuple) decode errors are serde's ----
+    de_err(1, "{\"base\":100}", "invalid type: map, expected a tuple of size 5", "object for tuple");
+    de_err(1, "null", "invalid type: null, expected a tuple of size 5", "null for tuple");
+    de_err(1, "[100,3,4]", "invalid length 3, expected a tuple of size 5", "short tuple");
+    de_err(1, "[100,3,4,93,9312,0]", "trailing characters", "long tuple");
+    de_err(1, "[100,-3,4,93,9312]", "invalid value: integer `-3`, expected u64", "negative element");
+    de_err(1, "[100,3,4,93,\"9312\"]", "invalid type: string \"9312\", expected u64", "string element");
+    de_err(1, "[100.5,3,4,93,9312]", "invalid type: floating point `100.5`, expected u64", "float element");
+    # No arithmetic re-check: the steps decode as given.
+    var nx_t, nx_v = de_run(1, "[10,1,1,1,1]");
+    ok(is_ok(nx_t), "inconsistent steps decode");
+    if (is_ok(nx_t) == 1) { assert_eq(nk_product(nx_v), 1, "product kept as decoded"); }
+
+    # ---- 3.2.0: Meru Prastara (Vec<Vec<u64>>) decode errors ----
+    de_err(2, "{}", "invalid type: map, expected a sequence", "object for triangle");
+    de_err(2, "[[1],2]", "invalid type: integer `2`, expected a sequence", "integer row");
+    de_err(2, "[[1],[1,-1]]", "invalid value: integer `-1`, expected u64", "negative cell");
+    de_err(2, "[[1],[1,true]]", "invalid type: boolean `true`, expected u64", "boolean cell");
+    # Rows are not checked against Pingala's triangle.
+    var mx_t, mx_v = de_run(2, "[[7,8],[]]");
+    ok(is_ok(mx_t), "non-triangle rows decode");
+    if (is_ok(mx_t) == 1) { assert_eq(vec_get(vec_get(mx_v, 0), 1), 8, "cell kept as decoded"); }
 
     return assert_summary();
 }

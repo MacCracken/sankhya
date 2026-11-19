@@ -13,6 +13,11 @@
 #     name/period_years/description are STRINGS (period_years holds "19", a
 #     quoted string, NOT the number 19). gear_teeth is an integer. No enums,
 #     no f64, no nested/array/option fields in this module.
+#
+# Decoding (3.2.0) returns a Result as serde_json::from_str did: Ok(AntikytheraCycle)
+# or Err(SKE_DESERIALIZE) with serde's message (the sk_de_* helpers in serial_util.cyr).
+# The string fields are &'static str in Rust, so a non-string reads "expected a borrowed
+# string" (serde's &str visitor) rather than String's "expected a string".
 
 # ---------------------------------------------------------------------------
 # AntikytheraCycle
@@ -35,16 +40,26 @@ fn anti_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Deserialize a bayan value-tree node (from sk_json_parse) back into an
-# AntikytheraCycle record via anti_new. String fields via bayan_json_v_str,
-# the integer field via bayan_json_v_int.
+# A Rust &'static str field key of object obj, as serde reads one: Ok(Str) for a JSON
+# string, else Err "missing field" or "invalid type: ..., expected a borrowed string".
+fn _acj_str_field(obj, key) {
+    var n = sk_de_field(obj, key)?;
+    var t, s = sk_de_str(n);
+    if (is_ok(t) == 0) { return sk_de_invalid_type(n, "a borrowed string"); }
+    return Ok(s);
+}
+
+# Deserialize an AntikytheraCycle from a bayan value node (an object, from sk_json_parse).
+# Ok(AntikytheraCycle) or Err(SKE_DESERIALIZE), with serde's checks on the Rust field
+# types: name, period_years and description &'static strs, gear_teeth a u32.
 #must_use
 fn anti_from_json(v) {
-    var name = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "name"));
-    var period = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "period_years"));
-    var teeth = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "gear_teeth"));
-    var desc = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "description"));
-    return anti_new(name, period, teeth, desc);
+    var obj = sk_de_struct(v, "AntikytheraCycle")?;
+    var name = _acj_str_field(obj, "name")?;
+    var period = _acj_str_field(obj, "period_years")?;
+    var teeth = sk_de_int_field(obj, "gear_teeth", 0, SK_U32_MAX, "u32")?;
+    var desc = _acj_str_field(obj, "description")?;
+    return Ok(anti_new(name, period, teeth, desc));
 }
 
 # Field-by-field equality of two AntikytheraCycle records (for round-trip

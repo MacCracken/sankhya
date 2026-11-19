@@ -16,14 +16,17 @@
 # field in this module — every numeric field is integer-valued, so sk_json_int is
 # faithful and no bayan value-tree float path is needed.
 #
-# SELF-CONTAINED: no include lines. Relies on serial_util.cyr (sk_json_*),
+# Decoding (3.2.0) returns a Result as serde_json::from_str did: Ok(value) or
+# Err(SKE_DESERIALIZE) with serde's message (the sk_de_* helpers in serial_util.cyr).
+#
+# SELF-CONTAINED: no include lines. Relies on serial_util.cyr (sk_json_* / sk_de_*),
 # chinese.cyr (constructors/getters/name accessors), bayan (folded stdlib parse
 # tree), and str/vec stdlib — all resolved from the consumer's bundle.
 
 # ---------------------------------------------------------------------------
 # Enum name → discriminant reverse maps (module lacks *_from_name).
-# The parsed name arrives as a Str (bayan_json_v_str), so compare with str_eq.
-# Returns (0 - 1) when no variant matches.
+# The name is a Str, so compare with str_eq. Returns (0 - 1) when no variant
+# matches. The decoders use sk_de_variant over the name vecs below instead.
 # ---------------------------------------------------------------------------
 
 # HeavenlyStem discriminant (0-9) for a serde identifier Str ("Jia" .. "Gui"), or (0 - 1)
@@ -50,6 +53,31 @@ fn earthly_branch_from_name(name) {
     return 0 - 1;
 }
 
+# Lazily built vecs of the serde identifiers, in discriminant order, for sk_de_variant.
+# They share the Strs of heavenly_stem_debug / earthly_branch_debug. Do not mutate.
+var _sxj_stem_names = 0;
+var _sxj_branch_names = 0;
+
+fn _sxj_stems() {
+    if (_sxj_stem_names == 0) {
+        var v = vec_new();
+        var i = 0;
+        while (i < 10) { vec_push(v, heavenly_stem_debug(i)); i = i + 1; }
+        _sxj_stem_names = v;
+    }
+    return _sxj_stem_names;
+}
+
+fn _sxj_branches() {
+    if (_sxj_branch_names == 0) {
+        var v = vec_new();
+        var i = 0;
+        while (i < 12) { vec_push(v, earthly_branch_debug(i)); i = i + 1; }
+        _sxj_branch_names = v;
+    }
+    return _sxj_branch_names;
+}
+
 # ---------------------------------------------------------------------------
 # RodNumeral { value: i64 }  →  {"value":N}
 # ---------------------------------------------------------------------------
@@ -64,12 +92,14 @@ fn rod_numeral_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Deserialize a bayan object node {"value":N} into a fresh RodNumeral. A missing or
-# non-numeric "value" reads as 0; a JSON float is converted to an integer (bayan_json_v_int).
+# Deserialize a RodNumeral from a bayan object node {"value":N}, as serde:
+# Ok(RodNumeral) or Err(SKE_DESERIALIZE) — value must be present and a JSON integer (i64);
+# a float such as 1.5 is "invalid type", as in serde.
 #must_use
 fn rod_numeral_from_json(v) {
-    var val = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "value"));
-    return rod_numeral_new(val);
+    var obj = sk_de_struct(v, "RodNumeral")?;
+    var val = sk_de_int_field(obj, "value", SK_I64_MIN, SK_I64_MAX, "i64")?;
+    return Ok(rod_numeral_new(val));
 }
 
 # Structural equality of two RodNumerals (the value field): 1 if equal, else 0.
@@ -93,11 +123,11 @@ fn heavenly_stem_to_json(stem) {
     return str_builder_build(sb);
 }
 
-# Deserialize a bayan JSON-string node into a HeavenlyStem discriminant, or (0 - 1) for an
-# unknown name. v must be a string node: any other node gives a null Str to str_eq.
+# Deserialize a HeavenlyStem from a bayan value node holding a JSON string, as serde:
+# Ok(discriminant 0-9), or Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
 fn heavenly_stem_from_json(v) {
-    return heavenly_stem_from_name(sk_json_v_str(v));
+    return sk_de_variant(v, _sxj_stems());
 }
 
 # HeavenlyStem equality on discriminants: 1 if a == b, else 0.
@@ -120,11 +150,11 @@ fn earthly_branch_to_json(branch) {
     return str_builder_build(sb);
 }
 
-# Deserialize a bayan JSON-string node into an EarthlyBranch discriminant, or (0 - 1) for an
-# unknown name. v must be a string node: any other node gives a null Str to str_eq.
+# Deserialize an EarthlyBranch from a bayan value node holding a JSON string, as serde:
+# Ok(discriminant 0-11), or Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
 fn earthly_branch_from_json(v) {
-    return earthly_branch_from_name(sk_json_v_str(v));
+    return sk_de_variant(v, _sxj_branches());
 }
 
 # EarthlyBranch equality on discriminants: 1 if a == b, else 0.
@@ -155,17 +185,17 @@ fn sexagenary_year_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Deserialize a bayan object node into a fresh SexagenaryYear. Unknown stem/branch names are
-# stored as (0 - 1); a missing "cycle_position" reads as 0. "stem" and "branch" must be
-# present JSON strings: otherwise a null Str reaches str_eq.
+# Deserialize a SexagenaryYear from a bayan value node (an object).
+# Ok(SexagenaryYear) or Err(SKE_DESERIALIZE), with serde's checks on the Rust field types:
+# stem a HeavenlyStem variant, branch an EarthlyBranch variant, cycle_position a u8. No
+# validation that the pair or the position is consistent (serde's derive does none).
 #must_use
 fn sexagenary_year_from_json(v) {
-    var stem_name = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "stem"));
-    var stem = heavenly_stem_from_name(stem_name);
-    var branch_name = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "branch"));
-    var branch = earthly_branch_from_name(branch_name);
-    var pos = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "cycle_position"));
-    return sexagenary_year_new(stem, branch, pos);
+    var obj = sk_de_struct(v, "SexagenaryYear")?;
+    var stem = sk_de_variant_field(obj, "stem", _sxj_stems())?;
+    var branch = sk_de_variant_field(obj, "branch", _sxj_branches())?;
+    var pos = sk_de_int_field(obj, "cycle_position", 0, SK_U8_MAX, "u8")?;
+    return Ok(sexagenary_year_new(stem, branch, pos));
 }
 
 # Structural equality of two SexagenaryYears (stem, branch, cycle_position): 1 or 0.

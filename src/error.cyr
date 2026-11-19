@@ -13,6 +13,9 @@ enum SankhyaError {
     SKE_INVALID_FRACTION = 3;
     SKE_OVERFLOW = 4;
     SKE_COMPUTATION = 5;
+    # 3.2.0: a <type>_from_json decode failure, where the Rust returned a serde_json::Error
+    # (a separate type from SankhyaError, so it has no Rust discriminant to match).
+    SKE_DESERIALIZE = 6;
 }
 
 # SkErr record: { code: i64, msg: Str } — 16 bytes. msg may be 0 (no message).

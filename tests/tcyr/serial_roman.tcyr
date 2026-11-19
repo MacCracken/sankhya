@@ -17,6 +17,34 @@ include "src/serial_roman.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Decode js (a C-string) as a RomanNumeral; returns romannum_from_json's Result pair (k is
+# unused: roman has one decoder).
+fn de_run(k, js) {
+    var n = sk_json_parse(str_from(js));
+    return romannum_from_json(n);
+}
+
+# The C-string a followed by the C-string b, for expected messages too long for one line.
+fn cat2(a, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    return str_cstr(str_builder_build(sb));
+}
+
+# Decode js with decoder k and check it fails with SKE_DESERIALIZE and exactly the message
+# want (a C-string); a mismatch prints the message it got.
+fn de_err(k, js, want, label) {
+    var t, v = de_run(k, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) {
+        var same = str_eq_cstr(sk_err_msg(v), want);
+        if (same == 0) { str_println(sk_err_msg(v)); }
+        ok(same, label);
+    }
+    return 0;
+}
+
 # Run every serial_roman test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -37,8 +65,9 @@ fn main() {
     # parse back + field-by-field compare
     var v = sk_json_parse(js);
     ok(v, "parse ok");
-    var parsed = romannum_from_json(v);
-    ok(romannum_eq(n, parsed), "RomanNumeral serde round-trip");
+    var p_t, p_v = romannum_from_json(v);
+    ok(is_ok(p_t), "RomanNumeral decodes");
+    ok(romannum_eq(n, result_unwrap(p_t, p_v)), "RomanNumeral serde round-trip");
 
     # ---- a second value to exercise a different text (parse path) ----
     var r2_t, r2_v = romannum_parse(str_from("XIV"));
@@ -47,8 +76,25 @@ fn main() {
     var js2 = romannum_to_json(n2);
     ok(str_eq_cstr(js2, "{\"value\":14,\"text\":\"XIV\"}"), "XIV exact serde shape");
     var v2 = sk_json_parse(js2);
-    var parsed2 = romannum_from_json(v2);
-    ok(romannum_eq(n2, parsed2), "RomanNumeral(14) round-trip");
+    var p2_t, p2_v = romannum_from_json(v2);
+    ok(romannum_eq(n2, result_unwrap(p2_t, p2_v)), "RomanNumeral(14) round-trip");
+
+    # ---- 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    de_err(0, "{\"value\":14}", "missing field `text`", "missing text");
+    de_err(0, "{\"text\":\"XIV\"}", "missing field `value`", "missing value");
+    de_err(0, "{\"value\":-1,\"text\":\"XIV\"}", "invalid value: integer `-1`, expected u32", "negative value");
+    de_err(0, "{\"value\":14,\"text\":14}", "invalid type: integer `14`, expected a string", "integer text");
+    de_err(0, "{\"value\":\"XIV\",\"text\":\"XIV\"}", "invalid type: string \"XIV\", expected u32", "string value");
+    de_err(0, "\"XIV\"", "invalid type: string \"XIV\", expected struct RomanNumeral", "string for struct");
+    # The derive stores both fields as decoded: no 1-3999 check and no re-derived text.
+    var ex_t, ex_v = de_run(0, "{\"value\":5,\"text\":\"IV\",\"x\":1}");
+    ok(is_ok(ex_t), "inconsistent value/text and unknown key decode");
+    if (is_ok(ex_t) == 1) {
+        assert_eq(romannum_value(ex_v), 5, "value 5 kept as decoded");
+        ok(str_eq_cstr(romannum_text(ex_v), "IV"), "text IV kept as decoded");
+    }
+    var z_t, z_v = de_run(0, "{\"value\":0,\"text\":\"\"}");
+    ok(is_ok(z_t), "value 0 decodes (serde's derive does no range check)");
 
     return assert_summary();
 }

@@ -20,6 +20,35 @@ include "src/serial_persian.cyr"
 # Assert that v is non-zero (truthy), labelled name in the failure report.
 fn ok(v, name) { return assert_neq(v, 0, name); }
 
+# Decode js (a C-string) with decoder k (1 PersianDate, else PersianMonth); returns that
+# decoder's Result pair.
+fn de_run(k, js) {
+    var n = sk_json_parse(str_from(js));
+    if (k == 1) { return persian_date_from_json(n); }
+    return persian_month_from_json(n);
+}
+
+# The C-string a followed by the C-string b, for expected messages too long for one line.
+fn cat2(a, b) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, a);
+    str_builder_add_cstr(sb, b);
+    return str_cstr(str_builder_build(sb));
+}
+
+# Decode js with decoder k and check it fails with SKE_DESERIALIZE and exactly the message
+# want (a C-string); a mismatch prints the message it got.
+fn de_err(k, js, want, label) {
+    var t, v = de_run(k, js);
+    assert_eq(sk_result_code(t, v), SKE_DESERIALIZE, label);
+    if (is_ok(t) == 0) {
+        var same = str_eq_cstr(sk_err_msg(v), want);
+        if (same == 0) { str_println(sk_err_msg(v)); }
+        ok(same, label);
+    }
+    return 0;
+}
+
 # Run every serial_persian test case and print the assert_summary; returns its exit code.
 fn main() {
     alloc_init();
@@ -38,37 +67,57 @@ fn main() {
     # parse back + field-by-field compare
     var v = sk_json_parse(js);
     ok(v, "parse ok");
-    var parsed = persian_date_from_json(v);
-    ok(persian_date_eq(d, parsed), "PersianDate serde round-trip");
+    var p_t, p_v = persian_date_from_json(v);
+    ok(is_ok(p_t), "PersianDate decodes");
+    ok(persian_date_eq(d, result_unwrap(p_t, p_v)), "PersianDate serde round-trip");
 
     # ---- a second value across a leap boundary: Esfand 30, 1399 ----
     var d2 = persian_date_new(1399, PM_ESFAND, 30);
     var js2 = persian_date_to_json(d2);
     ok(str_eq_cstr(js2, "{\"year\":1399,\"month\":\"Esfand\",\"day\":30}"), "Esfand exact serde shape");
     var v2 = sk_json_parse(js2);
-    var parsed2 = persian_date_from_json(v2);
-    ok(persian_date_eq(d2, parsed2), "PersianDate(Esfand) round-trip");
+    var p2_t, p2_v = persian_date_from_json(v2);
+    ok(persian_date_eq(d2, result_unwrap(p2_t, p2_v)), "PersianDate(Esfand) round-trip");
 
     # ---- a month with index 6 (Mehr) to exercise mid-table mapping ----
     var d3 = persian_date_new(1404, PM_MEHR, 15);
     var js3 = persian_date_to_json(d3);
     ok(str_eq_cstr(js3, "{\"year\":1404,\"month\":\"Mehr\",\"day\":15}"), "Mehr exact serde shape");
     var v3 = sk_json_parse(js3);
-    var parsed3 = persian_date_from_json(v3);
-    ok(persian_date_eq(d3, parsed3), "PersianDate(Mehr) round-trip");
+    var p3_t, p3_v = persian_date_from_json(v3);
+    ok(persian_date_eq(d3, result_unwrap(p3_t, p3_v)), "PersianDate(Mehr) round-trip");
 
     # ---- PersianMonth enum: bare variant-name string serde form ----
     var mj = persian_month_to_json(PM_MEHR);
     ok(str_eq_cstr(mj, "\"Mehr\""), "PersianMonth serde form is bare variant string");
     var mv = sk_json_parse(mj);
     ok(mv, "month parse ok");
-    var mparsed = persian_month_from_json(mv);
-    ok(persian_month_eq(PM_MEHR, mparsed), "PersianMonth serde round-trip");
+    var mp_t, mp_v = persian_month_from_json(mv);
+    ok(is_ok(mp_t), "PersianMonth decodes");
+    ok(persian_month_eq(PM_MEHR, result_unwrap(mp_t, mp_v)), "PersianMonth serde round-trip");
 
     # ---- from_name on an unknown variant returns (0 - 1) ----
     var miss = persian_month_from_name(str_from("Nivose"));
     var missneg = miss == (0 - 1);
     ok(missneg, "unknown month name -> (0 - 1)");
+
+    # ---- 3.2.0: decode errors are serde's (Err, SKE_DESERIALIZE) ----
+    var pm = cat2("`Farvardin`, `Ordibehesht`, `Khordad`, `Tir`, `Mordad`, `Shahrivar`, `Mehr`, ",
+        "`Aban`, `Azar`, `Dey`, `Bahman`, `Esfand`");
+    de_err(1, "{\"year\":1400,\"month\":\"Farvardin\"}", "missing field `day`", "missing day");
+    de_err(1, "{\"year\":\"1400\",\"month\":\"Farvardin\",\"day\":1}", "invalid type: string \"1400\", expected i64",
+        "string year");
+    de_err(1, "{\"year\":1400,\"month\":\"Farvardin\",\"day\":1000}", "invalid value: integer `1000`, expected u8",
+        "day 1000");
+    de_err(1, "{\"year\":1400,\"month\":\"Nivose\",\"day\":1}", cat2("unknown variant `Nivose`, expected one of ", pm),
+        "date unknown month");
+    de_err(1, "null", "invalid type: null, expected struct PersianDate", "null for date");
+    de_err(2, "\"farvardin\"", cat2("unknown variant `farvardin`, expected one of ", pm), "month is case-sensitive");
+    de_err(2, "1.0", "invalid type: floating point `1.0`, expected variant identifier", "float month");
+    # serde ignores unknown keys and does no calendar validation (Esfand 31 decodes).
+    var ex_t, ex_v = de_run(1, "{\"year\":1400,\"month\":\"Esfand\",\"day\":31,\"leap\":false}");
+    ok(is_ok(ex_t), "unknown key ignored, Esfand 31 decodes");
+    if (is_ok(ex_t) == 1) { assert_eq(pd_day(ex_v), 31, "day 31 kept as decoded"); }
 
     return assert_summary();
 }

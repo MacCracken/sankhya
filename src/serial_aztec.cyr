@@ -21,11 +21,18 @@
 #   * No f64 fields in this module — both structs are pure integer + enum, so
 #     sk_json_int suffices and no bayan value-tree float path is needed.
 #
-# Self-contained: no include lines. Uses the shared sk_json_* helpers from
-# serial_util.cyr and the bayan_json_v_* value-tree API (folded stdlib).
+# Decoding (3.2.0): each <type>_from_json takes a bayan value node and returns a Result
+# as serde_json::from_str did: Ok(record) or Err(SKE_DESERIALIZE) with serde's message,
+# via the sk_de_* helpers (serial_util.cyr). number/day are u8; sign/month must be one
+# of the serde identifiers. Unknown keys are ignored and no calendar validation happens
+# (a day of 25 in Nemontemi decodes).
+#
+# Self-contained: no include lines. Uses the shared sk_json_* / sk_de_* helpers from
+# serial_util.cyr and the bayan value tree (folded stdlib).
 
 # ---------------------------------------------------------------------------
-# Enum <-> name mapping (parse side). Scans the module's *_name(i) accessor.
+# Enum <-> name mapping. Scans the module's *_name(i) accessor. Kept as public
+# lookups; the decoders match names through sk_de_variant_field instead.
 # ---------------------------------------------------------------------------
 
 # TonalpohualliSign discriminant for a serde identifier Str, or (0 - 1) if none.
@@ -66,13 +73,15 @@ fn tonalpohualli_to_json(p) {
     return str_builder_build(sb);
 }
 
-# v is a bayan value tree node (from sk_json_parse). Reconstruct via *_new.
+# Deserialize a Tonalpohualli from a bayan value node (an object), as serde:
+# Ok(fresh Tonalpohualli) or Err(SKE_DESERIALIZE). number is a required u8 and sign a
+# required TonalpohualliSign variant string.
 #must_use
 fn tonalpohualli_from_json(v) {
-    var number = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "number"));
-    var sign_name = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "sign"));
-    var sign = tonalpohualli_sign_from_name(sign_name);
-    return tonalpohualli_new(number, sign);
+    var obj = sk_de_struct(v, "Tonalpohualli")?;
+    var number = sk_de_int_field(obj, "number", 0, SK_U8_MAX, "u8")?;
+    var sign = sk_de_variant_field(obj, "sign", all_tonal_signs())?;
+    return Ok(tonalpohualli_new(number, sign));
 }
 
 # Field-by-field equality (Rust derives PartialEq).
@@ -100,15 +109,15 @@ fn xiuhpohualli_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Rebuild a Xiuhpohualli (fresh record) from a parsed bayan object node v. A
-# missing day reads as 0; an unknown month name maps to -1 (month must be a
-# JSON string: a null Str is not guarded).
+# Deserialize a Xiuhpohualli from a bayan value node (an object), as serde:
+# Ok(fresh Xiuhpohualli) or Err(SKE_DESERIALIZE). day is a required u8 and month a
+# required XiuhpohuallMonth identifier (no spaces: "XocotlHuetzi", not "Xocotl Huetzi").
 #must_use
 fn xiuhpohualli_from_json(v) {
-    var day = bayan_json_v_int(bayan_json_v_obj_get_by_cstr(v, "day"));
-    var month_name = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "month"));
-    var month = xiuh_month_from_name(month_name);
-    return xiuhpohualli_new(day, month);
+    var obj = sk_de_struct(v, "Xiuhpohualli")?;
+    var day = sk_de_int_field(obj, "day", 0, SK_U8_MAX, "u8")?;
+    var month = sk_de_variant_field(obj, "month", all_xiuh_names())?;
+    return Ok(xiuhpohualli_new(day, month));
 }
 
 # Field-by-field equality of two Xiuhpohuallis (day, month): 1 or 0.

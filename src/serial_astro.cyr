@@ -12,9 +12,15 @@
 #     external tagging for a single-field tuple variant).
 #   f64 → JSON number formatted by bayan (Grisu2, round-trip correct, matching
 #     serde_json's shortest representation).
+#
+# Decoding (3.2.0): every <type>_from_json returns a Result as serde_json::from_str did:
+# Ok(value) or Err(SKE_DESERIALIZE) with serde's message, built from the sk_de_* helpers
+# in serial_util.cyr (missing field, wrong JSON type, unknown variant). Unknown keys are
+# ignored and no domain validation happens (a declination of 400 decodes).
 
 # ---------------------------------------------------------------------------
-# Enum <-> variant-name mapping (deserialize side).
+# Enum <-> variant-name mapping. The *_from_name lookups stay public; the decoders
+# match names through sk_de_variant / sk_de_tagged instead.
 # ---------------------------------------------------------------------------
 
 # Map a StarName variant name (cstr) back to its discriminant, or -1.
@@ -48,6 +54,37 @@ fn alignmenttarget_from_name(cstr) {
         k = k + 1;
     }
     return 0 - 1;
+}
+
+# The StarName serde identifiers (vec of 20 Str, discriminant order) for the decoders.
+#must_use
+fn _astro_starname_names() {
+    astro_init();
+    return astro_starname_names;
+}
+
+# The HeliacalEventType serde identifiers ("Rising", "Setting") for the decoders.
+#must_use
+fn _astro_heltype_names() {
+    astro_init();
+    return astro_heltype_names;
+}
+
+# The AlignmentTarget serde identifiers (vec of 7 Str, AT_* order) for the decoders.
+#must_use
+fn _astro_target_names() {
+    astro_init();
+    return astro_target_names;
+}
+
+# A Star `&'static str` field: Ok(Str) when field key of obj is a JSON string, else Err.
+# serde's &str visitor expects "a borrowed string" (String's says "a string").
+#must_use
+fn _astro_de_borrowed_str_field(obj, key) {
+    var n = sk_de_field(obj, key)?;
+    var t, s = sk_de_str(n);
+    if (is_ok(t) == 1) { return Ok(s); }
+    return sk_de_invalid_type(n, "a borrowed string");
 }
 
 # ---------------------------------------------------------------------------
@@ -92,13 +129,15 @@ fn celestial_coord_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Rebuild a CelestialCoord (fresh record) from a parsed bayan object node v.
-# Missing or non-numeric members read as 0.0; JSON integers are coerced.
+# Deserialize a CelestialCoord from a bayan value node (an object), as serde:
+# Ok(fresh CelestialCoord) or Err(SKE_DESERIALIZE). Both fields are required f64 (a JSON
+# integer converts); a missing or non-numeric member is an Err.
 #must_use
 fn celestial_coord_from_json(v) {
-    var ra = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "ra_hours"));
-    var dec = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "dec_degrees"));
-    return celestial_new(ra, dec);
+    var obj = sk_de_struct(v, "CelestialCoord")?;
+    var ra = sk_de_f64_field(obj, "ra_hours")?;
+    var dec = sk_de_f64_field(obj, "dec_degrees")?;
+    return Ok(celestial_new(ra, dec));
 }
 
 # Structural equality of two CelestialCoords (f64_eq per field): 1 or 0.
@@ -125,13 +164,14 @@ fn ecliptic_coord_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Rebuild an EclipticCoord (fresh record) from a parsed bayan object node v.
-# Missing or non-numeric members read as 0.0; JSON integers are coerced.
+# Deserialize an EclipticCoord from a bayan value node (an object), as serde:
+# Ok(fresh EclipticCoord) or Err(SKE_DESERIALIZE). longitude and latitude are required f64.
 #must_use
 fn ecliptic_coord_from_json(v) {
-    var lon = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "longitude"));
-    var lat = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "latitude"));
-    return ecliptic_new(lon, lat);
+    var obj = sk_de_struct(v, "EclipticCoord")?;
+    var lon = sk_de_f64_field(obj, "longitude")?;
+    var lat = sk_de_f64_field(obj, "latitude")?;
+    return Ok(ecliptic_new(lon, lat));
 }
 
 # Structural equality of two EclipticCoords (f64_eq per field): 1 or 0.
@@ -158,13 +198,14 @@ fn horizontal_coord_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Rebuild a HorizontalCoord (fresh record) from a parsed bayan object node v.
-# Missing or non-numeric members read as 0.0; JSON integers are coerced.
+# Deserialize a HorizontalCoord from a bayan value node (an object), as serde:
+# Ok(fresh HorizontalCoord) or Err(SKE_DESERIALIZE). azimuth and altitude are required f64.
 #must_use
 fn horizontal_coord_from_json(v) {
-    var az = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "azimuth"));
-    var alt = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "altitude"));
-    return horizontal_new(az, alt);
+    var obj = sk_de_struct(v, "HorizontalCoord")?;
+    var az = sk_de_f64_field(obj, "azimuth")?;
+    var alt = sk_de_f64_field(obj, "altitude")?;
+    return Ok(horizontal_new(az, alt));
 }
 
 # Structural equality of two HorizontalCoords (f64_eq per field): 1 or 0.
@@ -201,17 +242,20 @@ fn star_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Rebuild a Star (fresh record) from a parsed bayan object node v. Missing
-# string members become a null (0) Str; missing numbers read as 0.0.
+# Deserialize a Star from a bayan value node (an object), as serde: Ok(fresh Star) or
+# Err(SKE_DESERIALIZE). name, bayer and constellation are required strings (the Rust
+# fields are &'static str: a non-string is "expected a borrowed string"); ra_j2000,
+# dec_j2000 and visual_magnitude are required f64.
 #must_use
 fn star_from_json(v) {
-    var nm = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "name"));
-    var by = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "bayer"));
-    var co = sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "constellation"));
-    var ra = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "ra_j2000"));
-    var dec = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "dec_j2000"));
-    var mag = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "visual_magnitude"));
-    return star_rec_new(nm, by, co, ra, dec, mag);
+    var obj = sk_de_struct(v, "Star")?;
+    var nm = _astro_de_borrowed_str_field(obj, "name")?;
+    var by = _astro_de_borrowed_str_field(obj, "bayer")?;
+    var co = _astro_de_borrowed_str_field(obj, "constellation")?;
+    var ra = sk_de_f64_field(obj, "ra_j2000")?;
+    var dec = sk_de_f64_field(obj, "dec_j2000")?;
+    var mag = sk_de_f64_field(obj, "visual_magnitude")?;
+    return Ok(star_rec_new(nm, by, co, ra, dec, mag));
 }
 
 # Structural equality of two Stars (str_eq on the Str fields, f64_eq on the
@@ -239,12 +283,11 @@ fn starname_to_json(sncode) {
     return str_builder_build(sb);
 }
 
-# StarName code for a parsed bayan string node v, or -1 if the name is
-# unknown. v must be a string node (a null Str is dereferenced unguarded).
+# Deserialize a StarName from a bayan value node holding a JSON string, as serde:
+# Ok(SN_* code), or Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
 fn starname_from_json(v) {
-    var c = str_cstr(sk_json_v_str(v));
-    return starname_from_name(c);
+    return sk_de_variant(v, _astro_starname_names());
 }
 
 # Equality of two StarName codes: 1 or 0.
@@ -266,12 +309,11 @@ fn heltype_to_json(etcode) {
     return str_builder_build(sb);
 }
 
-# HeliacalEventType code for a parsed bayan string node v, or -1 if unknown.
-# v must be a string node (a null Str is dereferenced unguarded).
+# Deserialize a HeliacalEventType from a bayan value node holding a JSON string, as serde:
+# Ok(HET_* code), or Err(SKE_DESERIALIZE) "unknown variant" / "invalid type".
 #must_use
 fn heltype_from_json(v) {
-    var c = str_cstr(sk_json_v_str(v));
-    return heltype_from_name(c);
+    return sk_de_variant(v, _astro_heltype_names());
 }
 
 # Equality of two HeliacalEventType codes: 1 or 0.
@@ -300,15 +342,16 @@ fn heliacal_event_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Rebuild a HeliacalEvent (fresh record) from a parsed bayan object node v.
-# A missing jdn reads as 0.0; unknown star / event_type names map to -1; both
-# members must be present JSON strings (a null Str is not guarded).
+# Deserialize a HeliacalEvent from a bayan value node (an object), as serde:
+# Ok(fresh HeliacalEvent) or Err(SKE_DESERIALIZE). jdn is a required f64; star and
+# event_type are required StarName / HeliacalEventType variant strings.
 #must_use
 fn heliacal_event_from_json(v) {
-    var jdn = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "jdn"));
-    var sncode = starname_from_name(str_cstr(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "star"))));
-    var etcode = heltype_from_name(str_cstr(sk_json_v_str(bayan_json_v_obj_get_by_cstr(v, "event_type"))));
-    return heliacal_event_new(jdn, sncode, etcode);
+    var obj = sk_de_struct(v, "HeliacalEvent")?;
+    var jdn = sk_de_f64_field(obj, "jdn")?;
+    var sncode = sk_de_variant_field(obj, "star", _astro_starname_names())?;
+    var etcode = sk_de_variant_field(obj, "event_type", _astro_heltype_names())?;
+    return Ok(heliacal_event_new(jdn, sncode, etcode));
 }
 
 # Structural equality of two HeliacalEvents (jdn via f64_eq, codes via ==):
@@ -323,10 +366,29 @@ fn heliacal_event_eq(a, b) {
 
 # ---------------------------------------------------------------------------
 # AlignmentTarget (6 unit variants + StarRising(StarName)). Because the ported
-# module stores the carried StarName alongside the target code, the standalone
-# (de)serializers take/return (target, starcode); starcode is -1 for unit
-# variants.
+# module stores the carried StarName alongside the target code, the serializer
+# takes (target, starcode) and the decoder returns Ok(a 16-byte {target, star}
+# record); starcode is -1 for unit variants.
 # ---------------------------------------------------------------------------
+
+# AlignmentTarget value record: { target: AT_* code, star: StarName code or -1 } — 16 bytes.
+enum AtvOff { ATV_TARGET = 0; ATV_STAR = 8; ATV_SIZE = 16; }
+
+# Allocate an AlignmentTarget value record: target (AT_* code) and star (the StarName
+# code carried by AT_STAR_RISING, -1 for the unit variants). alignmenttarget_from_json's Ok.
+#must_use
+fn alignmenttarget_new(target, star) {
+    var p = alloc(ATV_SIZE);
+    store64(p + ATV_TARGET, target);
+    store64(p + ATV_STAR, star);
+    return p;
+}
+# AlignmentTarget value field: the AT_* code.
+#must_use
+fn atv_target(p) { return load64(p + ATV_TARGET); }
+# AlignmentTarget value field: the StarName code for AT_STAR_RISING, -1 otherwise.
+#must_use
+fn atv_star(p) { return load64(p + ATV_STAR); }
 
 # Serialize an AlignmentTarget (target code + starcode) to a JSON Str: unit
 # variants as their name string, AT_STAR_RISING as {"StarRising":"<star>"}.
@@ -337,16 +399,34 @@ fn alignmenttarget_to_json(target, starcode) {
     return str_builder_build(sb);
 }
 
-# Returns (target_code, star_code). star_code is -1 for unit variants.
+# Deserialize an AlignmentTarget, as serde's externally tagged enum: Ok(alignmenttarget_new
+# record; read it with atv_target / atv_star) or Err(SKE_DESERIALIZE). Accepts what
+# alignmenttarget_to_json writes: a unit variant as its name string ("EquinoxSunrise") and
+# StarRising as {"StarRising":"<StarName>"}. Also, as serde_json, a unit variant in map form
+# with a null value ({"EquinoxSunrise":null}). Errors: unknown variant (string or key), the
+# string "StarRising" ("invalid type: unit variant, expected newtype variant"), a map without
+# exactly one key, a bad StarName payload, a non-null unit payload ("expected unit"), and any
+# other JSON type ("expected enum AlignmentTarget").
 #must_use
 fn alignmenttarget_from_json(v) {
-    if (bayan_json_v_is_obj(v) == 1) {
-        var svnode = bayan_json_v_obj_get_by_cstr(v, "StarRising");
-        var scode = starname_from_name(str_cstr(sk_json_v_str(svnode)));
-        return (AT_STAR_RISING, scode);
+    var names = _astro_target_names();
+    var st, sv = sk_de_str(v);
+    if (is_ok(st) == 1) {
+        var ui = sk_de_variant(v, names)?;
+        if (ui == AT_STAR_RISING) {
+            return sk_de_fail(str_from("invalid type: unit variant, expected newtype variant"));
+        }
+        return Ok(alignmenttarget_new(ui, 0 - 1));
     }
-    var tcode = alignmenttarget_from_name(str_cstr(sk_json_v_str(v)));
-    return (tcode, 0 - 1);
+    var ti = sk_de_tagged(v, names, "AlignmentTarget")?;
+    var payload = bayan_json_v_obj_val(v, 0);
+    if (ti == AT_STAR_RISING) {
+        var sncode = starname_from_json(payload)?;
+        return Ok(alignmenttarget_new(AT_STAR_RISING, sncode));
+    }
+    var unit = sk_de_opt_field(v, str_cstr(vec_get(names, ti)))?;
+    if (unit != 0) { return sk_de_invalid_type(payload, "unit"); }
+    return Ok(alignmenttarget_new(ti, 0 - 1));
 }
 
 # Equality of two (target, starcode) AlignmentTarget pairs: 1 or 0. The
@@ -380,15 +460,17 @@ fn alignment_result_to_json(p) {
     return str_builder_build(sb);
 }
 
-# Rebuild an AlignmentResult (fresh record) from a parsed bayan object node
-# v: target/star via alignmenttarget_from_json; missing numbers read as 0.0.
+# Deserialize an AlignmentResult from a bayan value node (an object), as serde:
+# Ok(fresh AlignmentResult) or Err(SKE_DESERIALIZE). target is a required AlignmentTarget
+# (decoded by alignmenttarget_from_json); azimuth and deviation are required f64.
 #must_use
 fn alignment_result_from_json(v) {
-    var tnode = bayan_json_v_obj_get_by_cstr(v, "target");
-    var tcode, scode = alignmenttarget_from_json(tnode);
-    var az = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "azimuth"));
-    var dev = bayan_json_v_float(bayan_json_v_obj_get_by_cstr(v, "deviation"));
-    return alignment_result_new(tcode, scode, az, dev);
+    var obj = sk_de_struct(v, "AlignmentResult")?;
+    var tnode = sk_de_field(obj, "target")?;
+    var at = alignmenttarget_from_json(tnode)?;
+    var az = sk_de_f64_field(obj, "azimuth")?;
+    var dev = sk_de_f64_field(obj, "deviation")?;
+    return Ok(alignment_result_new(atv_target(at), atv_star(at), az, dev));
 }
 
 # Structural equality of two AlignmentResults (target pair via

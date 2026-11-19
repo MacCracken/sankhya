@@ -243,7 +243,8 @@ fn _st_vedic() {
     vec_push(texts, str_from("Vishnu Purana"));
     return sgt_new(ECIV_VEDIC, str_from("Saptarishi"), names, texts,
         str_from("Ursa Major (Saptarishi Mandala)"),
-        str_from("Survived the pralaya (great dissolution) guided by Matsya (fish avatar of Vishnu); restarted the Vedic tradition after the flood."));
+        str_cat(str_from("Survived the pralaya (great dissolution) guided by Matsya (fish avatar of Vishnu); "),
+            str_from("restarted the Vedic tradition after the flood.")));
 }
 
 fn _st_babylonian() {
@@ -261,7 +262,8 @@ fn _st_babylonian() {
     vec_push(texts, str_from("Eridu Genesis"));
     return sgt_new(ECIV_BABYLONIAN, str_from("Apkallu"), names, texts,
         str_from("Associated with Ea/Enki and the Abzu (cosmic waters)"),
-        str_from("Seven antediluvian sages sent by Ea before the Great Flood; taught the arts of civilization to humanity."));
+        str_cat(str_from("Seven antediluvian sages sent by Ea before the Great Flood; taught the arts of "),
+            str_from("civilization to humanity.")));
 }
 
 fn _st_egyptian() {
@@ -272,7 +274,8 @@ fn _st_egyptian() {
     vec_push(texts, str_from("Turin King List (Zep Tepi rulers)"));
     return sgt_new(ECIV_EGYPTIAN, str_from("Shemsu Hor"), names, texts,
         str_from("Sirius (Sopdet) and Orion (Sah)"),
-        str_from("The Edfu texts describe seven sages arriving from an island destroyed by flood in Zep Tepi (the First Time), who established the sacred mounds."));
+        str_cat(str_from("The Edfu texts describe seven sages arriving from an island destroyed by flood in "),
+            str_from("Zep Tepi (the First Time), who established the sacred mounds.")));
 }
 
 fn _st_mayan() {
@@ -289,7 +292,8 @@ fn _st_mayan() {
     vec_push(texts, str_from("Chilam Balam"));
     return sgt_new(ECIV_MAYAN, str_from("Popol Vuh Creators"), names, texts,
         str_from("Pleiades (Tzab-ek) and Orion"),
-        str_from("Multiple cycles of creation and destruction; the current (fourth) world was preceded by a great flood that destroyed the wooden people."));
+        str_cat(str_from("Multiple cycles of creation and destruction; the current (fourth) world was "),
+            str_from("preceded by a great flood that destroyed the wooden people.")));
 }
 
 fn _st_greek() {
@@ -307,7 +311,8 @@ fn _st_greek() {
     vec_push(texts, str_from("Diogenes Laertius"));
     return sgt_new(ECIV_GREEK, str_from("Seven Sages of Greece"), names, texts,
         str_from("Ursa Major (Arktos) and Pleiades"),
-        str_from("Deucalion and Pyrrha survived the Great Flood sent by Zeus; Plato's Timaeus describes the destruction of Atlantis and cyclical catastrophes."));
+        str_cat(str_from("Deucalion and Pyrrha survived the Great Flood sent by Zeus; Plato's Timaeus "),
+            str_from("describes the destruction of Atlantis and cyclical catastrophes.")));
 }
 
 fn _st_chinese() {
@@ -325,7 +330,8 @@ fn _st_chinese() {
     vec_push(texts, str_from("Shujing (Book of Documents)"));
     return sgt_new(ECIV_CHINESE, str_from("Fuxi and Nuwa"), names, texts,
         str_from("Beidou (Northern Dipper / Ursa Major)"),
-        str_from("Fuxi and Nuwa survived the Great Flood; Nuwa repaired the broken sky. Yu the Great later tamed the floodwaters and founded civilization."));
+        str_cat(str_from("Fuxi and Nuwa survived the Great Flood; Nuwa repaired the broken sky. Yu the Great "),
+            str_from("later tamed the floodwaters and founded civilization.")));
 }
 
 # Build the Seven Sages traditions across all six civilizations. Returns a

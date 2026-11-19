@@ -40,17 +40,28 @@ jobs:
           cyrius deps
 
       - name: Lint
-        # Hard gate: any non-cosmetic `warn` line fails CI. Line-length warnings
-        # are exempt — astro/epoch carry long nested-f64 constant expressions.
+        # Hard gate: any `warn` line fails CI, line length included. The
+        # line-length exemption ended at 3.1.2, when astro/epoch/mayan were
+        # reflowed to 0 warnings.
         run: |
           fail=0
           for f in src/*.cyr; do
             out=$(cyrius lint "$f" 2>&1 || true)
             echo "$out"
-            bad=$(echo "$out" | grep -E '^[[:space:]]*warn ' | grep -v 'exceeds 120 characters' || true)
+            bad=$(echo "$out" | grep -E '^[[:space:]]*warn ' || true)
             if [ -n "$bad" ]; then echo "lint: warnings in $f"; fail=1; fi
           done
           [ $fail -eq 0 ] || { echo "lint: warnings present"; exit 1; }
+
+      - name: Format
+        # Every src/*.cyr is cyrfmt-clean from 3.1.2. `cyrius fmt --check`
+        # rewrites nothing and exits non-zero when a file would change.
+        run: |
+          fail=0
+          for f in src/*.cyr; do
+            cyrius fmt "$f" --check || { echo "fmt: $f is not formatted (run 'cyrius fmt $f')"; fail=1; }
+          done
+          [ $fail -eq 0 ] || exit 1
 
       - name: Build (DCE)
         run: |

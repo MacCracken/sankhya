@@ -7,6 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.1.2] — 2026-11-18
+
+**varna 2.5.2 → 2.6.0, and the roadmap's open clean-up items closed.** The cyrius pin stays at
+6.7.18, still the latest release, and itihas 2.6.2 and avatara 2.16.1 are still their latest tags.
+Every `src/*.cyr` now lints with 0 warnings and passes `cyrius fmt --check`, and CI gates both.
+Output is byte-identical to 3.1.1. 32 suites and `tests/foundation.tcyr`: 1,375 assertions, 0 failed.
+
+### Fixed
+
+- **`katapayadi_encode_devanagari` with varna 2.6.0.** varna 2.6.0 makes a Devanagari consonant's
+  own IAST target bare: `क` maps to `"k"`, not `"ka"`. sankhya looked consonants up in the reverse
+  map by the inherent-`a` syllable, as the Rust original did, so against 2.6.0 every non-zero digit
+  came out as `?`. Zero was right only because it has a literal fallback. Two of the existing
+  `vedic` tests caught it. The lookup now tries the bare consonant first and the syllable second,
+  so the output is the same against either table, whichever varna a consumer's `[deps]` resolves.
+
+### Changed
+
+- **varna 2.5.2 → 2.6.0**, its latest tag. 2.5.3, 2.5.4 and 2.6.0 all pin cyrius 6.7.18.
+  `lib/varna.cyr` is byte-equal to the tag's `dist/varna.cyr`, and its sidecar is unchanged
+  (`result`, `hashmap`). sankhya calls varna's numeral systems and its Devanagari→IAST table.
+  Of the breaking changes in these three releases, which mostly concern phoneme inventories, tones,
+  phonotactics, transliteration and JSON, only the bare-consonant table reaches sankhya.
+- ⚠ **DCE binaries grow by about 55 KB:** the smoke test 802,432 → 857,408 B, the bench
+  993,544 → 1,048,528 B. All of it is varna's bundle, which grew from 346,930 to 599,119 B of source
+  (allophone sets, phonotactic profiles, transliteration tables, a bibliography). 3.1.1's source
+  built against varna 2.6.0 gives the same 857,408 B.
+- **`cyrius.lock` regenerated from an empty `lib/`** (50 deps, 3 commit pins). Only varna's commit
+  row and the `lib/varna.cyr` hash change. `cyrius deps --verify` reports 50 verified, and
+  `cyrius deps --locked` is clean. Changing the tag alone is not enough: `cyrius deps` keeps
+  varna@2.5.2's pin, fail-closed, until the lock is deleted.
+- **`src/astro.cyr` calls `ganita_f64_asin` / `_acos` / `_atan2`** (13 calls) instead of the
+  `f64_*` names ganita keeps as "deprecated alias, migration window only". The aliases forward to
+  these functions, so nothing moves.
+- **Long lines reflowed (roadmap #2).** The 36 lines over 120 columns, in astro (29), epoch (6)
+  and mayan (1), are rewritten without changing behaviour:
+  - the star catalog is one `_star_add` row per star;
+  - long f64 chains are split into named terms. Every operand order and association is kept,
+    including the precession products `(trig θ · cos δ₀) · cos(α₀ + ζ)`, which would change bits
+    if regrouped;
+  - the Seven Sages narratives are split with `str_cat`, since 6.7.18 has no adjacent-literal
+    concatenation;
+  - mayan's Calendar Round match is a nested `if`, with the same short-circuit order.
+- **The 8 long lines in four test suites** (adversarial, mayan, serial_islamic, serial_mayan) are
+  wrapped too, so `cyrius audit` now passes its fmt and lint steps across `src/` and `tests/`.
+  Its docs step still fails, on 795 undocumented public fns, the same count as 3.1.1.
+- **`src/gregorian.cyr` is fmt-clean.** `cyrfmt` re-indents the day-count continuation lines to
+  4 columns, so the sum is now two statements. It is an integer sum, so wrapping arithmetic gives
+  the same value in any grouping.
+- **CI:** the lint gate no longer exempts line length, and a new step runs
+  `cyrius fmt --check` on every `src/*.cyr`. Neither has run on GitHub yet; the first push will
+  be their test.
+- **Docs:** ADR-006 gains an addendum, and roadmap #1 is re-stated. Both had said Cyrius has no
+  features system. It has had `optional` deps and a `[features]` table since 6.3.1, but a feature
+  only controls dep resolution. It defines no `#ifdef` symbol, and transitive `[features]` tables
+  are not read, so the deps stay always-on.
+
+### Verified
+
+- **Output is byte-identical to 3.1.1.** The first dump has 1,771 lines:
+  - raw f64 bits for obliquity, Greenwich and local sidereal time, and solar longitude and
+    declination at 45 JDNs;
+  - all 20 catalog stars through ecliptic ↔ equatorial, horizontal and precession at three epochs;
+  - `correlate` as full JSON at 45 JDNs;
+  - cuneiform, hieroglyphic, rod, Greek, Devanagari-digit and both Katapayadi renderings for
+    138 values, and isopsephy for 10 words.
+
+  The second dump covers code the reflow touched that the first does not reach. It has 630 lines:
+  all six Seven Sages traditions, 116 monument-alignment hits, 30 Calendar Round searches
+  (invalid inputs included) and Gregorian → JDN for years −5000 to 5000. It was compared against
+  3.1.1 built from its own tree and `lib/`. Every f64 bit is unchanged, so the bit-for-bit Rust
+  match from 3.0.3 carries over.
+- **7 new `vedic` assertions:** all ten Katapayadi consonants (9876543210 → ञ क ख ग घ ङ च छ ज झ),
+  zero read from varna rather than the literal fallback, no `?` for 1–999, and the pre-2.6.0
+  syllable keys through a hand-built map.
+- **All 33 suites pass when each is built with `CYRIUS_DCE=1`** (1,375 assertions), the suite
+  passes under `cyrius test --bounds tests/tcyr`, and `tests/sankhya.fcyr` passes.
+
+### Performance
+
+- **Flat overall.** Interleaved A/B over 9 rounds against a 3.1.1 control (DCE bench binaries),
+  comparing medians, twice, at load 1.1–1.7 on 16 threads: suite total −0.3 % and −0.6 %.
+  Two rows moved in both runs:
+  - `roman/roundtrip_3999` is faster (−5.0 %, −5.2 %; spread ±1.6 % / ±3.1 %). roman's code did not
+    change, so this is not attributed; varna's larger bundle shifts code layout.
+  - `astro/precession_1000` is faster (−3.6 %, −3.4 %), the reflowed function, but the second run
+    falls inside its ±3.6 % spread.
+
+  `babylonian/sqrt_convergence` was +4.5 % in the first run and +1.8 % in the second, inside its spread.
+- **The 3.1.2 rows in `bench-history.csv` carry `2dfbc43`** because they were recorded before the
+  3.1.2 commit. Compare releases with the A/B above, not these single-sample rows.
+
+### Still open
+
+Re-checked at this release, all blocked upstream (details in the roadmap):
+
+- **#1, optional deps:** waits on a link from features to `#ifdef` defines and on transitive
+  feature resolution.
+- **#3, epoch context `from_json`:** itihas 2.6.2 and avatara 2.16.1 define no `*_from_json`.
+- **bayan-json:** itihas 2.6.2's sidecar still names the bayan monolith.
+- **`xalloc`:** still defined in both the itihas and avatara bundles.
+- **`cyrius audit`:** still exits 1, now on its docs step alone (795 undocumented public fns).
+  This one is not blocked; it is just unstarted work.
+
 ## [3.1.1] — 2026-11-05
 
 **cyrius 6.7.9 → 6.7.18, with the sibling deps at their latest tags.** No library source changed,

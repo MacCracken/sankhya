@@ -52,6 +52,24 @@ they powered is ported and always present.
   on upstream Cyrius gaining a features equivalent. When it lands, revisit ADR-005's
   rationale — it still holds.
 
+## Addendum (3.1.2, 2026-11-18)
+
+One premise in *Context* was wrong, and it has been since before this ADR was written: cyrius
+6.3.1 (2026-06-28) added conditional dependency resolution. A `[deps.<name>]` block may set
+`optional = true`, a Cargo-style `[features]` table names which optional deps each feature
+turns on, and `cyrius build --features` / `--no-default-features` select them.
+
+The decision stands, because the two halves still do not join up:
+
+- A feature decides only whether a dep is fetched and included. It defines no symbol for
+  `#ifdef`, so sankhya's calls into varna, itihas and avatara would still compile and fail
+  as undefined fns whenever the dep is off. A consumer would have to pass a matching
+  `-D NAME` alongside each `--features` by hand.
+- Features are read from the root manifest only; transitive `[features]` tables are not
+  parsed. sankhya's own `default` would not reach hisab or any other consumer.
+
+Re-introducing the gating (roadmap #1) now waits on those two gaps, not on a features system.
+
 ## Alternatives Considered
 
 - **Drop the gated capabilities** — rejected: a functional regression, and the explicit

@@ -284,11 +284,8 @@ fn gregorian_to_jdn(date) {
 
     # Reconstruct day count from March 1, year 0 = JDN 1721120. y may be
     # negative, so the /4, /100, /400 terms use Euclidean (floor) division.
-    var days = 365 * y + div_euclid(y, 4) - div_euclid(y, 100)
-             + div_euclid(y, 400)
-             + (153 * mp + 2) / 5
-             + day
-             - 1;
+    var days = 365 * y + div_euclid(y, 4) - div_euclid(y, 100) + div_euclid(y, 400);
+    days = days + (153 * mp + 2) / 5 + day - 1;
 
     var half = f64_div(f64_from(1), f64_from(2));
     var jdn = f64_sub(f64_from(days + 1721120), half);

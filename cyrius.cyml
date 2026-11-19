@@ -83,7 +83,7 @@ stdlib = [
 # added with the epoch capstone.
 [deps.varna]
 git = "https://github.com/MacCracken/varna.git"
-tag = "2.5.2"
+tag = "2.6.0"
 modules = ["dist/varna.cyr"]
 
 # epoch's historical context (eras/civilizations/events) — always-on, full parity.

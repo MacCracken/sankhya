@@ -120,6 +120,31 @@ fn main() {
     ok(str_eq_cstr(katapayadi_encode_devanagari(1), "क"), "katapayadi_devanagari(1)=क");
     ok(str_eq_cstr(katapayadi_encode_devanagari(21), "क ख"), "katapayadi_devanagari(21)=क ख");
 
+    # ---- katapayadi_devanagari: every digit through varna's reverse map ----
+    # LSD first, so 9876543210 lists digits 0..9: ñ k kh g gh ṅ c ch j jh.
+    ok(str_eq_cstr(katapayadi_encode_devanagari(9876543210), "ञ क ख ग घ ङ च छ ज झ"),
+        "katapayadi_devanagari(9876543210) = all ten consonants");
+    # Zero must come from varna, not the literal fallback.
+    var kt_rev = translit_reverse_map(translit_devanagari_iast());
+    ok(str_eq_cstr(str_from(_katapayadi_deva_glyph(kt_rev, 0)), "ञ"), "deva glyph(0) via varna = ञ");
+    var kt_n = 1;
+    var kt_bad = 0;
+    while (kt_n < 1000) {
+        if (str_contains_cstr(katapayadi_encode_devanagari(kt_n), "?") == 1) { kt_bad = kt_bad + 1; }
+        kt_n = kt_n + 1;
+    }
+    check(kt_bad, 0, "katapayadi_devanagari 1..999: no unmapped '?' glyph");
+
+    # ---- katapayadi_devanagari: pre-2.6.0 varna table (inherent-'a' keys) ----
+    var kt_old = map_new();
+    map_set(kt_old, "ña", "ञ");
+    map_set(kt_old, "ka", "क");
+    map_set(kt_old, "jha", "झ");
+    ok(str_eq_cstr(str_from(_katapayadi_deva_glyph(kt_old, 0)), "ञ"), "deva glyph(0) via 'ña' key");
+    ok(str_eq_cstr(str_from(_katapayadi_deva_glyph(kt_old, 1)), "क"), "deva glyph(1) via 'ka' key");
+    ok(str_eq_cstr(str_from(_katapayadi_deva_glyph(kt_old, 9)), "झ"), "deva glyph(9) via 'jha' key");
+    check(_katapayadi_deva_glyph(kt_old, 2), 0, "deva glyph(2) absent from both key forms -> 0");
+
     # ---- logging init doesn't crash ----
     sankhya_log_init();
     ok(1, "log init ok");

@@ -419,7 +419,8 @@ fn test_epoch() {
     no(is_ok(find_cycle_alignments(cyc, f64_from(1000), f64_from(500), f64_from(1))), "find_align start>=end err");
 
     # fuzz_find_cycle_alignments_too_few_cycles
-    no(is_ok(find_cycle_alignments(vec1(CN_SAROS), f64_from(0), f64_from(1000), f64_from(1))), "find_align <2 cycles err");
+    var fca_t, fca_v = find_cycle_alignments(vec1(CN_SAROS), f64_from(0), f64_from(1000), f64_from(1));
+    no(is_ok(fca_t), "find_align <2 cycles err");
 
     # fuzz_correlate_extreme_jdn: if Ok, jdn finite
     var cmax_t, cmax_v = correlate(f64_div(F64_MAXV, f64_from(2)));

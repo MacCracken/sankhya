@@ -478,8 +478,10 @@ fn find_calendar_round(tzolkin_number, tzolkin_sign, haab_day, haab_month, start
         var day = start_day + offset;
         var tz = tzolkin_from_days(day);
         var hb = haab_from_days(day);
-        if (tz_number(tz) == tzolkin_number && tz_daysign(tz) == tzolkin_sign && hb_day(hb) == haab_day && hb_month(hb) == haab_month) {
-            return Ok(day);
+        if (tz_number(tz) == tzolkin_number && tz_daysign(tz) == tzolkin_sign) {
+            if (hb_day(hb) == haab_day && hb_month(hb) == haab_month) {
+                return Ok(day);
+            }
         }
         offset = offset + 1;
     }

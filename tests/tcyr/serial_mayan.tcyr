@@ -90,7 +90,8 @@ fn main() {
     ok(venusphase_eq(VP_MORNING_STAR, venusphase_from_json(sk_json_parse(vpj))), "VenusPhase roundtrip");
     var vpe = venusphase_to_json(VP_INFERIOR_CONJUNCTION);
     ok(str_eq_cstr(vpe, "\"InferiorConjunction\""), "VenusPhase InferiorConjunction json");
-    ok(venusphase_eq(VP_INFERIOR_CONJUNCTION, venusphase_from_json(sk_json_parse(vpe))), "VenusPhase Inferior roundtrip");
+    var vpe_back = venusphase_from_json(sk_json_parse(vpe));
+    ok(venusphase_eq(VP_INFERIOR_CONJUNCTION, vpe_back), "VenusPhase Inferior roundtrip");
 
     return assert_summary();
 }

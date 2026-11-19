@@ -1,6 +1,6 @@
 commit	dcc58ce037c9914066cc6b75097fca7d3b915d09	avatara	https://github.com/MacCracken/avatara.git	2.16.1
 commit	3da31aa125618ed8431f4202d995e2d4c096c919	itihas	https://github.com/MacCracken/itihas.git	2.6.2
-commit	716a3405e2b77e8dd71bcaa5d6f5d224cf5d96e7	varna	https://github.com/MacCracken/varna.git	2.5.2
+commit	1c03ff63d115173807133f79c6b440d50c6c0377	varna	https://github.com/MacCracken/varna.git	2.6.0
 346716377b00f36e58eb16cf7fe1dd62dd8fe577930d0d0429f822795b35817c  lib/alloc.cyr
 5afd5bb7cba4e49fee331f6a2838f4e01d9781defaf531403f6616f42ac7151b  lib/alloc_agnos.cyr
 57af1877c5082793ecfcfb2bf358c81cda79eaaae4feaa12eb7b963c4cbdf739  lib/alloc_cx.cyr
@@ -49,6 +49,6 @@ aeeba5627b78ffca6a34ebcbe318f50726a87d4f19713bf9ed070bbbec7ded74  lib/unicode/_d
 224acfc288e499dd9d14f37cfb4f09a6db23a91cbc7d840083cc25f4ba40c9aa  lib/unicode/casefold.cyr
 34e0d5bc69f7fdf414d3262b2c54e462f243701e68454bad21ad1a1e9f4a6c8b  lib/unicode/categories.cyr
 c1f5dc3cd1aa0be1ce1939a1d9fd1eda83f409e09e301a902ce7fcf65dd4eb40  lib/unicode/normalize.cyr
-b869cceccf7d7b29ecfa2818dffc4c076c0f970abb3e87b769ec0184b9163f9a  lib/varna.cyr
+d6bbb97b4abf5d065a8d54969dcc5ee80ddf5bb735b1a50c1adf6fdc33d910b5  lib/varna.cyr
 0566d0b778ac0e41ae27debbb5a7f7e579f14cc9e222a6e367309ea0e1408081  lib/vec.cyr
 cyrius	6.7.18

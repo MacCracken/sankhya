@@ -56,9 +56,11 @@ fn main() {
 
     # ---- AlJabrForm / KhayyamCubicType name<->from_name parity ----
     ok(str_eq_cstr(aljabr_form_name(ALJ_ROOTS_EQUAL_NUMBER), "RootsEqualNumber"), "aljabr_form_name RootsEqualNumber");
-    assert_eq(aljabr_form_from_name(str_from("RootsAndNumberEqualSquares")), ALJ_ROOTS_AND_NUMBER_EQUAL_SQUARES, "aljabr_form_from_name round-trip");
+    assert_eq(aljabr_form_from_name(str_from("RootsAndNumberEqualSquares")), ALJ_ROOTS_AND_NUMBER_EQUAL_SQUARES,
+        "aljabr_form_from_name round-trip");
     ok(str_eq_cstr(khayyam_type_name(KCT_CUBE_EQUAL_NUMBER), "CubeEqualNumber"), "khayyam_type_name CubeEqualNumber");
-    assert_eq(khayyam_type_from_name(str_from("CubeThingNumberEqualSquare")), KCT_CUBE_THING_NUMBER_EQUAL_SQUARE, "khayyam_type_from_name round-trip");
+    assert_eq(khayyam_type_from_name(str_from("CubeThingNumberEqualSquare")), KCT_CUBE_THING_NUMBER_EQUAL_SQUARE,
+        "khayyam_type_from_name round-trip");
 
     # ---- from_name miss returns (0 - 1) ----
     var miss = hijri_month_from_name(str_from("NotAMonth"));

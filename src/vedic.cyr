@@ -279,8 +279,23 @@ fn meru_prastara(rows) {
 # Devanagari Katapayadi encoding + numerals (via varna — always-on parity)
 # ---------------------------------------------------------------------------
 
-# IAST syllable (with inherent 'a') for digit 0-9, matching varna's
-# Devanagari->IAST table (क->"ka", ख->"kha", ...; ञ->"ña", ङ->"ṅa").
+# Bare IAST consonant for digit 0-9 (ञ->"ñ", क->"k", ख->"kh", ... ङ->"ṅ"),
+# the keys of varna >= 2.6.0's Devanagari->IAST table.
+fn _iast_consonant(d) {
+    if (d == 0) { return "ñ"; }
+    if (d == 1) { return "k"; }
+    if (d == 2) { return "kh"; }
+    if (d == 3) { return "g"; }
+    if (d == 4) { return "gh"; }
+    if (d == 5) { return "ṅ"; }
+    if (d == 6) { return "c"; }
+    if (d == 7) { return "ch"; }
+    if (d == 8) { return "j"; }
+    return "jh";
+}
+
+# The same consonant with the inherent 'a' ("ka", "kha", ... "ña"): the keys
+# of varna < 2.6.0's table, which the Rust original looked up.
 fn _iast_syllable(d) {
     if (d == 0) { return "ña"; }
     if (d == 1) { return "ka"; }
@@ -294,6 +309,17 @@ fn _iast_syllable(d) {
     return "jha";
 }
 
+# Devanagari consonant for digit d through varna's IAST reverse map. varna 2.6.0
+# made a consonant's own target bare (क is "k", not "ka"), so the bare key is
+# tried first and the inherent-'a' syllable second: the result is the same
+# against either table, whichever varna the consumer's [deps] resolves.
+# Returns a C-string, or 0 when the table has neither key.
+fn _katapayadi_deva_glyph(rev, d) {
+    var g = map_get(rev, _iast_consonant(d));
+    if (g == 0) { g = map_get(rev, _iast_syllable(d)); }
+    return g;
+}
+
 # Katapayadi encoding rendered in Devanagari consonants, space-separated,
 # least-significant digit first. Uses varna's IAST reverse map (IAST -> Deva).
 #must_use
@@ -302,7 +328,7 @@ fn katapayadi_encode_devanagari(n) {
     var rev = translit_reverse_map(tt);
 
     if (n == 0) {
-        var g0 = map_get(rev, "ña");
+        var g0 = _katapayadi_deva_glyph(rev, 0);
         if (g0 == 0) { g0 = "ञ"; }
         return str_from(g0);
     }
@@ -314,8 +340,7 @@ fn katapayadi_encode_devanagari(n) {
         var digit = remaining % 10;
         remaining = remaining / 10;
         if (first == 0) { str_builder_add_cstr(sb, " "); }
-        var syl = _iast_syllable(digit);
-        var g = map_get(rev, syl);
+        var g = _katapayadi_deva_glyph(rev, digit);
         if (g == 0) { g = "?"; }
         str_builder_add_cstr(sb, g);
         first = 0;

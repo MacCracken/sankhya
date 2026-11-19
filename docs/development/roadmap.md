@@ -1,9 +1,19 @@
 # Development Roadmap
 
-> **Status**: v3.1.1 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.1.1 | **Compiler**: cyrius 6.7.18
+> **Status**: v3.1.2 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.1.2 | **Compiler**: cyrius 6.7.18
 
 Completed items are in [CHANGELOG.md](../../CHANGELOG.md).
-`VERSION` is the single source of truth (`3.1.1`); `cyrius.cyml` derives it via `${file:VERSION}`.
+`VERSION` is the single source of truth (`3.1.2`); `cyrius.cyml` derives it via `${file:VERSION}`.
+
+## Completed in 3.1.2
+
+- [x] **varna 2.5.2 → 2.6.0**, with `katapayadi_encode_devanagari` fixed for its bare-consonant
+      Devanagari table (the lookup works against both the old and new key forms)
+- [x] Backlog #2 — **line-length reflow** in `astro`/`epoch`/`mayan`: `cyrius lint` reports 0 warnings
+      across `src/` (was 36), and CI's line-length exemption is gone
+- [x] `src/gregorian.cyr` fmt-clean; every `src/*.cyr` passes `cyrius fmt --check`, now a CI gate
+- [x] The 13 deprecated `f64_asin` / `f64_acos` / `f64_atan2` calls → `ganita_f64_*`
+- [x] Output byte-identical to 3.1.1 (two dumps, 2,401 lines), so the 3.0.3 bit-for-bit Rust match holds
 
 ## Completed in 3.0.0 — Rust → Cyrius port
 
@@ -58,18 +68,21 @@ at `rust-old/` as the parity oracle.
 
 ## Deferred / Backlog
 
-**Recorded at 3.0.3 to 3.1.1 (2026-11-05):**
-- `cyrius audit` exits 1, as it has since at least 3.0.2, and CI does not run it. It fails on any of three steps:
-  fmt (`src/gregorian.cyr`, whitespace only), lint (52 warnings, including the line-length ones CI exempts) and
-  docs (795 undocumented public fns). Formatting alone does not turn it green.
+**Recorded at 3.0.3 to 3.1.2 (re-checked 2026-11-18):**
+- `cyrius audit` exits 1, as it has since at least 3.0.2, and CI does not run it. From 3.1.2 its fmt and lint
+  steps pass across `src/` and `tests/`; what keeps it red is the docs step (795 undocumented public fns, the
+  same at 3.1.1 and 3.1.2). Documenting them is the remaining work to make `audit` a usable gate. Not blocked.
 - bayan's `lib/bayan.cyr` keeps about 350 KB of Unicode tables that DCE cannot drop, so a DCE binary here is
   282 KB larger than at 3.1.0 (smoke 520,104 → 802,432 B). sankhya uses only bayan's JSON layer, but it cannot
   take the thin `dist/bayan-json.cyr` while itihas's sidecar and `# Requires` block name the monolith; both
-  would define the JSON symbols. Once itihas moves, follow it.
+  would define the JSON symbols. Once itihas moves, follow it. Still blocked at 3.1.2: itihas 2.6.2 is its
+  latest tag.
 - `xalloc` is defined by both the itihas and avatara bundles. Since cyrius 6.6.20 every call binds to avatara's,
   so itihas loses only its non-positive-size message; both exit 134. The fix is upstream (a prefixed name).
-- `src/` calls `f64_asin` / `f64_acos` / `f64_atan2` 13 times. ganita marks them "deprecated alias, migration
-  window only" in a comment (no `#deprecated` yet); `ganita_f64_*` are the lasting names.
+  Unchanged at 3.1.2 (itihas 2.6.2, avatara 2.16.1 are the latest tags).
+- **Recorded at 3.1.2:** varna 2.6.0's `dist/varna.cyr` is 599,119 B of source (346,930 B at 2.5.2), and
+  DCE keeps 54,976 B more of it in every binary. sankhya uses its numeral tables and one transliteration
+  table. A thinner varna profile, if varna ships one, would win that back.
 
 
 Post-port work, none of it blocking. Sequenced most-consequential first; each is
@@ -77,9 +90,9 @@ its own work-loop cycle behind the cleanliness + benchmark gates.
 
 | # | Item | Effort | Details |
 |---|------|--------|---------|
-| 1 | **Re-introduce optional/feature-gated deps** | Large | Re-introduce optional/feature-gated deps (`varna`/`itihas`/`avatara`) once Cyrius gains a Cargo-features equivalent — **currently always-on for full parity**. The Rust crate gated all three behind optional Cargo features (`logging`, script rendering, historical context, Saptarishi profiles); Cyrius has no feature-flag system yet, so they are compiled in unconditionally. Nothing is dropped — this is a packaging/optionality gap, not a functional one. Blocked on upstream Cyrius feature support. |
-| 2 | **Line-length reflow in `astro`/`epoch`** | Low | The two densest modules (heavy `f64_*` call chains and long correlate/convert dispatch) carry a handful of over-long lines that survived the mechanical port. Reflow for readability; behavior-preserving, no API change. |
-| 3 | **epoch external-context deserialization** | Medium | `epoch`'s `MultiCalendarDate` serializes its itihas eras/civilizations/events and avatara Saptarishi context on the `_to_json` path, but `_from_json` cannot fully reconstruct those sibling records until `itihas` and `avatara` ship `from_json` constructors. Round-trip is complete for the sankhya-native fields; the external-context arrays reconstruct once the upstream `from_json` entry points land. |
+| 1 | **Re-introduce optional/feature-gated deps** | Large | Re-introduce optional/feature-gated deps (`varna`/`itihas`/`avatara`) — **currently always-on for full parity**. The Rust crate gated all three behind optional Cargo features (script rendering, historical context, Saptarishi profiles). Nothing is dropped; this is a packaging/optionality gap, not a functional one. **Re-checked at 3.1.2:** Cyrius has had `optional = true` deps and a `[features]` table since 6.3.1, so the earlier "no feature system" note was wrong. But a feature only decides whether a dep is resolved and vendored; it defines no `#ifdef` symbol, and features are read from the root manifest only (transitive `[features]` tables are not parsed). Gating sankhya's varna/itihas/avatara code would therefore need every consumer to pass a matching `--features` and `-D` by hand, or the bundle would call undefined fns. Still blocked upstream, on a feature → define link and on transitive feature resolution. See ADR-006. |
+| 2 | ~~Line-length reflow in `astro`/`epoch`~~ | — | **Done in 3.1.2** (with `mayan`): 0 lint warnings across `src/`, output byte-identical. |
+| 3 | **epoch external-context deserialization** | Medium | `epoch`'s `MultiCalendarDate` serializes its itihas eras/civilizations/events and avatara Saptarishi context on the `_to_json` path, but `_from_json` cannot fully reconstruct those sibling records until `itihas` and `avatara` ship `from_json` constructors. Round-trip is complete for the sankhya-native fields; the external-context arrays reconstruct once the upstream `from_json` entry points land. **Still blocked at 3.1.2:** neither itihas 2.6.2 nor avatara 2.16.1 (their latest tags) defines a `*_from_json`. |
 
 ### Demand-gated (future)
 
@@ -92,7 +105,8 @@ its own work-loop cycle behind the cleanliness + benchmark gates.
 
 | Gate | Command | Expected |
 |------|---------|----------|
-| Tests | `cyrius test tests/tcyr` | `32 passed, 0 failed` (~1,346 assertions) |
+| Tests | `cyrius test tests/tcyr` | `32 passed, 0 failed` (1,353 assertions; `tests/foundation.tcyr` adds 22) |
 | Benchmarks | `cyrius bench tests/sankhya.bcyr` | 18 benches; recorded via `scripts/bench-history.sh` |
-| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.1.1 (cyrius port)` |
+| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.1.2 (cyrius port)` |
+| Lint / format | `cyrius lint <file>` / `cyrius fmt <file> --check` | 0 warnings and clean for every `src/*.cyr` (CI gates both) |
 | Bundle | `cyrius distlib` | regenerates `dist/sankhya.cyr` |

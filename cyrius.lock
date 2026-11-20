@@ -1,5 +1,5 @@
-commit	dcc58ce037c9914066cc6b75097fca7d3b915d09	avatara	https://github.com/MacCracken/avatara.git	2.16.1
-commit	3da31aa125618ed8431f4202d995e2d4c096c919	itihas	https://github.com/MacCracken/itihas.git	2.6.2
+commit	5719b0e7a25798957baa5f4bc7bc579aa925a6b5	avatara	https://github.com/MacCracken/avatara.git	2.17.0
+commit	4d96d78f991100849ff93f0d592501c37b0c5c40	itihas	https://github.com/MacCracken/itihas.git	2.7.0
 commit	1c03ff63d115173807133f79c6b440d50c6c0377	varna	https://github.com/MacCracken/varna.git	2.6.0
 346716377b00f36e58eb16cf7fe1dd62dd8fe577930d0d0429f822795b35817c  lib/alloc.cyr
 5afd5bb7cba4e49fee331f6a2838f4e01d9781defaf531403f6616f42ac7151b  lib/alloc_agnos.cyr
@@ -12,7 +12,7 @@ commit	1c03ff63d115173807133f79c6b440d50c6c0377	varna	https://github.com/MacCrac
 5a9250b62ea93b19e39ef1179911ceb1f35c4d4b41df4a561d34afebee7c57b9  lib/args_win.cyr
 9583b938d791d35e24c3ca45c44e199a4e58197fbe6b3f32c3d9676908d69d9c  lib/assert.cyr
 23516d97b8eb5ba1c7a1b6e34a89b3b0653f68d858edca8521a7ccce5a06bce5  lib/atomic.cyr
-654eda5de63362488b455cb064c60d6613786820508e640494b6bb3b9ac70ec6  lib/avatara.cyr
+d99ac4f4d4e3e603792f0297772586d3f63f683a1edc5ef9eb5fdcf1095e1227  lib/avatara-json.cyr
 233e7263692ab65ca4dab7bb98aae0ddc0fa3cc937c87ca8ff96326d3f0ae20e  lib/bayan.cyr
 cd9321d9400401cd8895d1f488d969ea391a1194b327f7a1fa60b99912b73cf2  lib/bench.cyr
 b99081e633d572569ee63c6a915fe4aa39b3ac4ff5665c08cc4c9416ed2f6928  lib/boxed.cyr
@@ -25,7 +25,7 @@ b99081e633d572569ee63c6a915fe4aa39b3ac4ff5665c08cc4c9416ed2f6928  lib/boxed.cyr
 7ed650c49b548d1a1895a2c4a3f08bbe0378248131464b1952e8744821a10ecd  lib/hashseed.cyr
 4b40ccbf5397bf6c2cef1cff8e13d8d689eba48f4d9f65e3efe2f9f00ff6d086  lib/http.cyr
 e532c082ce75b0f18dc8e3c07462300b428e432aa19e6a5fcc2b0b6b174be45d  lib/io.cyr
-e6c8d1cc29819683b25e0e6966e52d9f91311e45791ecd3154009e11366888e8  lib/itihas.cyr
+41dfe193f3a8730deb7ae329a979c90fade428a282e0137228745fc038093c7d  lib/itihas.cyr
 3a85748ee6bf83fe72bb310f21341c97232649def8c6064213da5502d86888f4  lib/math.cyr
 69eb81d777646d1b4dbaf69ebc38cb7ed680231d44cc833eb861978ef2255262  lib/net.cyr
 52d8879572df7a9ab0c5d1b97eb1f41799b06e684c01876d8023f04a4c63ee0d  lib/poison.cyr

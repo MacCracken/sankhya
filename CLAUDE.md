@@ -8,7 +8,7 @@ historical calendars, and archaeoastronomy for AGNOS.
 - **Type**: Cyrius library (ported from Rust v2.0.0 — original preserved at `rust-old/`)
 - **License**: GPL-3.0-only
 - **Compiler**: Cyrius 6.7.18 — pinned in `cyrius.cyml` `[package].cyrius`
-- **Version**: SemVer 3.2.0 — `VERSION` at the project root is the source of truth
+- **Version**: SemVer 3.3.0 — `VERSION` at the project root is the source of truth
   (`cyrius.cyml` derives it via `${file:VERSION}`); do not inline the number elsewhere
 - **Consumers**: hisab (higher mathematics, as an optional companion), and the wider AGNOS
   ecosystem needing historical/ancient computations, calendar systems, or archaeoastronomy
@@ -48,7 +48,8 @@ historical calendars, and archaeoastronomy for AGNOS.
 - **math** + **ganita** (stdlib) — f64 constants/parse and extended math (pow/hypot/tan/asin/acos/atan2).
 - **varna** (git dep, always-on) — Unicode numeral rendering (chinese/egyptian/greek/vedic/babylonian).
 - **itihas** (git dep, always-on) — `epoch` historical context (eras/civilizations/events).
-- **avatara** (git dep, always-on) — `epoch` Saptarishi archetype profiles.
+- **avatara** (git dep, always-on) — `epoch` Saptarishi archetype profiles, via its
+  `dist/avatara-json.cyr` bundle (the profile JSON codec; bayan comes from the stdlib monolith).
 
 > The Rust crate gated varna/itihas/avatara behind optional Cargo features. Cyrius has no
 > feature-flag system yet, so they are **always-on** dependencies here — full functional parity,
@@ -61,7 +62,8 @@ historical calendars, and archaeoastronomy for AGNOS.
 - **Cross-check against `rust-old/`** — the correctness bar is "matches what the Rust did". The
   original tree is the parity oracle; do not modify it. Diverge only with an ADR
   (ADR-007 lists the input-domain guards, ADR-008 the accuracy corrections, as of 3.1.3;
-  ADR-009 the Result-returning decoders, 3.2.0).
+  ADR-009 the Result-returning decoders, 3.2.0; ADR-010 the context decoding through
+  itihas's and avatara's codecs, 3.3.0).
 - **Zero panics** — no `unwrap`; every fallible path returns a `Result` (`Ok`/`sk_fail`) or a
   sentinel; check every fallible stdlib call. The adversarial suite enforces "Err or finite, never NaN/Inf".
 - **Euclidean modulo for calendars** — `rem_euclid`/`div_euclid` (not bare `%`/`/`) wherever an

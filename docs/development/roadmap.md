@@ -1,9 +1,19 @@
 # Development Roadmap
 
-> **Status**: v3.2.0 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.2.0 | **Compiler**: cyrius 6.7.18
+> **Status**: v3.3.0 released (Rust→Cyrius port complete at 3.0.0) | **Current**: 3.3.0 | **Compiler**: cyrius 6.7.18
 
 Completed items are in [CHANGELOG.md](../../CHANGELOG.md).
-`VERSION` is the single source of truth (`3.2.0`); `cyrius.cyml` derives it via `${file:VERSION}`.
+`VERSION` is the single source of truth (`3.3.0`); `cyrius.cyml` derives it via `${file:VERSION}`.
+
+## Completed in 3.3.0 — `MultiCalendarDate` context round trip
+
+- [x] Backlog #3: the itihas eras, civilizations and events and the avatara Saptarishi profiles
+      decode through **itihas 2.7.0**'s `era_from_json` / `civ_from_json` / `event_from_json`
+      and **avatara 2.17.0**'s `profile_from_json` (`dist/avatara-json.cyr`), as ADR-010 records
+- [x] The 3.2.0 crash (exit 139) when a decoded date with context was re-encoded is gone
+- [x] ⚠ `saptarishi_profiles` is serde's `[name, profile]` tuples with the whole profile, and every
+      other encoded byte is unchanged (8,431 dump lines). The JSON is about 3.4× larger, so
+      `serial/mcd_json_roundtrip` runs about 4.3× slower. No other bench moved.
 
 ## Completed in 3.2.0 — Result-returning decoders
 
@@ -108,9 +118,8 @@ at `rust-old/` as the parity oracle.
   - `solar_longitude` uses a two-term equation of centre (Meeus 25.4 has three, with T terms);
   - `to_unicode_rods` uses the vertical (unit) glyphs in every place, where rod numerals alternate
     with the horizontal forms U+1D369–71.
-- `MultiCalendarDate` writes 3 of the avatara profile fields for each Saptarishi entry (name, tradition,
-  description), where serde wrote the whole profile. Full fidelity needs an avatara serializer, which is
-  now in progress (table row #3).
+- ~~`MultiCalendarDate` writes 3 of the avatara profile fields for each Saptarishi entry.~~ **Done in
+  3.3.0:** each entry is serde's `[name, profile]` tuple with the whole profile (ADR-010).
 - `sk_f64_display` (error messages) writes |x| >= 1e21 and |x| < 1e-6 in exponent form, where Rust's
   `Display` prints every digit.
 - Persian dates outside jalaali-js's -61..3177 AP are extrapolated, as the Rust did; jalaali-js rejects them.
@@ -121,10 +130,12 @@ at `rust-old/` as the parity oracle.
   282 KB larger than at 3.1.0 (smoke 520,104 → 802,432 B). sankhya uses only bayan's JSON layer, but it cannot
   take the thin `dist/bayan-json.cyr` while itihas's sidecar and `# Requires` block name the monolith; both
   would define the JSON symbols. Once itihas moves, follow it. Still blocked at 3.1.2: itihas 2.6.2 is its
-  latest tag.
+  latest tag. Still blocked at 3.3.0: itihas 2.7.0's sidecar names `bayan`. avatara's
+  `dist/avatara-json.cyr` leaves the choice to the consumer, and sankhya gives it the monolith.
 - `xalloc` is defined by both the itihas and avatara bundles. Since cyrius 6.6.20 every call binds to avatara's,
   so itihas loses only its non-positive-size message; both exit 134. The fix is upstream (a prefixed name).
-  Unchanged at 3.1.2 (itihas 2.6.2, avatara 2.16.1 are the latest tags).
+  Unchanged at 3.1.2 (itihas 2.6.2, avatara 2.16.1 are the latest tags), and still at 3.3.0
+  (itihas 2.7.0; avatara 2.17.0, where `dist/avatara-json.cyr` defines it too).
 - **Recorded at 3.1.2:** varna 2.6.0's `dist/varna.cyr` is 599,119 B of source (346,930 B at 2.5.2), and
   DCE keeps 54,976 B more of it in every binary. sankhya uses its numeral tables and one transliteration
   table. A thinner varna profile, if varna ships one, would win that back.
@@ -137,7 +148,7 @@ its own work-loop cycle behind the cleanliness + benchmark gates.
 |---|------|--------|---------|
 | 1 | **Re-introduce optional/feature-gated deps** | Large | Re-introduce optional/feature-gated deps (`varna`/`itihas`/`avatara`) — **currently always-on for full parity**. The Rust crate gated all three behind optional Cargo features (script rendering, historical context, Saptarishi profiles). Nothing is dropped; this is a packaging/optionality gap, not a functional one. **Re-checked at 3.1.2:** Cyrius has had `optional = true` deps and a `[features]` table since 6.3.1, so the earlier "no feature system" note was wrong. But a feature only decides whether a dep is resolved and vendored; it defines no `#ifdef` symbol, and features are read from the root manifest only (transitive `[features]` tables are not parsed). Gating sankhya's varna/itihas/avatara code would therefore need every consumer to pass a matching `--features` and `-D` by hand, or the bundle would call undefined fns. Still blocked upstream, on a feature → define link and on transitive feature resolution. See ADR-006. |
 | 2 | ~~Line-length reflow in `astro`/`epoch`~~ | — | **Done in 3.1.2** (with `mayan`): 0 lint warnings across `src/`, output byte-identical. |
-| 3 | **epoch external-context deserialization** | Medium | `epoch`'s `MultiCalendarDate` serializes its itihas eras/civilizations/events and avatara Saptarishi context on the `_to_json` path, but `_from_json` cannot fully reconstruct those sibling records until `itihas` and `avatara` ship `from_json` constructors. Round-trip is complete for the sankhya-native fields; the external-context arrays reconstruct once the upstream `from_json` entry points land. **⚠ Bug in 3.2.0:** the decoder fills those four vecs with raw bayan nodes. Re-encoding a decoded `MultiCalendarDate` whose context is not empty therefore segfaults (exit 139), because `era_to_json` reads a node as an itihas record. **In progress (2026-11-19), upstream first:** itihas gains `era_from_json` / `civ_from_json` / `event_from_json`, and avatara gains `profile_to_json` / `profile_from_json` in a new `dist/avatara-json.cyr` bundle (avatara ADR-011). Both are written but not yet tagged. The sankhya side is written and checked against the local checkouts. Once both are tagged it lands as follows: bump both pins, take `dist/avatara-json.cyr`, decode every element, and write each Saptarishi entry as serde's `[name, profile]` tuple. Every record must then round-trip byte-identically, and the only output change is the `saptarishi_profiles` array. |
+| 3 | ~~epoch external-context deserialization~~ | — | **Done in 3.3.0** (ADR-010). The itihas eras, civilizations and events and the avatara Saptarishi profiles decode through itihas 2.7.0's and avatara 2.17.0's own decoders, so a `MultiCalendarDate` round-trips byte for byte and `multi_calendar_date_eq` compares every record. This fixes the 3.2.0 crash (exit 139) when a decoded date with context was re-encoded. ⚠ `saptarishi_profiles` is now serde's `[name, profile]` tuples. |
 
 ### Demand-gated (future)
 
@@ -150,10 +161,10 @@ its own work-loop cycle behind the cleanliness + benchmark gates.
 
 | Gate | Command | Expected |
 |------|---------|----------|
-| Tests | `cyrius test tests/tcyr` | `35 passed, 0 failed` (2,133 assertions; `tests/foundation.tcyr` adds 22) |
+| Tests | `cyrius test tests/tcyr` | `35 passed, 0 failed` (2,179 assertions; `tests/foundation.tcyr` adds 22) |
 | Fuzz | `cyrius build tests/sankhya.fcyr build/f && ./build/f` | `fuzz: ok` (20,000 rounds) |
 | Benchmarks | `cyrius bench tests/sankhya.bcyr` | 24 benches; recorded via `scripts/bench-history.sh` |
-| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.2.0 (cyrius port)` |
+| Smoke test | `cyrius build src/main.cyr build/sankhya` | prints `sankhya 3.3.0 (cyrius port)` |
 | Docs | `cyrdoc --check <file>` | 0 undocumented in every `src/` and `tests/` file |
 | Lint / format | `cyrius lint <file>` / `cyrius fmt <file> --check` | 0 warnings and clean for every `src/*.cyr` (CI gates both) |
 | Bundle | `cyrius distlib` | regenerates `dist/sankhya.cyr` |

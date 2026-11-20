@@ -9,7 +9,7 @@
 # exit status 0 (passed to SYS_EXIT below).
 fn main() {
     alloc_init();
-    println("sankhya 3.2.0 (cyrius port)");
+    println("sankhya 3.3.0 (cyrius port)");
     return 0;
 }
 

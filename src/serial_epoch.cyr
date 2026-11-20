@@ -32,10 +32,13 @@
 #   * Nested struct → embedded object (this file carries private ep_* serializers
 #     for every nested calendar record so the test needs only lib.cyr +
 #     serial_util.cyr + serial_epoch.cyr — no other serial_<mod>.cyr).
-#   * eras/civilizations/events → itihas's own era_to_json / civ_to_json /
-#     event_to_json (from the itihas bundle) inside a JSON array.
-#   * saptarishi_profiles → array of {name, tradition, description} objects built
-#     from avatara's prof_name/prof_tradition/prof_desc (C-string) accessors.
+#   * eras/civilizations/events → itihas's own era_to_json_into / civ_to_json_into /
+#     event_to_json_into inside a JSON array, read back with itihas's era_from_json /
+#     civ_from_json / event_from_json.
+#   * saptarishi_profiles → Vec<(String, ArchetypeProfile)> as serde wrote it: an array
+#     of [name, profile] tuples, the profile in avatara's profile_to_json_into shape
+#     (the Rust avatara 1.0.1 serde shape plus its Cyrius-only "domain"), read back
+#     with avatara's profile_from_json (dist/avatara-json.cyr).
 #
 # Decoding (3.2.0): every *_from_json returns a Result, as serde_json::from_str did:
 # Ok(value) or Err(SKE_DESERIALIZE) with serde's wording (the sk_de_* helpers of
@@ -44,14 +47,10 @@
 # required field is an Err, an Option field missing or null is None (0), unknown keys
 # are ignored and no domain validation happens (serde's derive does none).
 #
-# Reduction (documented): the itihas era/civ/event bundle exposes NO from_json,
-# and avatara ArchetypeProfile has no round-trippable serializer, so the
-# MultiCalendarDate round-trip reconstructs every INTRINSIC field (jdn, the
-# option Mayan calendars, sothic tuple, precessional age, julian year, and all
-# nested calendar records) exactly and verifies the itihas/avatara arrays
-# structurally by element COUNT (each must still be a JSON array, else Err). The
-# intrinsic reduced set is what the Rust assert_eq!(date, back) exercises for
-# parity on this port.
+# The itihas and avatara context arrays decode through those libraries' own decoders,
+# so a MultiCalendarDate round-trips in full: decode then re-encode is byte-identical,
+# and multi_calendar_date_eq compares every field of every record. Their Err messages
+# (serde's wording too) are forwarded unchanged as SKE_DESERIALIZE.
 #
 # SELF-CONTAINED: no include lines. Uses the shared sk_json_* / sk_de_* helpers from
 # serial_util.cyr, the epoch + calendar module accessors (via lib.cyr), the
@@ -919,69 +918,36 @@ fn cycle_alignment_eq(a, b) {
 # MultiCalendarDate — the correlate() "Rosetta Stone" output.
 # ===========================================================================
 
-# Emit an itihas era array  [era_to_json, ...]  (spacey sub-objects; JSON-legal).
-fn _ep_eras_json(sb, v) {
+# Append the context vec v as a JSON array, each element written by kind: 0 Era, 1 Civilization
+# and 2 Event (itihas's *_to_json_into, spacey sub-objects; JSON-legal), 3 a Saptarishi pair.
+fn _ep_ctx_json(sb, v, kind) {
     str_builder_add_cstr(sb, "[");
     var n = vec_len(v);
     var i = 0;
     while (i < n) {
         if (i > 0) { str_builder_add_cstr(sb, ","); }
-        str_builder_add(sb, era_to_json(vec_get(v, i)));
-        i = i + 1;
-    }
-    str_builder_add_cstr(sb, "]");
-    return 0;
-}
-fn _ep_civs_json(sb, v) {
-    str_builder_add_cstr(sb, "[");
-    var n = vec_len(v);
-    var i = 0;
-    while (i < n) {
-        if (i > 0) { str_builder_add_cstr(sb, ","); }
-        str_builder_add(sb, civ_to_json(vec_get(v, i)));
-        i = i + 1;
-    }
-    str_builder_add_cstr(sb, "]");
-    return 0;
-}
-fn _ep_events_json(sb, v) {
-    str_builder_add_cstr(sb, "[");
-    var n = vec_len(v);
-    var i = 0;
-    while (i < n) {
-        if (i > 0) { str_builder_add_cstr(sb, ","); }
-        str_builder_add(sb, event_to_json(vec_get(v, i)));
+        var x = vec_get(v, i);
+        if (kind == 0) { era_to_json_into(sb, x); }
+        if (kind == 1) { civ_to_json_into(sb, x); }
+        if (kind == 2) { event_to_json_into(sb, x); }
+        if (kind == 3) { _ep_sap_pair_into(sb, x); }
         i = i + 1;
     }
     str_builder_add_cstr(sb, "]");
     return 0;
 }
 
-# One saptarishi profile pair -> {"name":..,"tradition":..,"description":..}.
-# sap_name is a C-string (avatara set it from a literal), and prof_tradition /
-# prof_desc are C-strings too — emit via sk_json_cstr (str_from + escape).
-#must_use
-fn _ep_sap_pair_to_json(pair) {
-    var sb = str_builder_new();
-    str_builder_add_cstr(sb, "{");
-    sk_json_cstr(sb, "name", sap_name(pair));
-    var prof = sap_profile(pair);
-    sk_json_sep(sb);
-    sk_json_cstr(sb, "tradition", prof_tradition(prof));
-    sk_json_sep(sb);
-    sk_json_cstr(sb, "description", prof_desc(prof));
-    str_builder_add_cstr(sb, "}");
-    return str_builder_build(sb);
-}
-fn _ep_saps_json(sb, v) {
+# Append one Saptarishi pair as serde wrote the Rust (String, ArchetypeProfile) tuple:
+# ["name",{profile}]. sap_name is a C string; a NULL one is written null. The profile is
+# avatara's profile_to_json_into; one it refuses (NULL, or an enum field naming no variant)
+# writes nothing there, so null is written in its place. Either null fails to decode.
+fn _ep_sap_pair_into(sb, pair) {
     str_builder_add_cstr(sb, "[");
-    var n = vec_len(v);
-    var i = 0;
-    while (i < n) {
-        if (i > 0) { str_builder_add_cstr(sb, ","); }
-        str_builder_add(sb, _ep_sap_pair_to_json(vec_get(v, i)));
-        i = i + 1;
-    }
+    var name = sap_name(pair);
+    if (name == 0) { str_builder_add_cstr(sb, "null"); }
+    else { str_builder_add_json_str(sb, str_from(name)); }
+    str_builder_add_cstr(sb, ",");
+    if (profile_to_json_into(sb, sap_profile(pair)) != 0) { str_builder_add_cstr(sb, "null"); }
     str_builder_add_cstr(sb, "]");
     return 0;
 }
@@ -1002,8 +968,8 @@ fn _ep_opt_json(sb, key, ptr, kind) {
 
 # Serialize a MultiCalendarDate to a JSON object Str in serde field order: None Mayan fields
 # as null, sothic_position as [cycle,year,drift], nested calendars as objects, itihas
-# eras/civilizations/events via their own *_to_json, Saptarishi pairs as
-# {name,tradition,description}.
+# eras/civilizations/events via their own *_to_json_into, Saptarishi pairs as
+# [name, profile] tuples.
 #must_use
 fn multi_calendar_date_to_json(p) {
     var sb = str_builder_new();
@@ -1057,32 +1023,96 @@ fn multi_calendar_date_to_json(p) {
     sk_json_sep(sb);
 
     sk_json_key(sb, "eras");
-    _ep_eras_json(sb, mcd_eras(p));
+    _ep_ctx_json(sb, mcd_eras(p), 0);
     sk_json_sep(sb);
     sk_json_key(sb, "civilizations");
-    _ep_civs_json(sb, mcd_civs(p));
+    _ep_ctx_json(sb, mcd_civs(p), 1);
     sk_json_sep(sb);
     sk_json_key(sb, "events");
-    _ep_events_json(sb, mcd_events(p));
+    _ep_ctx_json(sb, mcd_events(p), 2);
     sk_json_sep(sb);
     sk_json_key(sb, "saptarishi_profiles");
-    _ep_saps_json(sb, mcd_saptarishi(p));
+    _ep_ctx_json(sb, mcd_saptarishi(p), 3);
 
     str_builder_add_cstr(sb, "}");
     return str_builder_build(sb);
 }
 
-# The itihas/avatara Vec field key of object obj: Ok(a fresh vec of its raw element nodes),
-# kept so the COUNT round-trips (no upstream from_json rebuilds the records), or Err when the
-# field is missing or not a JSON array.
+# Err "invalid length n, expected a tuple of size k" (serde's tuple visitor wording).
+fn _ep_tuple_short(n, k) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "invalid length ");
+    str_builder_add_int(sb, n);
+    str_builder_add_cstr(sb, ", expected a tuple of size ");
+    str_builder_add_int(sb, k);
+    return sk_de_fail(str_builder_build(sb));
+}
+
+# 1 when Str s holds a U+0000 byte, else 0.
 #must_use
-fn _ep_de_node_vec_field(obj, key) {
+fn _ep_has_nul(s) {
+    var d = str_data(s);
+    var n = str_len(s);
+    var i = 0;
+    while (i < n) {
+        if (load8(d + i) == 0) { return 1; }
+        i = i + 1;
+    }
+    return 0;
+}
+
+# One Saptarishi (String, ArchetypeProfile) tuple from JSON array node `node`: Ok(a sap pair)
+# or Err, as serde_json::from_str. A non-array is "invalid type", the elements decode in
+# order (the profile through avatara's profile_from_json, its message forwarded), too few is
+# "invalid length", a third element is "trailing characters". sap_name is a C string, so a
+# name holding U+0000 is refused, as avatara refuses one in a profile string: it would read
+# back shorter.
+#must_use
+fn _ep_sap_from_json(node) {
+    if (bayan_json_v_is_arr(node) != 1) { return sk_de_invalid_type(node, "a tuple of size 2"); }
+    var n = bayan_json_v_arr_len(node);
+    if (n < 1) { return _ep_tuple_short(n, 2); }
+    var name = sk_de_str(bayan_json_v_arr_get(node, 0))?;
+    if (_ep_has_nul(name) == 1) {
+        var sb = str_builder_new();
+        str_builder_add_cstr(sb, "invalid value: string ");
+        str_builder_add_json_str(sb, name);
+        str_builder_add_cstr(sb, ", expected a string without U+0000");
+        return sk_de_fail(str_builder_build(sb));
+    }
+    if (n < 2) { return _ep_tuple_short(n, 2); }
+    var pt, pv = profile_from_json(bayan_json_v_arr_get(node, 1));
+    if (is_err_result(pt) == 1) { return sk_de_fail(pv); }
+    if (n > 2) { return sk_de_fail(str_from("trailing characters")); }
+    return Ok(sap_new(str_cstr(name), pv));
+}
+
+# Decode one context element by kind (0 Era, 1 Civilization, 2 Event, 3 Saptarishi pair):
+# the itihas decoders' own Result for 0..2 (Err payload an ItihasErr), sankhya's for 3.
+#must_use
+fn _ep_ctx_from_json(node, kind) {
+    if (kind == 0) { return era_from_json(node); }
+    if (kind == 1) { return civ_from_json(node); }
+    if (kind == 2) { return event_from_json(node); }
+    return _ep_sap_from_json(node);
+}
+
+# The context Vec field key of object obj, each element decoded by kind (as _ep_ctx_from_json):
+# Ok(a fresh vec of records), or Err(SKE_DESERIALIZE) when the field is missing or not a JSON
+# array, or for the first element refused, carrying itihas's or avatara's message unchanged.
+#must_use
+fn _ep_de_ctx_vec_field(obj, key, kind) {
     var arr = sk_de_seq_field(obj, key)?;
     var v = vec_new();
     var n = bayan_json_v_arr_len(arr);
     var i = 0;
     while (i < n) {
-        vec_push(v, bayan_json_v_arr_get(arr, i));
+        var t, x = _ep_ctx_from_json(bayan_json_v_arr_get(arr, i), kind);
+        if (is_err_result(t) == 1) {
+            if (kind == 3) { return Err(x); }
+            return sk_de_fail(itihas_err_msg(x));
+        }
+        vec_push(v, x);
         i = i + 1;
     }
     return Ok(v);
@@ -1099,15 +1129,6 @@ fn _ep_opt_from_json(obj, key, kind) {
     return ep_haab_from_json(node);
 }
 
-# Err "invalid length n, expected a tuple of size 3" (serde's tuple visitor wording).
-fn _ep_tuple3_short(n) {
-    var sb = str_builder_new();
-    str_builder_add_cstr(sb, "invalid length ");
-    str_builder_add_int(sb, n);
-    str_builder_add_cstr(sb, ", expected a tuple of size 3");
-    return sk_de_fail(str_builder_build(sb));
-}
-
 # The sothic_position tuple (i32, u32, f64) from a JSON array node: Ok(SothicPos) or Err, as
 # serde_json::from_str: a non-array is "invalid type", elements decode in order, too few is
 # "invalid length", and a fourth element is "trailing characters".
@@ -1115,11 +1136,11 @@ fn _ep_tuple3_short(n) {
 fn _ep_sothic_from_json(node) {
     if (bayan_json_v_is_arr(node) != 1) { return sk_de_invalid_type(node, "a tuple of size 3"); }
     var n = bayan_json_v_arr_len(node);
-    if (n < 1) { return _ep_tuple3_short(n); }
+    if (n < 1) { return _ep_tuple_short(n, 3); }
     var cycle = sk_de_int(bayan_json_v_arr_get(node, 0), SK_I32_MIN, SK_I32_MAX, "i32")?;
-    if (n < 2) { return _ep_tuple3_short(n); }
+    if (n < 2) { return _ep_tuple_short(n, 3); }
     var year = sk_de_int(bayan_json_v_arr_get(node, 1), 0, SK_U32_MAX, "u32")?;
-    if (n < 3) { return _ep_tuple3_short(n); }
+    if (n < 3) { return _ep_tuple_short(n, 3); }
     var drift = sk_de_f64(bayan_json_v_arr_get(node, 2))?;
     if (n > 3) { return sk_de_fail(str_from("trailing characters")); }
     return Ok(sothicpos_new(cycle, year, drift));
@@ -1128,8 +1149,8 @@ fn _ep_sothic_from_json(node) {
 # Decode a MultiCalendarDate from bayan node v: Ok(MultiCalendarDate) or Err(SKE_DESERIALIZE).
 # Every field is required except the Option<> Mayan ones (missing or null -> 0, None) and is
 # checked against its Rust type; nested calendars decode through their ep_* decoders.
-# eras/civilizations/events/saptarishi_profiles must be arrays and become vecs of raw bayan
-# element nodes (count-only round trip), NOT itihas/avatara records.
+# eras/civilizations/events decode through itihas's *_from_json and saptarishi_profiles as
+# [name, profile] tuples through avatara's profile_from_json; their messages are forwarded.
 #must_use
 fn multi_calendar_date_from_json(v) {
     var obj = sk_de_struct(v, "MultiCalendarDate")?;
@@ -1156,10 +1177,10 @@ fn multi_calendar_date_from_json(v) {
     var tonal = ep_tonal_from_json(tn)?;
     var xn = sk_de_field(obj, "aztec_xiuhpohualli")?;
     var xiuh = ep_xiuh_from_json(xn)?;
-    var eras = _ep_de_node_vec_field(obj, "eras")?;
-    var civs = _ep_de_node_vec_field(obj, "civilizations")?;
-    var events = _ep_de_node_vec_field(obj, "events")?;
-    var saps = _ep_de_node_vec_field(obj, "saptarishi_profiles")?;
+    var eras = _ep_de_ctx_vec_field(obj, "eras", 0)?;
+    var civs = _ep_de_ctx_vec_field(obj, "civilizations", 1)?;
+    var events = _ep_de_ctx_vec_field(obj, "events", 2)?;
+    var saps = _ep_de_ctx_vec_field(obj, "saptarishi_profiles", 3)?;
 
     var p = alloc(MCD_SIZE);
     store64(p + MCD_JDN, jdn);
@@ -1196,8 +1217,54 @@ fn _ep_opt_eq(a, b, kind) {
     return ep_haab_eq(a, b);
 }
 
-# Structural equality of two MultiCalendarDate records: intrinsic fields exactly (f64s by bit
-# pattern), itihas/avatara vecs by element count only; 1/0.
+# Two context records of one kind (as _ep_ctx_json) holding the same value in every field:
+# itihas Strs by content, years and enum codes by value, a Saptarishi pair by its name and
+# avatara's profile_eq (f64 weights by bit pattern); 1/0.
+#must_use
+fn _ep_ctx_eq(a, b, kind) {
+    if (kind == 0) {
+        if (str_eq(era_name(a), era_name(b)) == 0) { return 0; }
+        if (era_start(a) != era_start(b) || era_end(a) != era_end(b)) { return 0; }
+        if (str_eq(era_region(a), era_region(b)) == 0) { return 0; }
+        if (str_eq(era_desc(a), era_desc(b)) == 0) { return 0; }
+        return era_cat(a) == era_cat(b) && era_scope(a) == era_scope(b);
+    }
+    if (kind == 1) {
+        if (str_eq(civ_name(a), civ_name(b)) == 0) { return 0; }
+        if (str_eq(civ_region(a), civ_region(b)) == 0) { return 0; }
+        if (str_eq(civ_peak(a), civ_peak(b)) == 0) { return 0; }
+        if (civ_found(a) != civ_found(b) || civ_end(a) != civ_end(b)) { return 0; }
+        if (str_eq(civ_traits(a), civ_traits(b)) == 0) { return 0; }
+        if (str_eq(civ_script(a), civ_script(b)) == 0) { return 0; }
+        return str_eq(civ_lang(a), civ_lang(b));
+    }
+    if (kind == 2) {
+        if (str_eq(evt_name(a), evt_name(b)) == 0) { return 0; }
+        if (evt_year(a) != evt_year(b)) { return 0; }
+        if (str_eq(evt_era(a), evt_era(b)) == 0) { return 0; }
+        if (str_eq(evt_desc(a), evt_desc(b)) == 0) { return 0; }
+        if (str_eq(evt_civs(a), evt_civs(b)) == 0) { return 0; }
+        return evt_cat(a) == evt_cat(b) && evt_sig(a) == evt_sig(b);
+    }
+    if (safe_streq(sap_name(a), sap_name(b)) == 0) { return 0; }
+    return profile_eq(sap_profile(a), sap_profile(b));
+}
+
+# Two context vecs of one kind with equal lengths and pairwise-equal records; 1/0.
+#must_use
+fn _ep_ctx_vec_eq(a, b, kind) {
+    var n = vec_len(a);
+    if (vec_len(b) != n) { return 0; }
+    var i = 0;
+    while (i < n) {
+        if (_ep_ctx_eq(vec_get(a, i), vec_get(b, i), kind) == 0) { return 0; }
+        i = i + 1;
+    }
+    return 1;
+}
+
+# Structural equality of two MultiCalendarDate records: every field, f64s by bit pattern, the
+# itihas and avatara context records field by field; 1/0.
 #must_use
 fn multi_calendar_date_eq(a, b) {
     if (mcd_jdn(a) != mcd_jdn(b)) { return 0; }
@@ -1221,12 +1288,10 @@ fn multi_calendar_date_eq(a, b) {
     if (ep_tonal_eq(mcd_tonalpohualli(a), mcd_tonalpohualli(b)) == 0) { return 0; }
     if (ep_xiuh_eq(mcd_xiuhpohualli(a), mcd_xiuhpohualli(b)) == 0) { return 0; }
 
-    # itihas/avatara context arrays compared structurally by element count.
-    if (vec_len(mcd_eras(a)) != vec_len(mcd_eras(b))) { return 0; }
-    if (vec_len(mcd_civs(a)) != vec_len(mcd_civs(b))) { return 0; }
-    if (vec_len(mcd_events(a)) != vec_len(mcd_events(b))) { return 0; }
-    if (vec_len(mcd_saptarishi(a)) != vec_len(mcd_saptarishi(b))) { return 0; }
-    return 1;
+    if (_ep_ctx_vec_eq(mcd_eras(a), mcd_eras(b), 0) == 0) { return 0; }
+    if (_ep_ctx_vec_eq(mcd_civs(a), mcd_civs(b), 1) == 0) { return 0; }
+    if (_ep_ctx_vec_eq(mcd_events(a), mcd_events(b), 2) == 0) { return 0; }
+    return _ep_ctx_vec_eq(mcd_saptarishi(a), mcd_saptarishi(b), 3);
 }
 
 # ===========================================================================

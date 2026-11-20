@@ -118,12 +118,23 @@ fn test_multi_calendar_date() {
     ok(h9, "civilizations array present");
     var h10 = str_contains_cstr(js, "\"events\":[");
     ok(h10, "events array present");
-    var h11 = str_contains_cstr(js, "\"saptarishi_profiles\":[{\"name\":");
-    ok(h11, "saptarishi_profiles array of name objects present");
+    # Vec<(String, ArchetypeProfile)>: serde's [name, profile] tuples, the full profile.
+    var h11 = str_contains_cstr(js, "\"saptarishi_profiles\":[[\"Kashyapa\",{\"name\":\"Kashyapa\",\"tradition\":");
+    ok(h11, "saptarishi_profiles array of [name, profile] tuples present");
+    ok(str_contains_cstr(js, "\"traits\":{\"warmth\":"), "saptarishi profile carries its trait weights");
 
     var b_t, b_v = multi_calendar_date_from_json(sk_json_parse(js));
     ok(is_ok(b_t), "MultiCalendarDate decodes");
-    ok(multi_calendar_date_eq(date, result_unwrap(b_t, b_v)), "MultiCalendarDate serde round-trip");
+    var back = result_unwrap(b_t, b_v);
+    ok(multi_calendar_date_eq(date, back), "MultiCalendarDate serde round-trip");
+    ok(str_eq(js, multi_calendar_date_to_json(back)), "MultiCalendarDate re-encodes byte-identical");
+    assert_eq(vec_len(mcd_saptarishi(back)), 7, "seven Saptarishi pairs decoded");
+    var s0 = vec_get(mcd_saptarishi(back), 0);
+    ok(streq(sap_name(s0), "Kashyapa"), "first Saptarishi pair name Kashyapa");
+    ok(profile_eq(sap_profile(s0), incarnate_sage_kashyapa()), "Kashyapa profile decodes in full (profile_eq)");
+    ok(vec_len(mcd_eras(back)) > 0, "eras decoded as itihas records");
+    var era_back = era_name(vec_get(mcd_eras(back), 0));
+    ok(str_eq(era_back, era_name(vec_get(mcd_eras(date), 0))), "first era decodes to the same itihas record");
 
     # One day before creation the Mayan fields are None -> null, and decode back to None.
     var pr_t, pr_v = correlate(f64_from(EPOCH_JDN - 1));
@@ -288,7 +299,11 @@ fn mcd_fields() {
     vec_push(_mcd_keys, "civilizations");
     vec_push(_mcd_vals, "[]");
     vec_push(_mcd_keys, "events");
-    vec_push(_mcd_vals, "[{\"x\":1},{\"x\":2}]");
+    var ev_a1 = "{\"name\":\"A\",\"year\":-3113,\"era\":\"Bronze Age\",\"category\":6,\"description\":\"d\",";
+    var ev_a = cat(ev_a1, "\"civilizations\":\"Maya\",\"significance\":0}");
+    var ev_b1 = "{\"name\":\"B\",\"year\":-3112,\"era\":\"Bronze Age\",\"category\":2,\"description\":\"e\",";
+    var ev_b = cat(ev_b1, "\"civilizations\":\"\",\"significance\":3}");
+    vec_push(_mcd_vals, cat(cat("[", ev_a), cat(cat(",", ev_b), "]")));
     vec_push(_mcd_keys, "saptarishi_profiles");
     vec_push(_mcd_vals, "[]");
     return 0;
@@ -352,7 +367,11 @@ fn test_de_multi_calendar_date() {
     assert_eq(sothicpos_drift(sp), f64_parse("1.5"), "sothic_position drift (f64) 1.5");
     assert_eq(mcd_julian_year(d), f64_parse("-3113.5"), "julian_year -3113.5");
     assert_eq(gd_year(mcd_gregorian(d)), 0 - 3113, "gregorian year -3113");
-    assert_eq(vec_len(mcd_events(d)), 2, "events kept count-only (2 nodes)");
+    assert_eq(vec_len(mcd_events(d)), 2, "events decode to 2 itihas records");
+    var e1 = vec_get(mcd_events(d), 1);
+    ok(str_eq_cstr(evt_name(e1), "B"), "second event name B");
+    assert_eq(evt_year(e1), 0 - 3112, "second event year -3112");
+    assert_eq(evt_sig(e1), SIG_GLOBAL, "second event significance code 3 (Global)");
     assert_eq(vec_len(mcd_eras(d)), 0, "eras empty");
 
     # Missing required fields (Option fields excepted).
@@ -432,6 +451,105 @@ fn test_de_multi_calendar_date() {
     var g_js = mcd_js("gregorian", "{\"year\":-3113,\"month\":\"August\",\"day\":40}");
     var g_t, g_v = multi_calendar_date_from_json(sk_json_parse(g_js));
     ok(is_ok(g_t), "mcd no calendar validation (day 40 decodes)");
+    return 0;
+}
+
+# The C-string s with the first occurrence of old replaced by new (C-strings), as a fresh C-string.
+fn repl(s, old, new) {
+    var h = str_from(s);
+    var i = str_index_of_cstr(h, old);
+    var sb = str_builder_new();
+    str_builder_add(sb, str_substr(h, 0, i));
+    str_builder_add_cstr(sb, new);
+    str_builder_add(sb, str_substr(h, i + strlen(old), str_len(h)));
+    return str_cstr(str_builder_build(sb));
+}
+
+# A Saptarishi array of the one pair ["name", <Atri's profile JSON> + tail] (C-strings), as a
+# fresh C-string for mcd_js: tail "" is a valid tuple, ",3" a three-element one.
+fn sap_arr(name, tail) {
+    var sb = str_builder_new();
+    str_builder_add_cstr(sb, "[[\"");
+    str_builder_add_cstr(sb, name);
+    str_builder_add_cstr(sb, "\",");
+    str_builder_add(sb, profile_to_json(incarnate_sage_atri()));
+    str_builder_add_cstr(sb, tail);
+    str_builder_add_cstr(sb, "]]");
+    return str_cstr(str_builder_build(sb));
+}
+
+# MultiCalendarDate context: each element decodes through itihas's or avatara's decoder, whose
+# message is forwarded unchanged as SKE_DESERIALIZE; a Saptarishi entry is serde's (String,
+# ArchetypeProfile) tuple; multi_calendar_date_eq compares every context field.
+fn test_de_context() {
+    mcd_err("eras", "[{}]", "missing field `name`", "mcd era missing name (itihas message)");
+    mcd_err("eras", "[5]", "invalid type: integer `5`, expected struct Era", "mcd era not an object");
+    var era9 = cat("[{\"name\":\"E\",\"start_year\":1,\"end_year\":2,\"region\":\"r\",\"description\":\"d\",",
+        "\"category\":9,\"scope\":0}]");
+    mcd_err("eras", era9, "invalid value: integer `9`, expected variant index 0 <= i < 6", "mcd era category 9");
+    mcd_err("civilizations", "[{\"name\":\"C\",\"region\":\"r\",\"peak_era\":\"p\",\"founded\":1.5}]",
+        "invalid type: floating point `1.5`, expected i32", "mcd civ float founded");
+    mcd_err("events", "[{\"name\":\"A\",\"year\":\"x\"}]", "invalid type: string \"x\", expected i32",
+        "mcd event string year");
+
+    mcd_err("saptarishi_profiles", "[{}]", "invalid type: map, expected a tuple of size 2", "mcd sap map");
+    mcd_err("saptarishi_profiles", "[[]]", "invalid length 0, expected a tuple of size 2", "mcd sap empty tuple");
+    mcd_err("saptarishi_profiles", "[[\"Atri\"]]", "invalid length 1, expected a tuple of size 2",
+        "mcd sap short tuple");
+    mcd_err("saptarishi_profiles", "[[1,{}]]", "invalid type: integer `1`, expected a string", "mcd sap integer name");
+    mcd_err("saptarishi_profiles", "[[\"Atri\",{}]]", "missing field `name`",
+        "mcd sap empty profile (avatara message)");
+    mcd_err("saptarishi_profiles", "[[\"Atri\",5]]", "invalid type: integer `5`, expected struct ArchetypeProfile",
+        "mcd sap integer profile");
+    mcd_err("saptarishi_profiles", sap_arr("Atri", ",3"), "trailing characters", "mcd sap long tuple");
+    mcd_err("saptarishi_profiles", sap_arr("A\\u0000", ""),
+        "invalid value: string \"A\\u0000\", expected a string without U+0000", "mcd sap NUL in name");
+
+    var t, v = multi_calendar_date_from_json(sk_json_parse(mcd_js("saptarishi_profiles", sap_arr("Atri", ""))));
+    ok(is_ok(t), "mcd one Saptarishi pair decodes");
+    var d = result_unwrap(t, v);
+    assert_eq(vec_len(mcd_saptarishi(d)), 1, "one Saptarishi pair");
+    var sp = vec_get(mcd_saptarishi(d), 0);
+    ok(streq(sap_name(sp), "Atri"), "Saptarishi pair name Atri");
+    ok(profile_eq(sap_profile(sp), incarnate_sage_atri()), "Atri profile decodes in full");
+
+    # eq compares the records, not the counts: one changed field anywhere is a difference.
+    var a_t, a_v = multi_calendar_date_from_json(sk_json_parse(mcd_js(0, 0)));
+    var a = result_unwrap(a_t, a_v);
+    var ev = vec_get(_mcd_vals, vec_len(_mcd_vals) - 2);
+    var ev2 = repl(ev, "\"description\":\"e\"", "\"description\":\"f\"");
+    var c_t, c_v = multi_calendar_date_from_json(sk_json_parse(mcd_js("events", ev2)));
+    ok(is_ok(c_t), "mcd changed event decodes");
+    ok(multi_calendar_date_eq(a, result_unwrap(c_t, c_v)) == 0, "eq sees a changed event description");
+    var warm = repl(sap_arr("Atri", ""), "\"warmth\":0.7", "\"warmth\":0.71");
+    var w_t, w_v = multi_calendar_date_from_json(sk_json_parse(mcd_js("saptarishi_profiles", warm)));
+    ok(is_ok(w_t), "mcd changed profile decodes");
+    ok(multi_calendar_date_eq(d, result_unwrap(w_t, w_v)) == 0, "eq sees a changed profile trait weight");
+    return 0;
+}
+
+# Every 61 years from -4000 to 2100: correlate, encode, decode, re-encode. The bytes match and eq
+# holds, so the itihas and avatara context round-trips with every record, not just the counts.
+fn test_mcd_roundtrip_sweep() {
+    var bad = 0;
+    var recs = 0;
+    var y = 0 - 4000;
+    while (y <= 2100) {
+        var j = f64_add(f64_from(1721425), f64_mul(f64_from(y), f64_parse("365.25")));
+        var r_t, r_v = correlate(j);
+        var m = result_unwrap(r_t, r_v);
+        var js = multi_calendar_date_to_json(m);
+        var d_t, d_v = multi_calendar_date_from_json(sk_json_parse(js));
+        if (is_ok(d_t) == 0) { bad = bad + 1; }
+        else {
+            var d = result_unwrap(d_t, d_v);
+            if (str_eq(js, multi_calendar_date_to_json(d)) == 0 || multi_calendar_date_eq(m, d) == 0) { bad = bad + 1; }
+            recs = recs + vec_len(mcd_eras(d)) + vec_len(mcd_civs(d)) + vec_len(mcd_events(d));
+        }
+        y = y + 61;
+    }
+    assert_eq(bad, 0, "101 correlate dates round-trip byte-identical with eq");
+    ok(recs > 500, "the sweep decoded itihas records");
     return 0;
 }
 
@@ -549,6 +667,8 @@ fn main() {
     test_enums();
     test_cycle_alignment();
     test_de_multi_calendar_date();
+    test_de_context();
+    test_mcd_roundtrip_sweep();
     test_de_calendar_date();
     test_de_other();
 

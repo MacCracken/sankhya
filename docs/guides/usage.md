@@ -188,10 +188,11 @@ is serde's: `missing field \`x\``, `unknown variant \`Foo\`, expected one of …
 expected u8`. As with serde, a decoder checks types, not calendar rules: a day of 40 decodes,
 and `gregorian_to_jdn` rejects it.
 
-> The `MultiCalendarDate` serializes its itihas eras/civilizations/events and
-> avatara Saptarishi context on the `_to_json` path; those external-context
-> arrays fully reconstruct on `_from_json` once `itihas`/`avatara` ship
-> `from_json` constructors (see [roadmap](../development/roadmap.md), backlog #3).
+> From 3.3.0 a `MultiCalendarDate` round-trips in full, its itihas eras, civilizations
+> and events and its avatara Saptarishi profiles included: they decode through itihas's
+> and avatara's own decoders, and an error inside them carries that library's message.
+> Each Saptarishi entry is serde's `[name, profile]` tuple with the whole profile
+> ([ADR-010](../adr/010-context-decoding-through-upstream-codecs.md)).
 
 ## Conventions
 

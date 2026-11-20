@@ -5,12 +5,15 @@
 
 ## Version
 
-**3.2.0** — cyrius pin 6.7.18, with the sibling deps at their latest tags (varna 2.6.0).
+**3.3.0** — cyrius pin 6.7.18, with the sibling deps at their latest tags (varna 2.6.0,
+itihas 2.7.0, avatara 2.17.0).
 The Rust→Cyrius port completed at 3.0.0 (2026-07-21); 3.0.1 migrated to the cyrius 6.6.x
 `Result` value form, 3.1.0 moved to the 6.7 language minor, 3.1.2 cleared the line-length
 and fmt backlog, 3.1.3 was a P(-1) sweep: every public fn documented, input-domain
 guards (ADR-007) and accuracy corrections to the Rust oracle (ADR-008), and 3.2.0 made
-every `<type>_from_json` return a Result with serde's checks and messages (ADR-009). The original Rust
+every `<type>_from_json` return a Result with serde's checks and messages (ADR-009). From 3.3.0 a
+`MultiCalendarDate` round-trips its itihas and avatara context in full, through those libraries'
+own decoders (ADR-010). The original Rust
 crate (v2.0.0, 9,857 lines across 17 files) is preserved at `rust-old/` as the frozen
 parity oracle; ADR-007 and ADR-008 list where sankhya now differs from it.
 
@@ -21,8 +24,8 @@ parity oracle; ADR-007 and ADR-008 list where sankhya now differs from it.
 
 ## Source
 
-- **Cyrius**: 11,917 lines across 37 `src/*.cyr` files; all 878 public fns in `src/` and
-  `tests/` carry a doc comment (`cyrdoc --check`).
+- **Cyrius**: 12,701 lines across 37 `src/*.cyr` files; every fn in `src/` and `tests/`
+  carries a doc comment (`cyrdoc --check`: 994 documented, 0 undocumented, at 3.3.0).
   - Foundation — `error`, `util`, `f64_util`, `logging`
   - 15 domain modules — mayan, babylonian, egyptian, vedic, chinese, greek, roman,
     islamic, gregorian, coptic, persian, hebrew, aztec, astro, epoch
@@ -33,7 +36,7 @@ parity oracle; ADR-007 and ADR-008 list where sankhya now differs from it.
 
 ## Tests
 
-`cyrius test tests/tcyr` → **35 suites, 0 failed** (2,133 assertions, plus 22 in
+`cyrius test tests/tcyr` → **35 suites, 0 failed** (2,179 assertions, plus 22 in
 `tests/foundation.tcyr`). Besides the per-module, serial round-trip, integration and
 adversarial suites ported from Rust, three were added at 3.1.3: `serial_malformed`
 (every decoder on hostile JSON), `lazy_init` (no init calls, logging off) and
@@ -63,7 +66,8 @@ Declared in `cyrius.cyml`:
   fnptr, hashmap, math, **ganita** (extended math), **bayan** (JSON), **sakshi** (logging),
   bench, net + http (transitive, for itihas's bundled hoosh client)
 - **Sibling deps** (git-tagged, always-on — see [ADR-006](../adr/006-always-on-dependencies.md)):
-  `varna` 2.6.0, `itihas` 2.6.2, `avatara` 2.16.1
+  `varna` 2.6.0, `itihas` 2.7.0, `avatara` 2.17.0 (its `dist/avatara-json.cyr` bundle, which adds
+  the profile JSON codec)
 
 ## Consumers
 

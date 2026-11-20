@@ -31,7 +31,7 @@ description.
 | `cyrius build src/main.cyr build/sankhya` | Build the smoke-test binary |
 | `CYRIUS_DCE=1 cyrius build src/main.cyr build/sankhya` | Build (dead-code-elimination optimized) |
 | `./build/sankhya` | Run the CLI smoke test |
-| `cyrius test tests/tcyr` | Run the full suite (35 `.tcyr` suites, 2,133 assertions) — expect `35 passed, 0 failed` |
+| `cyrius test tests/tcyr` | Run the full suite (35 `.tcyr` suites, 2,179 assertions) — expect `35 passed, 0 failed` |
 | `cyrius bench tests/sankhya.bcyr` | Run the 18 benchmarks |
 | `cyrius lint src/*.cyr` | Lint |
 | `cyrius fmt src/*.cyr` | Format |

@@ -7,6 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.3.0] — 2026-11-20
+
+**A `MultiCalendarDate` round-trips its itihas and avatara context in full** (roadmap #3,
+ADR-010). The context now decodes through itihas 2.7.0's and avatara 2.17.0's own decoders.
+⚠ **Output change:** `saptarishi_profiles` is written as serde's `[name, profile]` tuples
+carrying the whole profile; no other encoded byte changes. 35 suites and
+`tests/foundation.tcyr`: 2,201 assertions, 0 failed.
+
+### Fixed
+
+- ⚠ **Re-encoding a decoded `MultiCalendarDate` crashed** (exit 139) when its context was not
+  empty. The crash came with 3.2.0. The decoder filled the eras, civilizations, events and
+  Saptarishi vecs with raw bayan nodes, and `era_to_json` read a node as an itihas record.
+  Those vecs now hold real records.
+
+### Changed
+
+- ⚠ **`saptarishi_profiles` is serde's `Vec<(String, ArchetypeProfile)>`:**
+  `[["Kashyapa",{profile}], …]`. Each profile is complete: the identity fields, the 15 trait
+  weights, the 14 emphasis weights, the five classifications, both texts and `domain`. The
+  shape is avatara's `profile_to_json_into`, which is the Rust avatara 1.0.1 serde shape
+  plus `domain`, a field that exists only in the Cyrius avatara. Through 3.2.0 each entry was
+  `{name, tradition, description}`.
+- **`multi_calendar_date_from_json` decodes every context element.**
+  - Eras, civilizations and events go through itihas's `era_from_json`, `civ_from_json` and
+    `event_from_json`.
+  - Each Saptarishi tuple goes through avatara's `profile_from_json`.
+  - An error inside the context carries itihas's or avatara's message unchanged, as
+    `SKE_DESERIALIZE`.
+  - A tuple is checked as serde checks one: a non-array is `invalid type: …, expected a tuple
+    of size 2`, too short is `invalid length n, expected a tuple of size 2`, and a third
+    element is `trailing characters`.
+  - A name holding U+0000 is refused, because the pair stores it as a C string.
+- **`multi_calendar_date_eq` compares every field of every context record.** Through 3.2.0 it
+  compared only the four element counts. itihas strings are compared by content, and profiles
+  through avatara's `profile_eq`, with f64 weights compared by bit pattern.
+- **The eras, civilizations and events keep itihas's Cyrius shape**, unchanged from 3.0: integer
+  enum codes, `founded`/`ended`, and `;`-joined `traits`/`language`. The Rust 1.x serde shape
+  differed. ADR-010 records why this stays with itihas.
+- **Tests:** `serial_epoch` has 243 assertions (was 197).
+  - `test_de_context` checks every forwarded itihas and avatara message and each tuple error.
+  - `test_mcd_roundtrip_sweep` round-trips 101 `correlate` dates from 4000 BCE to 2100 CE.
+    Every one re-encodes byte for byte and is equal under `multi_calendar_date_eq`, and
+    together they decode more than 500 itihas records.
+
+### Dependencies
+
+- **itihas 2.6.2 → 2.7.0** (`era_from_json`, `civ_from_json`, `event_from_json`).
+- **avatara 2.16.1 → 2.17.0.** `[deps.avatara]` modules change from `dist/avatara.cyr` to
+  `dist/avatara-json.cyr`, which is the engine plus the ArchetypeProfile JSON codec
+  (avatara ADR-011). That bundle's bayan calls resolve against the `bayan` stdlib monolith
+  already in `[deps].stdlib`, so sankhya gains no dependency.
+- **Consumers:** `dist/sankhya.cyr` now calls avatara's `profile_to_json_into`,
+  `profile_from_json` and `profile_eq`. A consumer that pins its own `[deps.avatara]` must take
+  `dist/avatara-json.cyr` at 2.17.0 or later. A consumer that relies on sankhya's pin gets it
+  transitively.
+- **Unchanged:** the itihas/avatara `xalloc` duplicate warning (`dist/avatara-json.cyr` defines
+  it too), and the bayan monolith, because itihas 2.7.0's sidecar still names `bayan`.
+
+### Performance
+
+- **`serial/mcd_json_roundtrip` is about 4.3× slower, because its JSON is 3.4× larger.** At
+  JDN 584283 the document grows from 3,137 to 10,603 B, since each of the seven profiles now
+  carries its long texts. Measured on that date:
+
+  | Phase | 3.2.0 | 3.3.0 |
+  |---|---|---|
+  | Encode | 73 µs | 316 µs |
+  | bayan parse | 63 µs | 238 µs |
+  | Decode | 6.5 µs | 51 µs |
+
+  Most of the encode time is avatara's profile writer, and about half of that is bayan's
+  float formatter. Parse time grows with the byte count. That is the price of a lossless round
+  trip.
+- **Two interleaved A/B passes against 3.2.0.** Each ran 9 rounds of DCE bench binaries,
+  comparing medians, at load 2.0–2.7 on 16 threads.
+  - `serial/mcd_json_roundtrip`: 142.6 → 615.6 µs (+332 %) in one pass and 144.4 → 619.4 µs
+    (+329 %) in the other.
+  - No other row moved more than 4.1 % in either pass, and no other move repeated beyond the
+    control spread. The largest was `astro/precession_1000`, +1.3 % then +4.1 %, and nothing in
+    `astro` changed.
+- **The 3.3.0 rows in `bench-history.csv` carry `e3fda98`**, because they were recorded before
+  the 3.3.0 commit.
+- **Binary size:** the DCE smoke binary grows 1,624 B (857,408 → 859,032), and the non-DCE
+  binary 34,392 B.
+
+### Verified
+
+- **Encoding is unchanged apart from Saptarishi.** Both output dumps (1,771 and 6,660 lines)
+  were rebuilt against the released tags. The second is byte-identical to 3.2.0. In the first,
+  44 of the 45 `correlate` lines differ, and each of them is identical to 3.2.0 outside its
+  `saptarishi_profiles` array.
+- **The released bundles were checked against the code tested before release.** The itihas
+  2.7.0 and avatara 2.17.0 bundles differ from the local checkouts this change was first
+  verified against only in their `# Version:` header.
+- **All 35 suites and `tests/foundation.tcyr` pass when each is built with `CYRIUS_DCE=1`**
+  (2,201 assertions). The suite also passes under `cyrius test --bounds`, and the fuzz harness
+  passes. lint, fmt and `cyrdoc --check` are clean for every `src/*.cyr` and the changed suite.
+
 ## [3.2.0] — 2026-11-19
 
 **Every `<type>_from_json` returns a Result, as serde_json::from_str did** (ADR-009). ⚠

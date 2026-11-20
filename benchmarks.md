@@ -1,35 +1,35 @@
 # Benchmarks
 
-Latest: **2026-11-19T08:04:15Z** -- commit `7824a40`
+Latest: **2026-11-20T17:36:42Z** -- commit `e3fda98`
 
-Tracking: `6.6.11@e8df3fa` (baseline) -> `85793bc` (mid) -> `7824a40` (current)
+Tracking: `6.6.11@e8df3fa` (baseline) -> `2dfbc43` (mid) -> `e3fda98` (current)
 
-| Benchmark | Baseline (`6.6.11@e8df3fa`) | Mid (`85793bc`) | Current (`7824a40`) |
+| Benchmark | Baseline (`6.6.11@e8df3fa`) | Mid (`2dfbc43`) | Current (`e3fda98`) |
 |-----------|------|------|------|
-| `mayan/long_count_conversion_1000` | 47.00 ns | 46.00 ns | 47.00 ns |
-| `mayan/vigesimal_roundtrip_1000` | 125.0 ns | 127.0 ns | 131.0 ns +5% |
-| `greek/sieve_10000` | 68114.0 ns | 67293.0 ns | 68877.0 ns |
-| `greek/archimedes_pi_20` | 370.0 ns | 363.0 ns | 374.0 ns |
-| `chinese/chinese_remainder_100` | 293.0 ns | 292.0 ns | 303.0 ns +3% |
-| `egyptian/decompose_1000` | 131.0 ns | 128.0 ns | 133.0 ns |
-| `babylonian/sqrt_convergence` | 301.0 ns | 279.0 ns **-7%** | 300.0 ns |
-| `vedic/nikhilam_multiply_100` | 32.00 ns | 31.00 ns **-3%** | 33.00 ns +3% |
-| `islamic/cubic_newton` | 2275.0 ns | 2189.0 ns **-4%** | 2302.0 ns |
-| `epoch/correlate` | 4200.0 ns | 3416.0 ns **-19%** | 2676.0 ns **-36%** |
-| `roman/roundtrip_3999` | 721.0 ns | 721.0 ns | 727.0 ns |
-| `gregorian/jdn_roundtrip_1000` | 85.00 ns | 82.00 ns **-4%** | 88.00 ns +4% |
-| `hebrew/jdn_roundtrip_100` | 2548.0 ns | 2495.0 ns | 1146.0 ns **-55%** |
-| `persian/jdn_roundtrip_1000` | 507.0 ns | 488.0 ns **-4%** | 518.0 ns |
-| `astro/precession_1000` | 558.0 ns | 543.0 ns | 568.0 ns |
-| `epoch/convert_all_calendars` | 4459.0 ns | 3892.0 ns **-13%** | 3726.0 ns **-16%** |
-| `coptic/jdn_roundtrip` | 97.00 ns | 94.00 ns **-3%** | 68.00 ns **-30%** |
-| `aztec/calendar_round` | 51.00 ns | 52.00 ns | 50.00 ns |
-| `serial/mcd_json_roundtrip` | -- | -- | 146974.0 ns |
-| `mayan/find_calendar_round_full` | -- | -- | 3572.0 ns |
-| `astro/heliacal_rising_sirius` | -- | -- | 256406.0 ns |
-| `babylonian/to_cuneiform` | -- | -- | 746.0 ns |
-| `greek/isopsephy` | -- | -- | 869.0 ns |
-| `vedic/katapayadi_devanagari` | -- | -- | 1039.0 ns |
+| `mayan/long_count_conversion_1000` | 47.00 ns | 44.00 ns **-6%** | 47.00 ns |
+| `mayan/vigesimal_roundtrip_1000` | 125.0 ns | 121.0 ns **-3%** | 127.0 ns |
+| `greek/sieve_10000` | 68114.0 ns | 63682.0 ns **-7%** | 65916.0 ns **-3%** |
+| `greek/archimedes_pi_20` | 370.0 ns | 345.0 ns **-7%** | 373.0 ns |
+| `chinese/chinese_remainder_100` | 293.0 ns | 281.0 ns **-4%** | 295.0 ns |
+| `egyptian/decompose_1000` | 131.0 ns | 124.0 ns **-5%** | 131.0 ns |
+| `babylonian/sqrt_convergence` | 301.0 ns | 277.0 ns **-8%** | 294.0 ns |
+| `vedic/nikhilam_multiply_100` | 32.00 ns | 30.00 ns **-6%** | 31.00 ns **-3%** |
+| `islamic/cubic_newton` | 2275.0 ns | 2227.0 ns | 2264.0 ns |
+| `epoch/correlate` | 4200.0 ns | 3512.0 ns **-16%** | 2618.0 ns **-38%** |
+| `roman/roundtrip_3999` | 721.0 ns | 688.0 ns **-5%** | 691.0 ns **-4%** |
+| `gregorian/jdn_roundtrip_1000` | 85.00 ns | 85.00 ns | 85.00 ns |
+| `hebrew/jdn_roundtrip_100` | 2548.0 ns | 2414.0 ns **-5%** | 1125.0 ns **-56%** |
+| `persian/jdn_roundtrip_1000` | 507.0 ns | 472.0 ns **-7%** | 504.0 ns |
+| `astro/precession_1000` | 558.0 ns | 512.0 ns **-8%** | 589.0 ns +6% |
+| `epoch/convert_all_calendars` | 4459.0 ns | 3849.0 ns **-14%** | 3764.0 ns **-16%** |
+| `coptic/jdn_roundtrip` | 97.00 ns | 92.00 ns **-5%** | 69.00 ns **-29%** |
+| `aztec/calendar_round` | 51.00 ns | 48.00 ns **-6%** | 51.00 ns |
+| `serial/mcd_json_roundtrip` | -- | -- | 625514.0 ns |
+| `mayan/find_calendar_round_full` | -- | -- | 3393.0 ns |
+| `astro/heliacal_rising_sirius` | -- | -- | 256942.0 ns |
+| `babylonian/to_cuneiform` | -- | -- | 729.0 ns |
+| `greek/isopsephy` | -- | -- | 827.0 ns |
+| `vedic/katapayadi_devanagari` | -- | -- | 972.0 ns |
 
 ---
 

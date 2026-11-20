@@ -89,11 +89,14 @@ modules = ["dist/varna.cyr"]
 # epoch's historical context (eras/civilizations/events) — always-on, full parity.
 [deps.itihas]
 git = "https://github.com/MacCracken/itihas.git"
-tag = "2.6.2"
+tag = "2.7.0"
 modules = ["dist/itihas.cyr"]
 
-# epoch's Saptarishi archetype profiles — always-on, full parity.
+# epoch's Saptarishi archetype profiles — always-on, full parity. The json
+# profile bundle (engine + ArchetypeProfile codec, avatara ADR-011) so
+# serial_epoch can round-trip full profiles; it needs bayan, which comes from
+# the "bayan" stdlib monolith above (never also bayan's dist/bayan-json.cyr).
 [deps.avatara]
 git = "https://github.com/MacCracken/avatara.git"
-tag = "2.16.1"
-modules = ["dist/avatara.cyr"]
+tag = "2.17.0"
+modules = ["dist/avatara-json.cyr"]
